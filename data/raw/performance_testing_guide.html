@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head><title>Performance Testing Guide</title></head>
+<body>
+<h1>Performance Testing Guide</h1>
+
+<h2>When Load Testing Is Required</h2>
+<p>Any service expecting more than a 20% increase in peak traffic, or any new endpoint on a
+payments or checkout path, requires a load test signed off by the Performance team before launch.
+Internal tools and admin-only endpoints are exempt unless they are on a hot path.</p>
+
+<h2>Test Environment</h2>
+<p>Load tests run against the dedicated performance-staging environment, which is provisioned to
+match production capacity at a 1:10 ratio. Tests must never run against production directly, and
+must never run against shared staging, since shared staging is used for manual QA and a load test
+will starve it of resources.</p>
+
+<h2>Pass Criteria</h2>
+<p>A load test passes if P95 latency stays under 300ms and error rate stays under 0.1% at 1.5x the
+expected peak load, sustained for at least 15 minutes. Passing at exactly peak load without the
+1.5x safety margin is not sufficient sign-off.</p>
+
+<h2>Reporting</h2>
+<p>Results are posted to the #performance channel with the full Grafana dashboard link, not just a
+summary screenshot, so the Performance team can inspect tail latency distributions directly.</p>
+</body>
+</html>

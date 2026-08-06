@@ -1,0 +1,51 @@
+services:
+  # Seed service: Initialize indexes with data
+  seed:
+    build: .
+    container_name: rag-seed
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    command: ["python", "scripts/run_ingest.py", "--strategy", "all"]
+    networks:
+      - rag-network
+
+  # API service: FastAPI backend
+  api:
+    build: .
+    container_name: rag-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    networks:
+      - rag-network
+    command: ["uvicorn", "rag.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  # Dashboard service: Streamlit UI (Upload + Query)
+  dashboard:
+    build: .
+    container_name: rag-dashboard
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      RAG_API_URL: "http://api:8000"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - api
+    networks:
+      - rag-network
+    command: ["streamlit", "run", "src/rag/simple_upload.py", "--server.address=0.0.0.0", "--server.port=8501"]
+
+networks:
+  rag-network:
+    driver: bridge
