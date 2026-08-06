@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+      POSTGRES_DB: agentsys
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agentsys"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  chroma:
+    image: chromadb/chroma:0.5.11
+    ports:
+      - "8001:8000"
+    volumes:
+      - chromadata:/chroma/chroma
+
+  api:
+    build: .
+    ports:
+      - "8100:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql+psycopg://agent:agent@postgres:5432/agentsys"
+      REDIS_URL: "redis://redis:6379/0"
+      CHROMA_HOST: "chroma"
+      CHROMA_PORT: "8000"
+      WORKSPACE_DIR: "/app/data/workspace"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql+psycopg://agent:agent@postgres:5432/agentsys"
+      REDIS_URL: "redis://redis:6379/0"
+      CHROMA_HOST: "chroma"
+      CHROMA_PORT: "8000"
+      WORKSPACE_DIR: "/app/data/workspace"
+    volumes:
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["celery", "-A", "agentsys.worker.celery_app", "worker", "--loglevel=info", "--pool=solo"]
+
+  dashboard:
+    build: .
+    ports:
+      - "8601:8501"
+    env_file:
+      - .env
+    environment:
+      AGENTSYS_API_URL: "http://api:8000"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - api
+    command: ["streamlit", "run", "src/agentsys/dashboard.py", "--server.address=0.0.0.0", "--server.port=8501"]
+
+volumes:
+  pgdata:
+  chromadata:
