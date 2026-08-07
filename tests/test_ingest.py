@@ -9,7 +9,10 @@ def test_load_corpus_covers_all_formats():
     documents = load_corpus(settings.raw_data_dir)
     formats = {doc.format for doc in documents}
     assert formats == {"markdown", "text", "html", "pdf"}
-    assert len(documents) == 12
+    # A floor, not an exact count: this test is about format coverage (see its
+    # name), and the corpus is meant to grow as documents are added. An exact
+    # count made every ingestion of a new document a test failure.
+    assert len(documents) >= 12
 
 
 def test_fixed_overlap_chunks_respect_size_cap():
