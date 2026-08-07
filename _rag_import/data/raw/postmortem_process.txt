@@ -1,0 +1,19 @@
+Postmortem Process (plain-text reference copy)
+
+Every Sev-1 and Sev-2 incident requires a written postmortem within 5 business days of
+resolution. The postmortem document uses the standard template: timeline, impact (customers
+affected, duration, revenue impact if known), root cause, what went well, what went poorly, and
+action items.
+
+Postmortems are blameless. The document must describe what happened and why the system and
+process allowed it to happen, not focus on individual mistakes. Language like "X should have
+known" is flagged in review and rewritten.
+
+Action items from a postmortem are filed as tickets with a named owner and a due date, and are
+tracked to completion in the weekly Reliability sync. A postmortem with no action items is treated
+as incomplete and sent back for revision, unless the incident writeup explicitly justifies why no
+follow-up work is needed.
+
+Postmortems for Sev-1 incidents are presented verbally in the weekly Reliability sync by the
+Incident Commander. Sev-2 postmortems are shared async in the #reliability channel and reviewed
+only if a reader flags a concern within 3 days.

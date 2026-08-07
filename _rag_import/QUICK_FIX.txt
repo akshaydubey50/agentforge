@@ -1,0 +1,57 @@
+QUICK FIX - RUN THESE 3 COMMANDS IN ORDER
+
+========================================
+STEP 1: Open Terminal 1
+========================================
+
+cd D:\Akshay\python-projects\rag-production-pipeline
+.venv\Scripts\activate
+uvicorn src.rag.main:app --host 0.0.0.0 --port 8000 --reload
+
+[Wait until it says "Uvicorn running on http://0.0.0.0:8000"]
+
+========================================
+STEP 2: Open Terminal 2 (Keep Terminal 1 running)
+========================================
+
+cd D:\Akshay\python-projects\rag-production-pipeline
+.venv\Scripts\activate
+python scripts/manage_docs.py reindex --strategy all
+
+[Wait until it says "✅ Re-indexing complete!"]
+
+========================================
+STEP 3: Open Terminal 3 (Keep Terminals 1 & 2 running)
+========================================
+
+cd D:\Akshay\python-projects\rag-production-pipeline
+.venv\Scripts\activate
+streamlit run src/rag/upload_dashboard.py
+
+[Should open http://localhost:8501 in browser]
+
+========================================
+IN BROWSER
+========================================
+
+1. Go to http://localhost:8501
+2. Press Ctrl+Shift+R (Hard Refresh - NOT just F5)
+3. You should see documents now!
+
+========================================
+TO TEST
+========================================
+
+Terminal 2: python scripts/manage_docs.py test --query "machine learning"
+
+Should return search results.
+
+========================================
+SUMMARY: 3 TERMINALS RUNNING
+========================================
+
+Terminal 1: API (port 8000)
+Terminal 2: Test commands
+Terminal 3: Streamlit UI (port 8501)
+
+All 3 must be running for UI to work!

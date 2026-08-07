@@ -1,0 +1,1490 @@
+[
+  {
+    "chunk_id": "9a8c1fb639a8_structure_aware_0",
+    "text": "Akshay Dubey\nMumbai, India\n\u2642phone+91-8779197850 /envel\u2322peakshaydubey1818@gmail.com /linkedinakshay-dubey-2060 /githubakshay-dubey\nSummary\nFull Stack Engineer building production LLM systems. Currently atFynd(Reliance-backed), developing multi-model AI\norchestration, RAG pipelines with semantic vector search, and deterministic scoring engines for an AI-powered hiring platform.\n4+ years building scalable applications with TypeScript, Node.js, and PostgreSQL.\nSkills\nLanguages: TypeScript, Python, Node.js, JavaScript\nAI/LLM: OpenAI API, OpenRouter, LangChain, LangGraph, Multi-Model Orchestration, RAG Pipelines, Embeddings\nAI Infrastructure: Langfuse (LLM Observability), MCP Protocol, Circuit Breakers, PG Boss Queues, Batch Processing\nDatabases: PostgreSQL, pgvector, Redis, MongoDB, Prisma ORM, Semantic Search\nBackend: Express.js, GraphQL, REST APIs, JWT Authentication\nCloud & DevOps: GCP (Cloud Run), Docker, CI/CD Pipelines, Vercel, Supabase\nExperience\nFynd (Shopsense Retail Technologies) Mumbai, India\nAI Full Stack Engineer March 2025 \u2013 Present\n\u2022Implementedmulti-model LLM council systemusing OpenRouter coordinating GPT-4, Claude, and Gemini through",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume AI Engineer.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume AI Engineer.pdf",
+      "doc_id": "9a8c1fb639a8",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "9a8c1fb639a8_structure_aware_1",
+    "text": "a 3-stage pipeline: parallel independent responses, peer ranking with critique, and chairman synthesis for\nconsensus-based hiring decisions.\n\u2022Builtmulti-vector RAG pipelineusing OpenAI text-embedding-3-large (3072 dimensions) with 7 semantic vectors\n(skills, role, domain, seniority, functional, education, full-profile) stored inpgvectorfor candidate-job matching with\nweighted similarity scoring.\n\u2022Developed9-factor deterministic scoring enginewith configurable weighted factors, cap rules, and modifiers \u2014\naggregating AI-extracted signals into explainable match scores with quality gates for data confidence and JD\ncompleteness.\n\u2022Contributed toasynchronous processing pipelineusing PG Boss queue with multi-stage orchestration (Parse,\nDeduplicate, Score), exponential backoff retry, and singleton deduplication for bulk candidate processing.\n\u2022IntegratedLangfuse for LLM observability\u2014 enabling trace debugging across multi-model council sessions, token\nusage monitoring, and AI pipeline performance analysis.\n\u2022Implemented tool-enabled AI agents usingMCP (Model Context Protocol)with circuit breakers on AI/storage",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume AI Engineer.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume AI Engineer.pdf",
+      "doc_id": "9a8c1fb639a8",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "9a8c1fb639a8_structure_aware_2",
+    "text": "services and batch processing (8 items per AI call) for resilient document processing.\n\u2022Builthybrid pool scoring systemcombining per-dimension cosine similarity scores with structured candidate signals\n\u2014 enabling zero-AI-call scoring at search time using pre-computed embeddings and index signals.\nOsian Infotech Pvt Ltd Mumbai, India\nFrontend Developer March 2022 \u2013 February 2025\n\u2022Built and maintained productionReact/TypeScriptapplications, delivering responsive interfaces optimized for\nperformance across devices.\n\u2022Optimized application performance using React memoization, lazy loading, and code splitting, achieving improvedCore\nWeb Vitalsscores.\n\u2022ImplementedRedux and RTK Queryfor state management and API caching, ensuring consistent data flow across\ncomponents.\nProjects\nContent Creation FYI|Next.js, PostgreSQL, Supabase, Prisma, NextAuth, TypeScriptcontentcreation.fyi\n\u2022Built full-stackNext.jsplatform with PostgreSQL on Supabase, Prisma ORM, and API routes serving 200+ curated\ntools for content creators.\n\u2022ImplementedNextAuthauthentication with JWT sessions, protected API routes, and engagement features including\nbookmarking, upvoting, and server-side rendering for SEO optimization.",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume AI Engineer.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume AI Engineer.pdf",
+      "doc_id": "9a8c1fb639a8",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "9a8c1fb639a8_structure_aware_3",
+    "text": "bookmarking, upvoting, and server-side rendering for SEO optimization.\nEducation\nMumbai University Maharashtra, India\nBachelor of Science in Computer Science (BSc.CS); CGPA: 7.27 July 2019 \u2013 March 2022",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume AI Engineer.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume AI Engineer.pdf",
+      "doc_id": "9a8c1fb639a8",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "e124097084d9_structure_aware_0",
+    "text": "Akshay Dubey\nMumbai, India\n\u2642phone+91-8779197850 /envel\u2322peakshaydubey1818@gmail.com /linkedinakshay-dubey-2060 /githubakshay-dubey\nSummary\nFull Stack Engineer with 4+ years of experience building production-grade applications at enterprise scale. Currently atFynd\n(Reliance-backed), building AI-powered hiring platform with LLM-driven candidate intelligence, multi-model orchestration,\nand vector search. Previously delivered e-commerce modules for Fynd\u2019s retail platform serving 2,300+ brands.\nSkills\nFrontend: React.js, Next.js, TypeScript, JavaScript, Redux, Zustand, RTK Query, Tailwind CSS\nBackend: Node.js, Express.js, Python (FastAPI), GraphQL, REST APIs, Kafka, JWT Authentication\nAI/LLM: OpenAI API, OpenRouter, LangChain, LangGraph, RAG Pipelines, Vector Search, Langfuse (Observability)\nDatabases: PostgreSQL, pgvector, MongoDB, Redis, Prisma ORM\nCloud & DevOps: GCP (Cloud Run), Docker, CI/CD Pipelines, Vercel, Supabase, Firebase\nTools: Git, Sentry, PostHog, PG Boss, Cloudflare, MCP Protocol\nExperience\nFynd (Shopsense Retail Technologies) Mumbai, India\nAI Full Stack Engineer March 2025 \u2013 Present\nAI Hiring Platform (HireFirst/Orion):",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "doc_id": "e124097084d9",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "e124097084d9_structure_aware_1",
+    "text": "AI Full Stack Engineer March 2025 \u2013 Present\nAI Hiring Platform (HireFirst/Orion):\n\u2022Implementedmulti-model LLM council systemusing OpenRouter coordinating GPT-4, Claude, and Gemini through\na 3-stage pipeline: independent analysis, cross-model ranking, and chairman synthesis for enterprise hiring decisions.\n\u2022Extendedmulti-vector RAG pipelineusing OpenAI text-embedding-3-large with 7 semantic vectors (skills, role,\ndomain, seniority, functional, education, full-profile) stored inpgvectorfor candidate-job matching with weighted\nsimilarity scoring.\n\u2022Contributed toasynchronous processing pipelineusing PG Boss queue with multi-stage orchestration (Parse,\nDeduplicate, Score), exponential backoff retry, and fuzzy deduplication for bulk candidate processing.\n\u2022IntegratedLangfuse for LLM observability\u2014 enabling trace debugging across multi-model council sessions and\ntoken usage monitoring.\n\u2022Implemented tool-enabled AI agents usingMCP (Model Context Protocol)with circuit breakers on AI/storage\nservices for resilient document processing.\nE-commerce Platform (Fynd Commerce \u2014 2,300+ brands, 20K+ stores):",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "doc_id": "e124097084d9",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "e124097084d9_structure_aware_2",
+    "text": "E-commerce Platform (Fynd Commerce \u2014 2,300+ brands, 20K+ stores):\n\u2022Developed full-stacke-commerce bundle modulesusing React.js, TypeScript, andPython FastAPI, building REST\nAPIs, implementing pricing distribution algorithms, and integrating Kafka event streaming for commerce workflows.\n\u2022Built and enhancedPython FastAPIbackend services, collaborating with frontend and backend teams to design\nscalable REST APIs, optimize request handling, and ensure seamless frontend-backend integration.\n\u2022Implementedpolygon-based geospatial shipping zonesusing point-in-polygon calculations for hyperlocal delivery\noptimization.\n\u2022Served asMaintenance DRI, leveraging Sentry and PostHog to diagnose, troubleshoot, and resolve production issues\nacross the retail platform while improving application reliability.\nOsian Infotech Pvt Ltd Mumbai, India\nSoftware Developer March 2022 \u2013 February 2025\n\u2022Developed and maintained production applications usingReact.js,TypeScript, andPython FastAPI, building\nresponsive user interfaces, developing REST APIs, implementing backend business logic, and delivering seamless\nfrontend-backend integration for enterprise applications.",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "doc_id": "e124097084d9",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "e124097084d9_structure_aware_3",
+    "text": "frontend-backend integration for enterprise applications.\n\u2022Optimized application performance using React memoization, lazy loading, and code splitting, improving Core Web\nVitals and overall user experience.\n\u2022ImplementedRedux Toolkitand RTK Query for state management and API caching, ensuring efficient data flow and\nconsistent application state across modules.\nProjects\nContent Creation FYI|Next.js, PostgreSQL, Supabase, Prisma, NextAuth, TypeScriptcontentcreation.fyi\n\u2022Built full-stackNext.jsplatform with PostgreSQL on Supabase, Prisma ORM, and API routes serving 200+ curated\ntools for content creators.\n\u2022ImplementedNextAuthauthentication with JWT sessions, protected API routes, and engagement features including\nbookmarking, upvoting, and server-side rendering for SEO optimization.\nEducation\nMumbai University Maharashtra, India\nBachelor of Science in Computer Science (BSc.CS); CGPA: 7.27 July 2019 \u2013 March 2022",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "doc_id": "e124097084d9",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "7052fb5f793f_structure_aware_0",
+    "text": "Akshay Dubey\n+91-8779197850|akshaydubey1818@gmail.com |linkedin.com/in/akshay-dubey-2060 |github.com/akshay-dubey |\nMumbai, India\nSummary\nGenAI Engineer building production AI systems at enterprise scale.Builthigh-throughput resume processing\npipeline (100 resumes/\u00a12min), job queue infrastructure (31 job types), and AI service integrations.Contributed\ntomulti-vector RAG, multi-agent LLM orchestration, and semantic search platform serving 300+ organizations.\n4+ years software engineering with TypeScript, Python, Node.js, React, and PostgreSQL.\nSkills\nLanguages: TypeScript, Python, Node.js, JavaScript\nGenAI/LLM: OpenAI API, GPT-4, Claude API, Gemini, Embeddings, RAG, Prompt Engineering\nAI Infrastructure: PG Boss Queues, Circuit Breakers, Batch Processing, Retry Logic, LLM Orchestration\nDatabases: PostgreSQL, pgvector, Prisma ORM, Semantic Search\nFull Stack: React, Next.js, GraphQL, REST APIs\nExperience\nFynd (Shopsense Retail Technologies)Mumbai, India\nGenAI Engineer March 2025 \u2013 Present\n\u2022Built async resume import pipeline with PG Boss queue for 3-phase processing (Parse, Dedup, Score) with batch",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume GenAI Engineer Unico.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume GenAI Engineer Unico.pdf",
+      "doc_id": "7052fb5f793f",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "7052fb5f793f_structure_aware_1",
+    "text": "AI aggregation (8 resumes per call), circuit breakers on AI/storage services, and fuzzy deduplication with\nemail/phone normalization \u2013 processing100 resumes in under 2 minutes.\n\u2022Designed job queue infrastructure (PG Boss) handling 31 job types with configurable concurrency, retry with\nexponential backoff, and singleton deduplication powering all async AI operations including screening, watchlist\nnotifications, and message processing.\n\u2022Implemented retry logic for transient OpenAI API errors (\u201dPremature close\u201d), LinkedIn job title filter generation\n(removing locations and company names), and Ideal Candidate Profile (ICP) integration into AI scoring prompts.\n\u2022Enhanced text extraction for PDF/DOCX with mailto: hyperlink parsing via JSDOM and legacy .doc to .docx\nconversion with password detection.\n\u2022Contributed to AI platform featuring multi-vector RAG pipeline using OpenAI text-embedding-3-large (3072\ndimensions) with 7 semantic vectors (skills, role, domain, seniority, functional, education, full-profile) stored in\npgvector for candidate-job matching.\n\u2022Worked with multi-agent LLM Council system orchestrating GPT-4, Claude, and Gemini via OpenRouter with",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume GenAI Engineer Unico.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume GenAI Engineer Unico.pdf",
+      "doc_id": "7052fb5f793f",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "7052fb5f793f_structure_aware_2",
+    "text": "3-stage process: parallel responses, peer ranking, and chairman synthesis for consensus answers.\n\u2022Integrated with 9-factor deterministic fit scoring engine, Langfuse for LLM observability, and tool-enabled AI\nagents using MCP (Model Context Protocol) across the hiring platform serving 300+ enterprise organizations.\nOsian Infotech Pvt LtdMumbai, India\nFrontend Developer March 2022 \u2013 February 2025\n\u2022Migrated 5+ scalable React applications with TypeScript, delivering responsive interfaces optimized for\nperformance across devices.\n\u2022Optimized application performance by 20% using React memoization, lazy loading, and code splitting techniques,\nimproving Core Web Vitals scores.\n\u2022Implemented Redux and RTK Query for efficient state management and API caching, ensuring consistent data flow\nacross components.\n\u2022Developed reusable component library integrated with RESTful APIs and JWT authentication for secure user\naccess.\n\u2022Translated designs and wireframes into responsive, high-quality code while collaborating with cross-functional\nteams.\n\u2022Conducted code reviews and analyzed user feedback to optimize UI/UX, improving customer satisfaction by 15%.\nProjects",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume GenAI Engineer Unico.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume GenAI Engineer Unico.pdf",
+      "doc_id": "7052fb5f793f",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "7052fb5f793f_structure_aware_3",
+    "text": "Projects\nContent Creation FYI|Next.js, PostgreSQL, Supabase, Prisma, NextAuth, TypeScriptcontentcreation.fyi\n\u2022Built full-stack Next.js platform with PostgreSQL on Supabase serving 200+ tools with NextAuth authentication,\nbookmarking, upvoting, and SSR for SEO optimization.",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume GenAI Engineer Unico.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume GenAI Engineer Unico.pdf",
+      "doc_id": "7052fb5f793f",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "7052fb5f793f_structure_aware_4",
+    "text": "Education\nMumbai UniversityMaharashtra, India\nBachelor of Science in Computer Science (BSc.CS); CGPA: 7.27 July 2019 \u2013 March 2022",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume GenAI Engineer Unico.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume GenAI Engineer Unico.pdf",
+      "doc_id": "7052fb5f793f",
+      "position": 4
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_0",
+    "text": "PRACTICAL INTERVIEW GUIDE\nGenAI Interview\nQuestions\nCrack AI & GenAI Roles with Confidence\nLLMs &\nTransformersPrompt\nEngineeringRAG &\nVector DBs\nAI Agents &\nLangChainFine-tuning\n& LoRAEvaluation &\nProduction\nShort, precise answers for quick revision\u219250\nRESNUR AI",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_1",
+    "text": "What is Generative AI? How is it different from traditional AI?\nANSWER\nTraditional AI classifies, predicts, or decides based on patterns \u2014 discriminative modeling.\nGenerative AI creates new content that didn't exist before \u2014 text, images, code, audio.\nSimple way I think about it: traditional AI answers \"what is this?\" Generative AI answers\n\"create something new.\" A spam classifier is traditional AI. ChatGPT writing an email is\ngenerative AI.\nDISCRIMINATIVEGENERATIVE\nWhat is a Large Language Model?\nANSWER\nAn LLM is a deep learning model trained on massive text data to understand and generate\nhuman language. What makes them \"large\" is scale \u2014 billions of parameters trained on\ninternet-scale data using Transformer architecture.\nThe key capability that emerges at scale is generalization \u2014 performing tasks they were\nnever explicitly trained for. GPT-3 has 175B parameters. GPT-4 is estimated around 1 trillion.\nSCALEGENERALIZATION\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf0791Questions 1 & 2 FUNDAMENTALS",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_2",
+    "text": "Explain the Transformer architecture. Why did it replace RNNs?\nANSWER\nTransformer was introduced in \"Attention Is All You Need\" (2017). Core innovation: self-\nattention \u2014 every token attends to every other token simultaneously instead of sequentially.\nRNNs had two problems: no parallelization and vanishing gradients causing long-range\ndependency failures. Transformers solved both \u2014 full parallelization and direct token-to-\ntoken attention regardless of distance.\nThree variants: decoder-only (GPT), encoder-only (BERT), encoder-decoder (T5).\nSELF-ATTENTIONVS RNNS\nWhat is the attention mechanism?\nANSWER\nAttention decides which parts of the input to focus on when processing each token.\nTechnically: three matrices \u2014 Query (\"what am I looking for?\"), Key (\"what does each token\noffer?\"), Value (\"what information does each token carry?\"). Attention scores = dot product\nof Query and Key, softmaxed into weights, applied to Values.\nSelf-attention means every token attends to every other token. Multi-head attention runs\nthis in parallel \u2014 each head learns different relationship types.\nQ/K/V MATRICESMULTI-HEAD\n\uf06aREVISE & PREPARE FOR GENAI ROLES",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_3",
+    "text": "Q/K/V MATRICESMULTI-HEAD\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf0793Questions 3 & 4 FUNDAMENTALS",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_4",
+    "text": "What is a token? How does tokenization work?\nANSWER\nA token is the basic unit an LLM processes \u2014 roughly word pieces, not full words.\n\"unhappiness\" \u2192  [\"un\", \"happiness\"] = 2 tokens. Rule of thumb: 1 token \u2248  0.75 words. 1000\ntokens \u2248  750 words.\nWhy it matters: context windows are measured in tokens, API costs are per token, and tasks\nlike counting letters are hard because LLMs operate on tokens not characters.\nMost common method: Byte Pair Encoding (BPE) \u2014 merges most frequent character pairs\niteratively.\nBPE TOKENIZERTOKEN BUDGET\nWhat is a context window?\nANSWER\nThe maximum text \u2014 in tokens \u2014 an LLM can process in a single call. Everything outside is\ninvisible to the model.\nGPT-3: 4K tokens. GPT-4 Turbo: 128K. Gemini 1.5 Pro: 1M.\nPractical impact: conversation history gets truncated, RAG context must fit within the\nwindow, long documents need chunking. Important nuance: \"lost in the middle\" \u2014 LLMs\nperform worse on information buried in the middle of long contexts vs beginning or end.\nCONTEXT LIMITLOST IN MIDDLE\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf0795Questions 5 & 6 FUNDAMENTALS",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 4
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_5",
+    "text": "What is hallucination? How do you reduce it?\nANSWER\nHallucination is when an LLM generates confident but factually wrong information. It\nhappens because LLMs predict statistically likely tokens \u2014 optimizing for plausibility, not\ntruth.\nThree types: factual (wrong facts), faithfulness (contradicts provided context), temporal\n(outdated info stated as current).\nMitigation: RAG to ground responses in real documents, lower temperature for factual tasks,\ninstruct model to say \"I don't know\" when uncertain, output validation against source\ndocuments, LLM-as-Judge evaluation.\nHALLUCINATIONSMITIGATIONS\nWhat is Temperature, Top-P, and Top-K?\nANSWER\nAll control output randomness during token sampling.\nTemperature scales probability distribution. 0 = deterministic (always picks highest\nprobability token). 1 = default. Above 1 = more creative, less coherent. I use 0 for code and\nfactual tasks, 0.7 for conversation.\nTop-K limits sampling to K most likely tokens. Top-P (nucleus sampling) samples from the\nsmallest token set whose cumulative probability exceeds P \u2014 more adaptive than Top-K.\nIn practice: tune temperature first, keep Top-P around 0.9 as secondary control.\nSAMPLINGNUCLEUS SAMPLING",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 5
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_6",
+    "text": "SAMPLINGNUCLEUS SAMPLING\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf0797Questions 7 & 8 FUNDAMENTALS",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 6
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_7",
+    "text": "Difference between GPT, BERT, and T5?\nANSWER\nGPT \u2014 decoder-only. Predicts next token left-to-right. Best for ge neration: chat,\ncompletion, code.\nBERT \u2014 encoder-only. Predicts masked tokens bidirectionally. Best for\nunderstanding: classi fication, NER, semantic search.\nT5 \u2014  encoder-decoder. Frames everything as t ext-to-text. Best for se q-to-seq:\nsummarization, translation, QA .\nRule: need to generate \u2192  GPT family. Need to classi fy/understand \u2192  BERT\nfamily. Need flexible seq-to-seq \u2192  T5 family.\nGPT VS BERTENCODER/DECODER\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf0799Question 9 FUNDAMENTALS",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 7
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_8",
+    "text": "What is prompt engineering? Key techniques?\nANSWER\nDesigning an d optimizing inputs to get reliable, high-quality LLM  outputs.\nKey techniques I use:\n\u2192 Zero-shot \u2014 ask  directly, no examples\n\u2192 Few-shot \u2014 3-5 examples be fore actual request, improves consistency\ndramatically\n\u2192 Chain of Thought \u2014 \"think step by step,\" forces reaso ning be fore answering\n\u2192 System prompts \u2014 set behavior, persona, constraints, output format\n\u2192 Role prompting \u2014  \"You are a se nior se curity engineer reviewing this code\"\n\u2192 Output formatting \u2014  explicitly spe cify JSON, structure, length\nPROMPT ENGCOT / SYSTEM\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07910Question 10 FUNDAMENTALS",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 8
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_9",
+    "text": "What is RAG? How does it work?\nANSWER\nRAG grounds LLM responses in retrieved external documents instead of relying on training\ndata \u2014 solving hallucination and knowledge staleness.\nHow it works: chunk documents \u2192  embed chunks \u2192  store in vector DB \u2192  at query time,\nembed query \u2192  retrieve top-K similar chunks \u2192  pass chunks + query to LLM \u2192  LLM\ngenerates answer grounded in retrieved context.\nKey components: chunking strategy, embedding model, vector database, reranker\n(optional), LLM generator, evaluation layer.\nKNOWLEDGE RETRIEVALVECTOR INGESTION\nRAG vs Fine-tuning \u2014 when do you use each?\nANSWER\nRAG is for knowledge. Fine-tuning is for behavior.\nUse RAG when: knowledge changes frequently, you need source citations, working with\nprivate documents, limited compute budget. Faster to implement, cheaper to maintain, more\nauditable.\nUse fine-tuning when: you need consistent tone/style/format, domain has specialized\nvocabulary, prompt engineering can't achieve the behavior, latency is critical and shorter\nprompts help.\nMost common mistake: jumping to fine-tuning before exhausting RAG and prompt\nengineering. Best production systems often combine both.\nRAG VS FINE-TUNINGDESIGN CHOICE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 9
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_10",
+    "text": "engineering. Best production systems often combine both.\nRAG VS FINE-TUNINGDESIGN CHOICE\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07911Questions 11 & 12 FUNDAMENTALS",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 10
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_11",
+    "text": "What are embeddings?\nANSWER\nDense numerical vector representations where semantic similarity = geometric proximity.\nClassic example: \"king\" - \"man\" + \"woman\" \u2248  \"queen\" in embedding space.\nGenerated by passing text through an encoder model and taking output representations \u2014\ntypically mean pooling of token embeddings.\nUsed for: semantic search, RAG retrieval, clustering, classification, duplicate detection.\nCritical rule: always use the same embedding model for indexing and querying \u2014 mixing\nmodels breaks the semantic space.\nDENSE VECTORSEMBEDDING MODELS\nWhat is a vector database?\nANSWER\nPurpose-built to store and query high-dimensional vectors via similarity search. Core\noperation: given a query vector, find K most similar vectors.\nUses Approximate Nearest Neighbor (ANN) algorithms \u2014 typically HNSW \u2014 for sub-linear\nsearch time instead of exact O(n) comparison.\nSimilarity metrics: cosine similarity (text), dot product (OpenAI embeddings), Euclidean\ndistance (image embeddings).\nMy choices: ChromaDB for prototyping, Pinecone for managed production, Qdrant for self-\nhosted production, FAISS for raw Python performance.\nANN SEARCHHNSW INDEXING\n\uf06aREVISE & PREPARE FOR GENAI ROLES",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 11
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_12",
+    "text": "ANN SEARCHHNSW INDEXING\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07913Questions 13 & 14 FUNDAMENTALS",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 12
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_13",
+    "text": "What is LangChain?\nANSWER\nOpen source framework providing abst ractions for bu ilding LLM  appl ications \u2014\nchains, age nts, memory, document loade rs, vector store integrations, output\npar sers.\nCore components:\n\u2192 Chains \u2014 sequences of LLM  calls via LCEL\n\u2192 Agents \u2014 LLM  that picks an d uses tools dy namically\n\u2192 Memory \u2014 conversation history manage ment\n\u2192 Document loade rs \u2014 100+  dat a so urce integrations\n\u2192 Output par sers \u2014 structure respo nses into Pydan tic, JSON\nHonest take: abst ractions can be leaky. For simple use case s I sometimes pr efer\ndirect LLM  calls. For complex multi-step appl ications it sav es significant time.\nORCHESTRATORLCEL COMPOSITION\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07915Question 15 FUNDAMENTALS",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 13
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_14",
+    "text": "What is LangGraph? When use it over LangChain?\nANSWER\nLangGraph builds stateful, graph-based agent workflows on top of LangChain. Key\ndifference: LangChain builds linear chains, LangGraph builds cyclical graphs.\nReal agent tasks need loops \u2014 try something, check result, retry if needed. LangChain can't\nexpress this. LangGraph can.\nCore concepts: Nodes (processing steps), Edges (transitions), Conditional edges (branching\non state), State (shared typed dictionary), Human-in-the-loop (pause for approval).\nUse LangGraph when: tasks require loops/retries, multi-agent collaboration, human\napproval checkpoints, or complex branching logic.\nSTATEFUL GRAPHCYCLICAL LOOPS\nWhat is an AI Agent? How does ReAct work?\nANSWER\nAn agent is an LLM that plans, acts, observes results, and iterates toward a goal \u2014 unlike a\nchatbot that just responds.\nReAct pattern \u2014 Reasoning + Acting:\nThought: I need to find X\nAction: search(\"X\")\nObservation: result\nThought: now I can answer\nAnswer: final response\nRepeats until goal is reached. Practical challenges: infinite loops without stopping conditions,\ntool errors need graceful handling, costs can spiral with many steps.\nREACT LOOPAGENTIC PLANNING",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 14
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_15",
+    "text": "tool errors need graceful handling, costs can spiral with many steps.\nREACT LOOPAGENTIC PLANNING\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07916Questions 16 & 17 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 15
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_16",
+    "text": "LlamaIndex vs LangChain \u2014 what's the difference?\nANSWER\nLlamaIndex \u2014 data framework. Primary strength: ingesting, indexing, retrieving over your\nown data. 100+ data connectors, sophisticated indexing (knowledge graphs, hierarchical\nindices). Best for RAG pipelines.\nLangChain \u2014 workflow framework. Primary strength: chaining LLM calls, agents, multi-step\norchestration. Best for complex LLM applications.\nSimple rule: data retrieval challenge \u2192  LlamaIndex. Workflow orchestration challenge \u2192\nLangChain. Many production systems use both together.\nDATA INGESTIONWORKFLOW ORCHESTRATOR\nWhat is chunking? What strategies do you know?\nANSWER\nSplitting documents into smaller pieces before embedding for RAG. One of the most\nimpactful decisions \u2014 poor chunking is the most common reason RAG systems fail.\nStrategies:\n\u2192 Fixed-size \u2014 split every N tokens, always add overlap\n\u2192 Recursive character splitting \u2014 tries paragraphs \u2192  sentences \u2192  words. LangChain\ndefault.\n\u2192 Semantic chunking \u2014 split where embedding similarity drops. Higher quality, more\nexpensive.\n\u2192 Structure-aware \u2014 split on headers/sections for PDFs, functions for code",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 16
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_17",
+    "text": "expensive.\n\u2192 Structure-aware \u2014 split on headers/sections for PDFs, functions for code\n\u2192 Hierarchical \u2014 large chunks for context, small chunks for precise retrieval\nTypical parameters: 512-1024 token chunks, 10-20% overlap.\nSEMANTIC CHUNKINGRECURSIVE SPLITTING\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07918Questions 18 & 19 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 17
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_18",
+    "text": "What is a reranker? Why use one?\nANSWER\nA reranker is a c ross-encoder model that scores qu ery-document pai rs together\n\u2014 more accurate than bi-encoder embedding similarity alone.\nProblem it solves: top-K chunks by cosine similarity aren't always the most\nrelevant for an swering the spe cific question.\nPattern: retrieve 20-50 c hunks with fast vector search \u2192  rerank with cross-\nencoder \u2192  pass t op 3- 5 to LLM . Popular o ptions: Cohere Rerank, BGE Reranker.\nTrade off: more accurate but slower than embedding se arch. Worth it for\ncomplex questions where relevance differs from similarity.\nCROSS-ENCODERTWO-STAGE RAG\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07920 Question 20 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 18
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_19",
+    "text": "How do you evaluate a RAG system?\nANSWER\nTwo dimensions: retrieval quality and ge neration quality.\nRetrieval metrics (RAGAS):\n\u2192 Context Precision \u2014 retrieved chunks that are relevant\n\u2192 Context Recall \u2014 relevant information that was retrieved\nGeneration metrics (RAGAS):\n\u2192 Faithfulness \u2014  answer gr ounded in context (hallucination measu re)\n\u2192 Answer Relevance \u2014 answer addr esses the question\n\u2192 Answer Correctness \u2014  factually correct (needs ground truth)\nEvaluation appr oaches: human evaluation (accurate, doesn't scale), LLM -as-\nJudge  (scalable), ground truth QA  dat ase ts. P roduction monitoring: latency, user\nfeedbac k, fallbac k rate, chunk hit rate.\nKey lesson: build your evaluation dat ase t before building the system.\nRAGAS METRICSLLM-AS-A-JUDGE\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07921 Question 21 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 19
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_20",
+    "text": "Walk me through fine-tuning a model.\nANSWER\nStep 1 \u2014  Define objective: what spe cific behavior am  I improving? This\ndetermines everything.\nStep 2 \u2014 Prepar e dat ase t: instruction-respo nse pai rs, minimum 500- 5000\nexamples. Qu ality beats qu antity.\nStep 3 \u2014  Choose appr oach: Full fine-tuning (max performance, max compute) or\nLoRA/QLoRA (par ameter efficient, 90% of teams use this).\nStep 4 \u2014 Train: learning rate 1e-4 to 2e-4 for LoRA, 2-5 epochs, using\nHuggingFace PEFT + Transformers or Axolotl.\nStep 5 \u2014  Evaluate: compar e agai nst base  model and pr ompt-engineered\nbase line on eval dat ase t.\nStep 6 \u2014 Deploy: merge LoRA weights or se rve adap ter se par ately.\nPEFT TUNINGDATA INGESTION\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07922 Question 22 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 20
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_21",
+    "text": "What is LoRA and QLoRA?\nANSWER\nLoRA injects small trainable matrices into frozen attention layers \u2014 dramatically fewer\ntrainable parameters.\nTechnically: for weight matrix W (d\u00d7d), adds matrices A (d\u00d7r) and B (r\u00d7d) where r is rank\n(typically 4-64). Effective weight = W + AB. Only A and B are trained \u2014 10,000x fewer\nparameters than full fine-tuning.\nBenefits: trains on consumer GPUs, adapters are tiny files, multiple adapters swappable on\nsame base model.\nQLoRA extends this by quantizing the frozen base model to 4-bit (NF4), training LoRA\nadapters in 16-bit. Lets you fine-tune 65B models on a single 48GB GPU.\nLOW-RANK ADAPTATIONQLORA NORMALFLOAT4\nWhat is quantization?\nANSWER\nReduces numerical precision of model weights \u2014 smaller memory, faster inference, some\nquality tradeoff.\nFP32 \u2192  4 bytes/param. FP16/BF16 \u2192  2 bytes. INT8 \u2192  1 byte. INT4 \u2192  0.5 bytes. A 7B model:\nFP32 = 28GB, INT4 = ~3.5GB.\nMethods: GPTQ (post-training, calibration-based), bitsandbytes (INT8/INT4 in Python),\nGGUF format (llama.cpp, Ollama for local).\nSweet spot for production: INT8 (minimal quality loss). INT4 excellent for local deployment.\nBF16 preferred for training stability.",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 21
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_22",
+    "text": "BF16 preferred for training stability.\nQUANTIZATION INT8/INT4GGUF SERVING\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07923 Questions 23 & 24 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 22
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_23",
+    "text": "Zero-shot vs one-shot vs few-shot?\nANSWER\nDescribes how many examples the model gets in the prompt \u2014 no weight updates involved.\nZero-shot: just ask. Works for simple, clear tasks. One-shot: one example showing expected\nformat. Few-shot: 2-10 examples. Best for structured tasks, extraction, classification with\nspecific output formats.\nWhy it works: LLMs have seen enough pretraining data that examples in the prompt activate\nrelevant pattern-matching. You're reminding the model, not teaching it.\nPractical tip: for any task where output consistency matters \u2014 use few-shot with diverse,\nrepresentative examples including edge cases.\nIN-CONTEXT LEARNINGFEW-SHOT EVALS\nWhat is RLHF?\nANSWER\nRLHF \u2014 Reinforcement Learning from Human Feedback \u2014 transforms a raw pretrained LLM\ninto a helpful, safe assistant.\nThree stages:\nSFT (Supervised Fine-Tuning) \u2014 fine-tune on human-written demonstrations of good\nbehavior.\nReward Model Training \u2014 show human raters response pairs, train a model to predict human\npreferences, outputs scalar quality scores.\nPPO Fine-Tuning \u2014 use reward model as reward signal in RL loop. LLM generates responses,\nreward model scores them, LLM updates to score higher.",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 23
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_24",
+    "text": "reward model scores them, LLM updates to score higher.\nResult: ChatGPT-style helpfulness. GPT-4, Claude, Gemini all use variants of this.\nHUMAN FEEDBACKPPO RLHF LOOP\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07925 Questions 25 & 26 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 24
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_25",
+    "text": "What is Constitutional AI?\nANSWER\nAnthropic's alignment approach \u2014 replaces human feedback with explicit principles (a\n\"constitution\") to guide AI behavior.\nProcess: model generates responses \u2192  AI critic evaluates them against the constitution \u2192\nmodel revises responses based on critique \u2192  revised responses train a preference model.\nKey advantage over RLHF: more scalable (no human raters for every example), principles\nare explicit and auditable, handles harmful content without humans directly labeling it.\nUsed to train Claude. RLAIF (Reinforcement Learning from AI Feedback) is the general\ncategory \u2014 Constitutional AI is a specific implementation.\nANTHROPIC CLAUDERLAIF PRINCIPLES\nSemantic search vs keyword search?\nANSWER\nKeyword search (BM25, TF-IDF) \u2014 exact term matching. Fast, transparent, precise for\nknown terms, product codes, names.\nSemantic search \u2014 embedding-based meaning similarity. Handles synonyms, paraphrases,\nconceptual relationships. \"cardiac arrest\" finds \"heart attack.\"\nNeither is universally better. Best production RAG systems use hybrid search \u2014 combine\nBM25 scores with semantic similarity via Reciprocal Rank Fusion. Consistently outperforms",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 25
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_26",
+    "text": "BM25 scores with semantic similarity via Reciprocal Rank Fusion. Consistently outperforms\neither alone. Weaviate and Qdrant support this natively.\nBM25 KEYWORDVECTOR SEMANTIC\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07927Questions 27 & 28 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 26
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_27",
+    "text": "What is a system prompt? How do you use it?\nANSWER\nInstructions provided before the conversation that set model behavior, persona, constraints,\nand output format for the entire session. Users typically don't see it.\nI use it for: defining role (\"You are a senior financial analyst\"), output format (\"Always\nrespond in valid JSON\"), constraints (\"Never discuss competitor products\"), context injection,\nand safety guardrails.\nPractical tips: be specific not vague. Most important instructions first and last (lost in the\nmiddle applies here too). Always test against adversarial inputs \u2014 users will attempt \"ignore\nall previous instructions.\"\nSYSTEM PROMPTADVERSARIAL INPUTS\nRAG vs Long Context \u2014 when to use each?\nANSWER\nLong context (Gemini 1M tokens, Claude 200K) \u2014 dump entire knowledge base in context.\nSimple, no retrieval infrastructure. RAG \u2014 retrieve only relevant chunks at query time. More\ncomplex, more targeted.\nLong context wins when: knowledge base fits comfortably, holistic reasoning across all\ndocuments needed, unpredictable query patterns.\nRAG wins when: knowledge base too large for any context window, cost matters (fewer",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 27
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_28",
+    "text": "RAG wins when: knowledge base too large for any context window, cost matters (fewer\ntokens = lower cost), freshness matters, citations needed, latency is critical.\nAs context windows grow, RAG becomes less necessary for small knowledge bases. For\nenterprise-scale collections \u2014 RAG remains essential.\nTOKEN LENGTHCONTEXT STRATEGY\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07929Questions 29 & 30 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 28
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_29",
+    "text": "What is GraphRAG?\nANSWER\nStandard RAG retrieves chunks by semantic similarity \u2014 loses relationship structure between\nentities. GraphRAG builds a knowledge graph alongside vector embeddings.\nEntities and relationships extracted from documents form a graph. Simple factual queries\nuse vector retrieval. Complex relational queries traverse the graph \u2014 \"what are all\nsubsidiaries of Company X and their performance?\" requires connecting information across\nmany documents.\nResult: dramatically better on multi-hop reasoning and entity relationship queries. Tradeoff:\nexpensive to build (LLM calls for entity extraction), slower indexing, harder to maintain.\nMicrosoft open-sourced their implementation.\nKNOWLEDGE GRAPHMULTI-HOP SEARCH\nWhat is data poisoning? How do you defend against it?\nANSWER\nAdversarial attack corrupting training data to manipulate model behavior \u2014 either\ndegrading general performance or implanting backdoor behaviors.\nTypes:\n\u2192 Backdoor attacks \u2014 model behaves normally except when specific trigger present\n\u2192 Label flipping \u2014 attacker flips correct labels in training data\n\u2192 Prompt injection (inference-time) \u2014 malicious instructions injected into user input",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 29
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_30",
+    "text": "\u2192 Prompt injection (inference-time) \u2014 malicious instructions injected into user input\nDefenses: data provenance tracking, statistical anomaly detection on training data,\nsanitization pipelines, differential privacy during training. For LLM apps: input validation,\noutput filtering, system prompt hardening, privilege separation for tool access.\nDATA POISONINGTHREAT MITIGATION\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07931Questions 31 & 32 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 30
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_31",
+    "text": "What is Mixture of Experts (MoE)?\nANSWER\nArchitecture where only a su bse t of model par ameters ac tivate per token \u2014 not\nall of them.\nStructure: N expert networks + a router. For each token, router se lects top-2\nexperts. O nly those experts pr ocess that token. Others ar e idle.\nBenefits: much larger total capac ity without proportional compute cost. GPT-4\nrumored ~1.8T par ameters, activates ~220B per token. Mixtral 8x7B activates\n13B  effective par ameters from 47B total.\nChallenges: load bal ancing ac ross e xperts, communication overhead i n\ndistributed training, more complex serving infrastructure.\nSPARSE MOEROUTING EXPERTS\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07933Question 33 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 31
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_32",
+    "text": "Design a multi-agent architecture.\nANSWER\nMy design process:\nDecompose the task  \u2014 break into distinct subtasks that benefit from\nspe cialization or par allelization.\nDefine age nt roles \u2014 each age nt gets a spe cific role, focused sy stem prompt, and\nlimited relevant tools. Specialization improves performance.\nDesign orchestration \u2014 hierarchical (orchestrator de legat es to workers) for\nmost control. Parallel for independent subtasks. Sequential pipeline for linear\nworkflows.\nManage  shared st ate \u2014 typed st ate dictionary all age nts read an d w rite\n(LangGraph 's state model).\nHandle failures \u2014 retry logic, fallbac k age nts, human escalation pat hs, max\niteration limits to prevent infinite loops.\nFrameworks: CrewAI for role-base d collabo ration, AutoGen for conversational\nmulti-age nt, LangGraph  for maximum workflow control.\nMULTI-AGENTLANGGRAPH STATE\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07934Question 34 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 32
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_33",
+    "text": "What is prompt injection? How do you defend?\nANSWER\nAttack where malicious content in input hijacks LLM  behavior by overriding\nsystem instructions. Di rect: user types \"ignore all previous instructions\". Indirect:\nattacker embeds m alicious instructions in content LLM  retrieves.\nDefenses:\n\u2192 Input validat ion \u2014 filter obvious injection patt erns\n\u2192 Privilege separ ation \u2014 LLM  doesn't directly access se nsitive operations\n\u2192 Sandbo xed tools \u2014 minimal permissions pe r tool\n\u2192 Secondar y classi fier \u2014 small model screens inputs be fore main LLM\n\u2192 Output validat ion \u2014 check outputs be fore executing ac tions\n\u2192 Instruction hierarchy \u2014 clearly separ ate system vs user content in prompt\nstructure\nPROMPT INJECTIONDEFENSE SANDBOX\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07935Question 35 INTERMEDIATE",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 33
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_34",
+    "text": "How does a Transformer generate text?\nANSWER\nAutoregressively \u2014 one token at a time.\nForward pass \u2192  attention across al l previous tokens \u2192  output logits (one score\nper vocabu lary token) \u2192  softmax \u2192  appl y temperature/Top-K/Top-P \u2192  sam ple\none token \u2192  appe nd to sequence \u2192  repeat.\nKey optimization: KV-cache stores Keys an d Values from previous tokens so  they\naren't recomputed each step. Makes ge neration O(n) instead o f O(n\u00b2). Critical\nfor pr oduction inference spe ed.\nMasked se lf-attention ensures each token only attends t o previous tokens, not\nfuture ones \u2014 maintaining the autoregressive property.\nATTENTION KEY/VALUEPAGEDATTENTION\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07936Question 36 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 34
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_35",
+    "text": "What is PEFT? Different methods?\nANSWER\nParameter Eff icient Fine-Tuning \u2014  adap ts pr etrained m odels by training only a\nsmall fraction of par ameters.\nMethods:\n\u2192 LoRA \u2014 trainable low-rank matrices in attention layers. M ost widely used.\n\u2192 Prefix Tuning \u2014  learnable soft prompt tokens prepended at  every layer\n\u2192 Prompt Tuning \u2014  learnable tokens at  input embedding layer only. Simpler\nthan prefix tuning.\n\u2192 Adap ter layers \u2014 small bottleneck feedforward layers inserted inside each\nTransformer block\n\u2192 (IA)\u00b3 \u2014 scales ac tivations with learned vectors. M inimal par ameters.\nIn practice LoRA has largely won. Achieves competitive performance with 0.1-1%\nof total par ameters trained.\nPARAMETER EFFICIENCYADAPTER TUNING\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07937Question 37 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 35
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_36",
+    "text": "What is model distillation?\nANSWER\nTraining a smaller \"student\" model to mimic a larger \"teacher\" model's behavior \u2014 achieving\nsimilar performance at fraction of size and cost.\nKey insight: train student on teacher's soft probability distributions (full output logits), not\njust hard correct labels. Soft labels carry more information about which wrong answers are\nmore plausible.\nWhen I'd use it: production latency requirements large models can't meet, cost optimization\nat high volume, edge deployment with size constraints, or when a specialized small model\ncan match a large general model on a specific task.\nExamples: DistilBERT is 40% smaller than BERT with 97% of performance. Phi-2 (2.7B)\nachieves remarkable performance through high-quality distilled training data.\nSTUDENT-TEACHERLOGITS MIMICRY\nWhat is the \"lost in the middle\" problem?\nANSWER\nLLMs perform significantly better on information at the beginning and end of long contexts\n\u2014 and substantially worse on information buried in the middle.\nFor RAG: even if you retrieve the right chunks, if the most relevant chunk is in the middle of a\nlong context, the model may effectively ignore it.",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 36
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_37",
+    "text": "long context, the model may effectively ignore it.\nHow I handle it: put highest relevance chunk first, second highest last, rest in middle\n(leverages primacy and recency effects). Retrieve fewer, more targeted chunks. Compress\nchunks before passing to generator. Use iterative retrieval with focused context per step\ninstead of one large retrieval.\nPRIMACY & RECENCYPROMPT COMPRESSION\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07938Questions 38 & 39 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 37
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_38",
+    "text": "How do you ensure reliable structured output from LLMs?\nANSWER\nLLM s trained on natural language  often produce almost-valid JSON with subtle\nerrors.\nTechniques in order of reliability:\n\u2192 Native function calling / structured output mode (most reliable) \u2014 OpenAI,\nAnthropic suppo rt constrained de coding to enforce valid JSON schema.\n\u2192 Pydan tic + instructor library \u2014 define schema as Pydan tic model, instructor\nhandles retries au tomatically when output doesn't match.\n\u2192 Few-shot examples \u2014 show 3-5 exact JSON format examples. Dr amatically\nimproves consistency.\n\u2192 Retry with error feedbac k \u2014 catch par se exceptions, send error bac k to LLM :\n\"your output was invalid be cause X, fix it.\" 1-2 retries resolves most failures.\n\u2192 Constrained de coding (open source) \u2014 outlines, guidan ce libraries enforce\ngrammar at  token sam pling level.\nSTRUCTURED OUTPUTSPYDANTIC SCHEMAS\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07940Question 40 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 38
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_39",
+    "text": "What is semantic caching?\nANSWER\nStores pr evious LLM  query-respo nse pai rs an d returns cached respo nses for\nsemantically similar f uture queries \u2014 without making new API calls.\nUnlike standar d caching (exact match only), semantic caching embeds incoming\nqueries, searches cache vector store, returns cached respo nse if similarity\nexceeds t hreshold.\nCost impac t: significant for appl ications with repetitive patt erns \u2014 customer\nservice, FAQ bo ts, internal knowledge  base s. If 40% of queries ar e semantically\nequivalent to previous ones, eliminate 40% of API costs.\nImplementation: GPTCache (standar d library), Redis with vector se arch. Key\npar ameter: similarity threshold \u2014  tune carefully to avoid returning w rong\ncached an swers.\nSEMANTIC CACHINGGPTCACHE / REDIS\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07941Question 41 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 39
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_40",
+    "text": "What is RLAIF?\nANSWER\nReinforcement Learning from AI Feedbac k \u2014 replaces human raters in RLHF\nwith an AI model doing the evaluation.\nConstitutional AI is Anthropic's spe cific RLAIF implementation: generate\nrespo nses \u2192  AI critic evaluates agai nst explicit principles \u2192  AI-generated\npreferences train reward m odel \u2192  RL fine-tuning w ith that reward m odel.\nWhy it matters: scales be tter than human annotation, principles ar e explicit and\nauditable. The field is moving toward RLAIF because human annotation is the\nbottleneck in alignment research at scale.\nRLAIF FEEDBACKCONSTITUTIONAL AI\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07942Question 42 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 40
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_41",
+    "text": "How do you handle long docum ents where chunks lose context?\nANSWER\nCommon problem \u2014 individual chunks often lack context to be meaningful alone.\nStrategies:\n\u2192 Contextual retrieval \u2014 use LLM  to generate brief context description for\neach chunk before embedding, prepend to chunk. Anthropic published this \u2014\ndramatically improves retrieval accuracy.\n\u2192 Parent document retrieval \u2014 small chunks for precise retrieval, return par ent\nlarger chunk to LLM . Precise retrieval, rich context.\n\u2192 Sentence window retrieval \u2014 embed at  sentence level, return surrounding\nsentences (\u00b13) to LLM .\n\u2192 Metadat a enrichment \u2014 attach document title, section heade r, dat e to each\nchunk. Include in text before embedding.\n\u2192 Summary index \u2014 hierarchical: document summary nodes + chunk nodes.\nBroad qu eries hit summaries, spe cific queries hit chunks.\nMETADATA CONTEXTANTHROPIC RETRIEVAL\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07943Question 43 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 41
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_42",
+    "text": "How do you build an evaluation dataset for LLMs?\nANSWER\nStep 1 \u2014  Define task  coverage : what question types will real users ask ? Factual,\nmulti-hop, summarization, compar ison? Sample from each.\nStep 2 \u2014 Collect QA  pai rs: from real user qu eries if available. Otherwise\nsynthetic \u2014 prompt LLM  with documents to generate diverse questions.\nStep 3 \u2014  Add gr ound truth: correct answer + source document(s) for each\nquestion.\nStep 4 \u2014 Include adv ersarial examples: unanswerable questions (model should\nsay  \"I don't know\"), am biguous qu eries, multi-document synthesis qu estions.\nStep 5 \u2014  Size: 100- 500 e xamples typically sufficient for RAG evaluation.\nMost important lesson: build the evaluation dat ase t before building the system.\nEvery architectural decision should be  measu red agai nst it.\nRAG EVALUATIONTEST DATASETS\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07944Question 44 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 42
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_43",
+    "text": "What is Chain of Thought prompting? When does it help?\nANSWER\nCoT asks the model to show reasoning steps before final answer. Forces externalization of\nintermediate computation.\nHelps significantly: multi-step math, logical reasoning, planning tasks, anything where\nanswer depends on intermediate steps.\nDoesn't help or hurts: simple factual retrieval, tasks where model's reasoning is confidently\nwrong (CoT just elaborates the error), high-speed low-latency applications (longer output =\nhigher cost).\nVariants: Self-consistency CoT \u2014 generate multiple chains, take majority answer. Tree of\nThoughts \u2014 explore multiple reasoning branches. Both improve reliability over single CoT for\ncomplex problems.\nREASONING CHAINTREE OF THOUGHTS\nOp en source vs closed source LLMs \u2014 when do you choose each?\nANSWER\nClosed source (GPT-4, Claude, Gemini): higher capability on complex reasoning, managed\ninfrastructure, no serving complexity. Downsides: data leaves your infrastructure, API costs\nscale with usage, model behavior can change without notice.\nOpen source (LLaMA 3, Mistral, Qwen): full data control, fine-tunable, cheaper at high",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 43
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_44",
+    "text": "Open source (LLaMA 3, Mistral, Qwen): full data control, fine-tunable, cheaper at high\nvolume, no rate limits, model version stability. Downsides: requires ML infrastructure\nexpertise, generally lower capability (gap narrowing fast).\nMy decision: prototype and low volume \u2192  closed source for speed. High volume, sensitive\ndata (healthcare/finance/legal), compliance requirements, or fine-tuning needed \u2192  open\nsource. Cost savings of self-hosted at scale are often compelling.\nOPEN VS CLOSEDDEPLOY COST\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07945Questions 45 & 46 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 44
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_45",
+    "text": "What is MMLU and how are LLMs benchmarked?\nANSWER\nMMLU \u2014  Massi ve Multitask  Language  Understanding \u2014  57 subjects from\nelementary to professional level. One of the most cited be nchmarks.\nOther key benchmarks:\n\u2192 HumanEval/MBPP \u2014 code generation\n\u2192 GSM8K \u2014 grade  school math reaso ning\n\u2192 TruthfulQA \u2014 measu res truthfulness v s plausible-sounding falsehoods\n\u2192 MT-Bench \u2014 multi-turn conversation, GPT-4 as j udge\n\u2192 LMSYS Chatbot Arena \u2014  real human preference voting. M ost reliable real-\nworld signal.\nImportant caveat: benchmark performance \u2260  production performance. Models\ncan be fine-tuned on benchmark dat a (contamination). Always evaluate on your\nspe cific use case  with your own evaluation dat aset before choosing a pr oduction\nmodel.\nMMLU BENCHMARKSCHATBOT ARENA\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07947Question 47 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 45
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_46",
+    "text": "How do you reduce hallucinations in production?\nANSWER\nLayered de fense \u2014 no single technique eliminates them.\nLayer 1 \u2014  RAG: ground respo nses in retrieved verified context. Instruct model to\nsay  \"I don't have information abo ut this\" when context doesn't contain the\nanswer.\nLayer 2 \u2014 Prompt mitigat ions: lower temperature, explicit uncertainty\ninstructions, ask  for citations pe r claim.\nLayer 3 \u2014  Consistency checking: generate multiple respo nses, flag i nconsistent\nones.\nLayer 4 \u2014 Output validat ion: NLI model checks if respo nse claims ar e entailed by\nsource documents.\nLayer 5 \u2014  LLM -as-Judge : separ ate LLM  evaluates faithfulness, flags l ow-\nconfidence respo nses.\nLayer 6 \u2014 Human escalation: route low-confidence respo nses to human review\nfor high-stakes appl ications.\nHonest answer: hallucinations cannot be completely eliminated. G oal is\ndetection and m itigat ion, not elimination.\nRELIABLE OUTPUTSHALLUCINATION GUARD\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07948Question 48 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 46
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_47",
+    "text": "What is model drift? How do you monitor LLMs in production?\nANSWER\nTwo forms: dat a dr ift (user qu ery patt erns change) and m odel drift (underlying\nmodel changes \u2014 espe cially closed so urce APIs updat ed by providers).\nWhat I monitor:\nInput: query length distribution, topic distribution, out-of-domain query rate.\nOutput: respo nse length, refusal rate, latency. Sudde n changes indicate\nproblems.\nQuality: sam ple 5% of production queries, evaluate with LLM -as-Judge  agai nst\nquality rubrics, track scores over time, alert on degradat ion.\nRAG-spe cific: context relevance scores, retrieval latency, fallbac k rate.\nUse r signals: thumbs u p/down, conversation abandonment, follow-up\nclarification questions.\nRegression testing: run eval dat ase t agai nst production regularly. For closed\nsource API users \u2014 always test new model versions agai nst your eval dat ase t\nbefore migrating.\nMODEL DRIFTPROMETHEUS METRICS\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07949Question 49 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 47
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_48",
+    "text": "Design a production RAG system for a company's internal knowledge\nbase.\nANSWER\nRequirements I'd clarify first: document count, formats, updat e frequency,\nconcurrent users, latency requirements, compliance constraints. Assuming 100K\ndocuments, mixed formats, weekly updat es, 1000 c oncurrent users, sub-3\nsecond respo nse, enterprise compliance.\nIngestion pipeline: format-spe cific loade rs \u2192  text extraction \u2192  metadat a\nenrichment (title, author, dat e, depar tment) \u2192  recursive chunking at  512  tokens\nwith 50 t oken overlap \u2192  contextual chunk enrichment \u2192  embed w ith text-\nembedding-3-small \u2192  index in Qdr ant (self-hosted for compliance, suppo rts\nhybrid se arch) \u2192  Airflow for sc heduled reindexing.\nQuery pipeline: multi-query generation (3 variants) \u2192  hybrid retrieval (semantic\n+ BM25, RRF fusion) \u2192  retrieve top 20 \u2192  rerank to top 5 \u2192  construct prompt \u2192\nLLM  generation \u2192  citation extraction.\nEvaluation: RAGAS eval suite offline, LLM -as-Judge  sam pling 5%  of production\nqueries, Langsm ith for tracing.\nInfrastructure: FastAPI bac kend, Redis se mantic cache (30%  cost reduction\ntarget), Kubernetes for sc aling, Prometheus an d G rafana for metrics.",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 48
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_49",
+    "text": "target), Kubernetes for sc aling, Prometheus an d G rafana for metrics.\nGuardrails: input validat ion agai nst injection, PII detection before external API\ncalls, output filtering, human escalation for low-confidence respo nses.\nSYSTEM DESIGNENTERPRISE RAG\n\uf06aREVISE & PREPARE FOR GENAI ROLES\n\uf08c Resnur AI +Follow \uf07950Question 50 ADVANCED",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 49
+    }
+  },
+  {
+    "chunk_id": "b0aaa54ea289_structure_aware_50",
+    "text": "\ud83d\ude80\nReady to Ace Your \nGenAI Interview?\nThese 50 questions cover the critical technical, system design, and production concepts expected of\nAI Engineers today. Master the details, focus on trade-offs (latency, cost, accuracy), and show\nstructured engineering thinking in your answers.\n\uf234Follow ResnurAI\n\ud83c\udf31 One critical GenAI topic explained simply. Every single day.\n\uf02eSave this Post\n\ud83d\udccc Save this \u2014 review it immediately before your next loop.\n\uf079Share & Repost\n\u267b Repost to share these questions with your engineering network.\n\uf08c Resnur AI +Follow \uf079\uf559Revision Complete! FINISH",
+    "metadata": {
+      "source_path": "/app/data/raw/Gen AI Interview Resources.pdf",
+      "title": "PRACTICAL INTERVIEW GUIDE",
+      "format": "pdf",
+      "filename": "Gen AI Interview Resources.pdf",
+      "doc_id": "b0aaa54ea289",
+      "position": 50
+    }
+  },
+  {
+    "chunk_id": "a7e5a889f518_structure_aware_0",
+    "text": "# API Design Guidelines",
+    "metadata": {
+      "source_path": "/app/data/raw/api_design_guidelines.md",
+      "title": "API Design Guidelines",
+      "format": "markdown",
+      "filename": "api_design_guidelines.md",
+      "doc_id": "a7e5a889f518",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "a7e5a889f518_structure_aware_1",
+    "text": "## Versioning\n\nAll public APIs are versioned in the URL path, e.g. `/v1/orders`. Breaking changes require a new\nversion prefix; additive changes (new optional fields, new endpoints) do not. A breaking change\nis defined as anything that would require an existing client to change its code to avoid an\nerror \u2014 this includes removing a field, renaming a field, or changing a field's type.\n\nWe support at most two major versions of any public API at once. When a third version ships, the\noldest is deprecated with a minimum 90-day sunset window, announced in the #api-changes channel\nand via the deprecation header `Sunset:` on every response.",
+    "metadata": {
+      "source_path": "/app/data/raw/api_design_guidelines.md",
+      "title": "API Design Guidelines",
+      "format": "markdown",
+      "filename": "api_design_guidelines.md",
+      "doc_id": "a7e5a889f518",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "a7e5a889f518_structure_aware_2",
+    "text": "## Request and Response Contracts\n\nEvery endpoint must define its request and response schema using Pydantic models. Raw dict\npayloads are not permitted in any service past the edge layer. Response envelopes follow a\nconsistent shape: `{\"data\": ..., \"meta\": {...}}` for success, `{\"error\": {\"code\": ..., \"message\":\n..., \"request_id\": ...}}` for failures.\n\nPagination uses cursor-based pagination for any list endpoint that can exceed 100 items, never\noffset-based \u2014 offset pagination degrades badly under concurrent writes and is disallowed in\ncode review.",
+    "metadata": {
+      "source_path": "/app/data/raw/api_design_guidelines.md",
+      "title": "API Design Guidelines",
+      "format": "markdown",
+      "filename": "api_design_guidelines.md",
+      "doc_id": "a7e5a889f518",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "a7e5a889f518_structure_aware_3",
+    "text": "## Idempotency\n\nAny endpoint that creates a resource (POST) and is not naturally idempotent must accept an\n`Idempotency-Key` header. Keys are stored for 24 hours; a repeated request with the same key\nwithin that window returns the original response rather than creating a duplicate resource.\nThis is mandatory for payment and refund endpoints without exception.",
+    "metadata": {
+      "source_path": "/app/data/raw/api_design_guidelines.md",
+      "title": "API Design Guidelines",
+      "format": "markdown",
+      "filename": "api_design_guidelines.md",
+      "doc_id": "a7e5a889f518",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "a7e5a889f518_structure_aware_4",
+    "text": "## Error Handling\n\nError codes are machine-readable, snake_case strings (e.g. `insufficient_inventory`), never raw\nHTTP status text. The HTTP status code communicates the category (4xx client error, 5xx server\nerror); the error code communicates the specific reason. Client-facing error messages must never\ninclude stack traces, internal hostnames, or database error text.",
+    "metadata": {
+      "source_path": "/app/data/raw/api_design_guidelines.md",
+      "title": "API Design Guidelines",
+      "format": "markdown",
+      "filename": "api_design_guidelines.md",
+      "doc_id": "a7e5a889f518",
+      "position": 4
+    }
+  },
+  {
+    "chunk_id": "a7e5a889f518_structure_aware_5",
+    "text": "## Rate Limiting\n\nPublic APIs are rate-limited per API key using a token bucket with a default of 100 requests per\nminute, burst of 20. Rate limit state is returned on every response via `X-RateLimit-Remaining`\nand `X-RateLimit-Reset` headers. Teams needing a higher limit for a specific integration file a\nrequest with the Platform team; ad hoc limit increases are not self-service.",
+    "metadata": {
+      "source_path": "/app/data/raw/api_design_guidelines.md",
+      "title": "API Design Guidelines",
+      "format": "markdown",
+      "filename": "api_design_guidelines.md",
+      "doc_id": "a7e5a889f518",
+      "position": 5
+    }
+  },
+  {
+    "chunk_id": "8d880870c725_structure_aware_0",
+    "text": "# Code Review Standards",
+    "metadata": {
+      "source_path": "/app/data/raw/code_review_standards.md",
+      "title": "Code Review Standards",
+      "format": "markdown",
+      "filename": "code_review_standards.md",
+      "doc_id": "8d880870c725",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "8d880870c725_structure_aware_1",
+    "text": "## Approval Requirements\n\nEvery pull request into `main` requires two approvals, at least one from a member of the owning\nteam's CODEOWNERS list. Exceptions: hotfixes tagged `urgent` may merge with one approval plus a\nfollow-up review within 24 hours; a new hire's first PR requires only one approval from their\nonboarding buddy (see the Onboarding Guide).",
+    "metadata": {
+      "source_path": "/app/data/raw/code_review_standards.md",
+      "title": "Code Review Standards",
+      "format": "markdown",
+      "filename": "code_review_standards.md",
+      "doc_id": "8d880870c725",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "8d880870c725_structure_aware_2",
+    "text": "## What Reviewers Check\n\nReviewers are expected to check, in priority order: correctness (does it do what it claims),\ntest coverage (is the new behavior tested, not just the happy path), API contract adherence (see\nAPI Design Guidelines), and readability. Style nits should be left as non-blocking comments\nprefixed `nit:` \u2014 blocking a PR on formatting alone is discouraged since CI already enforces\nformatting via `ruff` and `black`.",
+    "metadata": {
+      "source_path": "/app/data/raw/code_review_standards.md",
+      "title": "Code Review Standards",
+      "format": "markdown",
+      "filename": "code_review_standards.md",
+      "doc_id": "8d880870c725",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "8d880870c725_structure_aware_3",
+    "text": "## Test Coverage\n\nNew code must maintain or improve the file's existing test coverage; there is no fixed global\npercentage target, because a single hard threshold encourages padding tests rather than testing\nmeaningfully. CI will fail a PR if the diff's coverage drops by more than 5 percentage points\nrelative to the file's baseline.",
+    "metadata": {
+      "source_path": "/app/data/raw/code_review_standards.md",
+      "title": "Code Review Standards",
+      "format": "markdown",
+      "filename": "code_review_standards.md",
+      "doc_id": "8d880870c725",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "8d880870c725_structure_aware_4",
+    "text": "## Size and Scope\n\nPRs should be scoped to a single logical change. The soft guideline is under 400 changed lines;\nPRs larger than that should include a comment explaining why it wasn't split, since large PRs\nmeasurably take longer to review and have a higher post-merge defect rate internally.",
+    "metadata": {
+      "source_path": "/app/data/raw/code_review_standards.md",
+      "title": "Code Review Standards",
+      "format": "markdown",
+      "filename": "code_review_standards.md",
+      "doc_id": "8d880870c725",
+      "position": 4
+    }
+  },
+  {
+    "chunk_id": "8d880870c725_structure_aware_5",
+    "text": "## Merge Process\n\nPRs are squash-merged by default so `main` has one commit per logical change. The squash commit\nmessage must reference the ticket ID. Rebase-merge is permitted only for release-branch\nbackports, and must be explicitly requested in the PR description.",
+    "metadata": {
+      "source_path": "/app/data/raw/code_review_standards.md",
+      "title": "Code Review Standards",
+      "format": "markdown",
+      "filename": "code_review_standards.md",
+      "doc_id": "8d880870c725",
+      "position": 5
+    }
+  },
+  {
+    "chunk_id": "e61d14ee82bb_structure_aware_0",
+    "text": "# Database Migration Guide",
+    "metadata": {
+      "source_path": "/app/data/raw/database_migration_guide.md",
+      "title": "Database Migration Guide",
+      "format": "markdown",
+      "filename": "database_migration_guide.md",
+      "doc_id": "e61d14ee82bb",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "e61d14ee82bb_structure_aware_1",
+    "text": "## Backward Compatibility Rule\n\nEvery schema migration must be backward compatible with the previous version of the application\ncode, because deploys are rolling and both old and new code run simultaneously for several\nminutes during rollout. Adding a NOT NULL column without a default, renaming a column, or\ndropping a column that old code still reads are all disallowed in a single migration.",
+    "metadata": {
+      "source_path": "/app/data/raw/database_migration_guide.md",
+      "title": "Database Migration Guide",
+      "format": "markdown",
+      "filename": "database_migration_guide.md",
+      "doc_id": "e61d14ee82bb",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "e61d14ee82bb_structure_aware_2",
+    "text": "## The Expand-Contract Pattern\n\nBreaking-looking changes are done in three separate deploys: expand (add the new column/table\nalongside the old one), migrate (backfill data and switch application code to the new shape),\ncontract (drop the old column/table once nothing reads it). Each phase ships and bakes\nindependently; do not combine expand and contract in one migration.",
+    "metadata": {
+      "source_path": "/app/data/raw/database_migration_guide.md",
+      "title": "Database Migration Guide",
+      "format": "markdown",
+      "filename": "database_migration_guide.md",
+      "doc_id": "e61d14ee82bb",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "e61d14ee82bb_structure_aware_3",
+    "text": "## Backfills\n\nBackfills on tables over 1 million rows must run in batches (default batch size 5,000 rows) with\na sleep between batches to avoid replication lag and lock contention. Backfill scripts are\nreviewed by the Database team, not just the owning team, before running against production.",
+    "metadata": {
+      "source_path": "/app/data/raw/database_migration_guide.md",
+      "title": "Database Migration Guide",
+      "format": "markdown",
+      "filename": "database_migration_guide.md",
+      "doc_id": "e61d14ee82bb",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "e61d14ee82bb_structure_aware_4",
+    "text": "## Rollback\n\nEvery migration must have a tested rollback path before merging. If a migration cannot be safely\nrolled back (e.g. a destructive drop), it must ship only after the corresponding contract phase\nhas baked in production for at least one week with no issues.",
+    "metadata": {
+      "source_path": "/app/data/raw/database_migration_guide.md",
+      "title": "Database Migration Guide",
+      "format": "markdown",
+      "filename": "database_migration_guide.md",
+      "doc_id": "e61d14ee82bb",
+      "position": 4
+    }
+  },
+  {
+    "chunk_id": "e61d14ee82bb_structure_aware_5",
+    "text": "## Review Process\n\nMigrations touching tables larger than 10 million rows or any table in the `payments` or `auth`\nschemas require sign-off from the Database team in addition to the normal two-approver code\nreview, regardless of migration size.",
+    "metadata": {
+      "source_path": "/app/data/raw/database_migration_guide.md",
+      "title": "Database Migration Guide",
+      "format": "markdown",
+      "filename": "database_migration_guide.md",
+      "doc_id": "e61d14ee82bb",
+      "position": 5
+    }
+  },
+  {
+    "chunk_id": "48f7f7129850_structure_aware_0",
+    "text": "# Feature Flag Usage Guide",
+    "metadata": {
+      "source_path": "/app/data/raw/feature_flag_guide.md",
+      "title": "Feature Flag Usage Guide",
+      "format": "markdown",
+      "filename": "feature_flag_guide.md",
+      "doc_id": "48f7f7129850",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "48f7f7129850_structure_aware_1",
+    "text": "## When to Use a Flag\n\nAny change that is risky, gradual, or reversible-by-design should ship behind a flag: new user-\nfacing features, risky refactors, and anything that touches the payments or auth paths. Trivial\nbug fixes and internal tooling changes do not need flags \u2014 over-flagging adds review overhead\nwithout a corresponding safety benefit.",
+    "metadata": {
+      "source_path": "/app/data/raw/feature_flag_guide.md",
+      "title": "Feature Flag Usage Guide",
+      "format": "markdown",
+      "filename": "feature_flag_guide.md",
+      "doc_id": "48f7f7129850",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "48f7f7129850_structure_aware_2",
+    "text": "## Naming and Ownership\n\nFlags are named `team_name.feature_description`, e.g. `checkout.new_refund_flow`. Every flag has\na required owner and an expiration date set at creation time; flags without an expiration date\nare rejected at creation by the flag service.",
+    "metadata": {
+      "source_path": "/app/data/raw/feature_flag_guide.md",
+      "title": "Feature Flag Usage Guide",
+      "format": "markdown",
+      "filename": "feature_flag_guide.md",
+      "doc_id": "48f7f7129850",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "48f7f7129850_structure_aware_3",
+    "text": "## Rollout Stages\n\nStandard rollout is staged: internal employees only, then 1%, 5%, 25%, 50%, 100% of traffic, with\na minimum 2-hour bake time at each stage below 25% and 24 hours at 50% and above before advancing.\nAdvancing early requires explicit sign-off from the flag owner's manager.",
+    "metadata": {
+      "source_path": "/app/data/raw/feature_flag_guide.md",
+      "title": "Feature Flag Usage Guide",
+      "format": "markdown",
+      "filename": "feature_flag_guide.md",
+      "doc_id": "48f7f7129850",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "48f7f7129850_structure_aware_4",
+    "text": "## Cleanup\n\nFlags at 100% for more than 30 days must be cleaned up \u2014 the flag removed and the old code path\ndeleted \u2014 or they are auto-reported in the weekly \"stale flags\" digest to the owning team. Flags\nleft stale for more than 90 days are escalated to the team's engineering manager.",
+    "metadata": {
+      "source_path": "/app/data/raw/feature_flag_guide.md",
+      "title": "Feature Flag Usage Guide",
+      "format": "markdown",
+      "filename": "feature_flag_guide.md",
+      "doc_id": "48f7f7129850",
+      "position": 4
+    }
+  },
+  {
+    "chunk_id": "48f7f7129850_structure_aware_5",
+    "text": "## Kill Switches\n\nFlags used as kill switches (to disable a feature during an incident, see the Incident Response\nRunbook) are exempt from the expiration and cleanup rules above, but must be explicitly tagged\n`kill_switch` at creation so they're excluded from the stale-flags report.",
+    "metadata": {
+      "source_path": "/app/data/raw/feature_flag_guide.md",
+      "title": "Feature Flag Usage Guide",
+      "format": "markdown",
+      "filename": "feature_flag_guide.md",
+      "doc_id": "48f7f7129850",
+      "position": 5
+    }
+  },
+  {
+    "chunk_id": "55ed37cf043a_structure_aware_0",
+    "text": "# Incident Response Runbook",
+    "metadata": {
+      "source_path": "/app/data/raw/incident_response_runbook.md",
+      "title": "Incident Response Runbook",
+      "format": "markdown",
+      "filename": "incident_response_runbook.md",
+      "doc_id": "55ed37cf043a",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "55ed37cf043a_structure_aware_1",
+    "text": "## Severity Levels\n\nSev-1: customer-facing outage or data loss affecting more than 5% of traffic. Sev-2: significant\ndegradation, a leaked credential, or an outage affecting a single non-critical service. Sev-3:\nminor bug affecting a small number of users with a workaround available. Only Sev-1 and Sev-2\nincidents require a live incident channel and an assigned Incident Commander.",
+    "metadata": {
+      "source_path": "/app/data/raw/incident_response_runbook.md",
+      "title": "Incident Response Runbook",
+      "format": "markdown",
+      "filename": "incident_response_runbook.md",
+      "doc_id": "55ed37cf043a",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "55ed37cf043a_structure_aware_2",
+    "text": "## Declaring an Incident\n\nAnyone can declare an incident by running `/incident declare` in Slack, which creates a dedicated\nchannel, pages the current on-call engineer for the affected service, and starts the incident\ntimeline log automatically. Do not wait for on-call to declare \u2014 declaring early and standing\ndown later is always preferred over declaring late.",
+    "metadata": {
+      "source_path": "/app/data/raw/incident_response_runbook.md",
+      "title": "Incident Response Runbook",
+      "format": "markdown",
+      "filename": "incident_response_runbook.md",
+      "doc_id": "55ed37cf043a",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "55ed37cf043a_structure_aware_3",
+    "text": "## Roles\n\nThe Incident Commander (IC) coordinates but does not personally debug; their job is\ncommunication, sequencing, and deciding when to escalate further. The first on-call engineer to\nrespond is the default IC until they explicitly hand it off. A separate Communications Lead\nposts customer-facing status updates for Sev-1 incidents every 30 minutes until resolution.",
+    "metadata": {
+      "source_path": "/app/data/raw/incident_response_runbook.md",
+      "title": "Incident Response Runbook",
+      "format": "markdown",
+      "filename": "incident_response_runbook.md",
+      "doc_id": "55ed37cf043a",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "55ed37cf043a_structure_aware_4",
+    "text": "## Mitigation Before Root Cause\n\nThe immediate priority is mitigation, not diagnosis: rollback the last deploy, fail over to a\nhealthy region, or disable the offending feature flag first. Root-causing happens after the\ncustomer impact has stopped, not before. Chasing root cause while customers are still affected is\nexplicitly called out as an anti-pattern in this process.",
+    "metadata": {
+      "source_path": "/app/data/raw/incident_response_runbook.md",
+      "title": "Incident Response Runbook",
+      "format": "markdown",
+      "filename": "incident_response_runbook.md",
+      "doc_id": "55ed37cf043a",
+      "position": 4
+    }
+  },
+  {
+    "chunk_id": "55ed37cf043a_structure_aware_5",
+    "text": "## Postmortems\n\nEvery Sev-1 and Sev-2 incident requires a blameless postmortem within 5 business days, using the\nPostmortem Template. Postmortems are reviewed in the weekly Reliability sync and action items are\ntracked as tickets with owners and due dates, not left as free-text suggestions.",
+    "metadata": {
+      "source_path": "/app/data/raw/incident_response_runbook.md",
+      "title": "Incident Response Runbook",
+      "format": "markdown",
+      "filename": "incident_response_runbook.md",
+      "doc_id": "55ed37cf043a",
+      "position": 5
+    }
+  },
+  {
+    "chunk_id": "aa44c4696efb_structure_aware_0",
+    "text": "# Logging and Observability Standards",
+    "metadata": {
+      "source_path": "/app/data/raw/observability_standards.md",
+      "title": "Logging and Observability Standards",
+      "format": "markdown",
+      "filename": "observability_standards.md",
+      "doc_id": "aa44c4696efb",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "aa44c4696efb_structure_aware_1",
+    "text": "## Structured Logging\n\nAll services log structured JSON, never plain text, with a mandatory field set: `timestamp`,\n`service`, `request_id`, `level`, `message`. The `request_id` must be propagated across service\nboundaries via the `X-Request-ID` header so a single request can be traced end-to-end across\nmultiple services in the log aggregator.",
+    "metadata": {
+      "source_path": "/app/data/raw/observability_standards.md",
+      "title": "Logging and Observability Standards",
+      "format": "markdown",
+      "filename": "observability_standards.md",
+      "doc_id": "aa44c4696efb",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "aa44c4696efb_structure_aware_2",
+    "text": "## Log Levels\n\n`ERROR` is reserved for conditions requiring human attention; a caught exception that was handled\ngracefully is `WARNING`, not `ERROR`. Services with an `ERROR` log rate above the alerting\nthreshold (default 1% of requests) page on-call automatically \u2014 noisy `ERROR` logging causes\nalert fatigue and is treated as a bug in the logging itself, not just cosmetic.",
+    "metadata": {
+      "source_path": "/app/data/raw/observability_standards.md",
+      "title": "Logging and Observability Standards",
+      "format": "markdown",
+      "filename": "observability_standards.md",
+      "doc_id": "aa44c4696efb",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "aa44c4696efb_structure_aware_3",
+    "text": "## Log Retention\n\nLogs are retained for 30 days in hot storage (queryable) and 1 year in cold storage (archival,\nnot queryable without a restore request). Logs containing PII are redacted at write time by the\nlogging middleware; raw PII must never reach the log aggregator, retention period aside.",
+    "metadata": {
+      "source_path": "/app/data/raw/observability_standards.md",
+      "title": "Logging and Observability Standards",
+      "format": "markdown",
+      "filename": "observability_standards.md",
+      "doc_id": "aa44c4696efb",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "aa44c4696efb_structure_aware_4",
+    "text": "## Tracing\n\nEvery service is instrumented with OpenTelemetry; spans must include the operation name, duration,\nand status at minimum. Sampling is 100% for error traces and 1% for successful traces by default,\nconfigurable per-service if a team needs deeper visibility during an investigation.",
+    "metadata": {
+      "source_path": "/app/data/raw/observability_standards.md",
+      "title": "Logging and Observability Standards",
+      "format": "markdown",
+      "filename": "observability_standards.md",
+      "doc_id": "aa44c4696efb",
+      "position": 4
+    }
+  },
+  {
+    "chunk_id": "aa44c4696efb_structure_aware_5",
+    "text": "## Dashboards\n\nEvery service on-call rotation must have a linked dashboard showing request rate, error rate, and\nP50/P95/P99 latency, reviewed for accuracy during onboarding (see the Onboarding Guide). Missing\nor broken dashboards are a blocking finding in the quarterly service review.",
+    "metadata": {
+      "source_path": "/app/data/raw/observability_standards.md",
+      "title": "Logging and Observability Standards",
+      "format": "markdown",
+      "filename": "observability_standards.md",
+      "doc_id": "aa44c4696efb",
+      "position": 5
+    }
+  },
+  {
+    "chunk_id": "24e949c8322e_structure_aware_0",
+    "text": "# Engineering Onboarding Guide",
+    "metadata": {
+      "source_path": "/app/data/raw/onboarding_guide.md",
+      "title": "Engineering Onboarding Guide",
+      "format": "markdown",
+      "filename": "onboarding_guide.md",
+      "doc_id": "24e949c8322e",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "24e949c8322e_structure_aware_1",
+    "text": "## Week 1: Access and Setup\n\nEvery new engineer is provisioned with a laptop, VPN credentials, and access to the internal\nGitHub organization on their first day. IT provisioning tickets are handled by the Platform\nteam and typically resolve within 4 business hours. If access has not been granted within\none business day, escalate in the #it-help Slack channel.\n\nLocal development environments are set up using the `devsetup` CLI tool, which installs the\ncorrect Python version (3.11), Docker, and the internal `corp-cli` tool used for authenticating\nagainst staging and production services. Run `devsetup init` from a fresh clone of any\nrepository to bootstrap the environment.",
+    "metadata": {
+      "source_path": "/app/data/raw/onboarding_guide.md",
+      "title": "Engineering Onboarding Guide",
+      "format": "markdown",
+      "filename": "onboarding_guide.md",
+      "doc_id": "24e949c8322e",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "24e949c8322e_structure_aware_2",
+    "text": "## Week 1: Required Reading\n\nNew engineers must read, in order: the API Design Guidelines, the Code Review Standards, and\nthe Security Guidelines for Handling Secrets. These three documents cover the non-negotiable\nconventions every service in the monorepo follows. Skipping this step is the single most common\ncause of PR review delays for new hires.",
+    "metadata": {
+      "source_path": "/app/data/raw/onboarding_guide.md",
+      "title": "Engineering Onboarding Guide",
+      "format": "markdown",
+      "filename": "onboarding_guide.md",
+      "doc_id": "24e949c8322e",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "24e949c8322e_structure_aware_3",
+    "text": "## Week 2: First Contribution\n\nEvery new engineer's first PR should be a \"good first issue\" tagged ticket, selected with their\nonboarding buddy. The onboarding buddy is assigned during week 1 by the engineering manager and\nis expected to pair with the new hire at least three times during the first two weeks.\n\nFirst PRs are exempt from the usual two-approver rule described in the Code Review Standards \u2014\none approval from the onboarding buddy is sufficient, but the PR must still pass CI.",
+    "metadata": {
+      "source_path": "/app/data/raw/onboarding_guide.md",
+      "title": "Engineering Onboarding Guide",
+      "format": "markdown",
+      "filename": "onboarding_guide.md",
+      "doc_id": "24e949c8322e",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "24e949c8322e_structure_aware_4",
+    "text": "## Week 3: On-Call Shadow\n\nBy week 3, new engineers shadow one on-call rotation (see the On-Call Rotation Policy) without\ncarrying the pager themselves. This is mandatory before an engineer can be added to the primary\non-call rotation for their team.",
+    "metadata": {
+      "source_path": "/app/data/raw/onboarding_guide.md",
+      "title": "Engineering Onboarding Guide",
+      "format": "markdown",
+      "filename": "onboarding_guide.md",
+      "doc_id": "24e949c8322e",
+      "position": 4
+    }
+  },
+  {
+    "chunk_id": "24e949c8322e_structure_aware_5",
+    "text": "## Common Pitfalls\n\nThe most common onboarding blocker is VPN split-tunneling misconfiguration, which prevents\naccess to internal-only services like the staging database. If `corp-cli whoami` hangs for more\nthan 10 seconds, this is almost always the cause \u2014 re-run `devsetup vpn-fix`.",
+    "metadata": {
+      "source_path": "/app/data/raw/onboarding_guide.md",
+      "title": "Engineering Onboarding Guide",
+      "format": "markdown",
+      "filename": "onboarding_guide.md",
+      "doc_id": "24e949c8322e",
+      "position": 5
+    }
+  },
+  {
+    "chunk_id": "a65cfdf8186e_structure_aware_0",
+    "text": "# On-Call Rotation Policy",
+    "metadata": {
+      "source_path": "/app/data/raw/oncall_rotation_policy.md",
+      "title": "On-Call Rotation Policy",
+      "format": "markdown",
+      "filename": "oncall_rotation_policy.md",
+      "doc_id": "a65cfdf8186e",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "a65cfdf8186e_structure_aware_1",
+    "text": "## Rotation Structure\n\nEach service team maintains a primary and secondary on-call rotation, one week at a time,\nrotating every Monday at 10:00 local time to allow for a calm handoff during business hours\nrather than overnight. The secondary is paged automatically if the primary does not acknowledge\na page within 5 minutes.\n\nEngineers must complete the on-call shadow period described in the Onboarding Guide before\njoining the primary rotation. Shadowing does not count toward the rotation schedule itself.",
+    "metadata": {
+      "source_path": "/app/data/raw/oncall_rotation_policy.md",
+      "title": "On-Call Rotation Policy",
+      "format": "markdown",
+      "filename": "oncall_rotation_policy.md",
+      "doc_id": "a65cfdf8186e",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "a65cfdf8186e_structure_aware_2",
+    "text": "## Compensation\n\nOn-call weeks are compensated with a flat stipend plus time-off-in-lieu for any page acknowledged\noutside 9am-9pm local time, tracked automatically from PagerDuty acknowledgment timestamps.\nEngineers do not need to file anything manually to receive on-call compensation.",
+    "metadata": {
+      "source_path": "/app/data/raw/oncall_rotation_policy.md",
+      "title": "On-Call Rotation Policy",
+      "format": "markdown",
+      "filename": "oncall_rotation_policy.md",
+      "doc_id": "a65cfdf8186e",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "a65cfdf8186e_structure_aware_3",
+    "text": "## Escalation Policy\n\nIf a page is not acknowledged within 5 minutes it escalates to the secondary; if the secondary\ndoes not acknowledge within another 5 minutes it escalates to the team's engineering manager.\nRepeated missed pages (more than 2 in a rolling 90-day window) trigger a conversation with the\nmanager about rotation fit, not disciplinary action by default.",
+    "metadata": {
+      "source_path": "/app/data/raw/oncall_rotation_policy.md",
+      "title": "On-Call Rotation Policy",
+      "format": "markdown",
+      "filename": "oncall_rotation_policy.md",
+      "doc_id": "a65cfdf8186e",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "a65cfdf8186e_structure_aware_4",
+    "text": "## Swaps\n\nRotation swaps are self-service via the PagerDuty schedule override tool and do not require\nmanager approval, but must be posted in the team's on-call Slack channel at least 24 hours in\nadvance except for genuine emergencies.",
+    "metadata": {
+      "source_path": "/app/data/raw/oncall_rotation_policy.md",
+      "title": "On-Call Rotation Policy",
+      "format": "markdown",
+      "filename": "oncall_rotation_policy.md",
+      "doc_id": "a65cfdf8186e",
+      "position": 4
+    }
+  },
+  {
+    "chunk_id": "46de2fc122a0_structure_aware_0",
+    "text": "# Performance Testing Guide",
+    "metadata": {
+      "source_path": "/app/data/raw/performance_testing_guide.html",
+      "title": "Performance Testing Guide",
+      "format": "html",
+      "filename": "performance_testing_guide.html",
+      "doc_id": "46de2fc122a0",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "46de2fc122a0_structure_aware_1",
+    "text": "## When Load Testing Is Required\n\nAny service expecting more than a 20% increase in peak traffic, or any new endpoint on a\npayments or checkout path, requires a load test signed off by the Performance team before launch.\nInternal tools and admin-only endpoints are exempt unless they are on a hot path.",
+    "metadata": {
+      "source_path": "/app/data/raw/performance_testing_guide.html",
+      "title": "Performance Testing Guide",
+      "format": "html",
+      "filename": "performance_testing_guide.html",
+      "doc_id": "46de2fc122a0",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "46de2fc122a0_structure_aware_2",
+    "text": "## Test Environment\n\nLoad tests run against the dedicated performance-staging environment, which is provisioned to\nmatch production capacity at a 1:10 ratio. Tests must never run against production directly, and\nmust never run against shared staging, since shared staging is used for manual QA and a load test\nwill starve it of resources.",
+    "metadata": {
+      "source_path": "/app/data/raw/performance_testing_guide.html",
+      "title": "Performance Testing Guide",
+      "format": "html",
+      "filename": "performance_testing_guide.html",
+      "doc_id": "46de2fc122a0",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "46de2fc122a0_structure_aware_3",
+    "text": "## Pass Criteria\n\nA load test passes if P95 latency stays under 300ms and error rate stays under 0.1% at 1.5x the\nexpected peak load, sustained for at least 15 minutes. Passing at exactly peak load without the\n1.5x safety margin is not sufficient sign-off.",
+    "metadata": {
+      "source_path": "/app/data/raw/performance_testing_guide.html",
+      "title": "Performance Testing Guide",
+      "format": "html",
+      "filename": "performance_testing_guide.html",
+      "doc_id": "46de2fc122a0",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "46de2fc122a0_structure_aware_4",
+    "text": "## Reporting\n\nResults are posted to the #performance channel with the full Grafana dashboard link, not just a\nsummary screenshot, so the Performance team can inspect tail latency distributions directly.",
+    "metadata": {
+      "source_path": "/app/data/raw/performance_testing_guide.html",
+      "title": "Performance Testing Guide",
+      "format": "html",
+      "filename": "performance_testing_guide.html",
+      "doc_id": "46de2fc122a0",
+      "position": 4
+    }
+  },
+  {
+    "chunk_id": "6688dafff713_structure_aware_0",
+    "text": "Postmortem Process (plain-text reference copy)\n\nEvery Sev-1 and Sev-2 incident requires a written postmortem within 5 business days of\nresolution. The postmortem document uses the standard template: timeline, impact (customers\naffected, duration, revenue impact if known), root cause, what went well, what went poorly, and\naction items.\n\nPostmortems are blameless. The document must describe what happened and why the system and\nprocess allowed it to happen, not focus on individual mistakes. Language like \"X should have\nknown\" is flagged in review and rewritten.\n\nAction items from a postmortem are filed as tickets with a named owner and a due date, and are\ntracked to completion in the weekly Reliability sync. A postmortem with no action items is treated\nas incomplete and sent back for revision, unless the incident writeup explicitly justifies why no\nfollow-up work is needed.\n\nPostmortems for Sev-1 incidents are presented verbally in the weekly Reliability sync by the\nIncident Commander. Sev-2 postmortems are shared async in the #reliability channel and reviewed\nonly if a reader flags a concern within 3 days.",
+    "metadata": {
+      "source_path": "/app/data/raw/postmortem_process.txt",
+      "title": "Postmortem Process (plain-text reference copy)",
+      "format": "text",
+      "filename": "postmortem_process.txt",
+      "doc_id": "6688dafff713",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "e96472bdbe55_structure_aware_0",
+    "text": "# Security Guidelines for Handling Secrets",
+    "metadata": {
+      "source_path": "/app/data/raw/security_secrets_guidelines.md",
+      "title": "Security Guidelines for Handling Secrets",
+      "format": "markdown",
+      "filename": "security_secrets_guidelines.md",
+      "doc_id": "e96472bdbe55",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "e96472bdbe55_structure_aware_1",
+    "text": "## Never Commit Secrets\n\nAPI keys, database credentials, and tokens must never be committed to any repository, including\nprivate ones. A pre-commit hook (`detect-secrets`) blocks commits containing patterns matching\nknown credential formats, but this is a safety net, not the primary control \u2014 engineers are\nindividually responsible for not committing secrets in the first place.\n\nIf a secret is accidentally committed and pushed, it must be treated as compromised immediately:\nrotate it within one hour of discovery, even if the commit is later removed from history. Git\nhistory rewrites do not reliably scrub secrets from forks, CI logs, or cached clones, so rotation\nis the only real remediation.",
+    "metadata": {
+      "source_path": "/app/data/raw/security_secrets_guidelines.md",
+      "title": "Security Guidelines for Handling Secrets",
+      "format": "markdown",
+      "filename": "security_secrets_guidelines.md",
+      "doc_id": "e96472bdbe55",
+      "position": 1
+    }
+  },
+  {
+    "chunk_id": "e96472bdbe55_structure_aware_2",
+    "text": "## Secret Storage\n\nAll secrets are stored in the internal Vault cluster, never in `.env` files committed to git,\nnever in Slack messages, and never in ticket descriptions. Local `.env` files are permitted for\ndevelopment but must be listed in `.gitignore` and are excluded from all backup snapshots.\n\nServices fetch secrets from Vault at startup using a short-lived service identity token; secrets\nare never baked into Docker images. Any Dockerfile that copies a `.env` file or hardcodes a\ncredential fails the image-scanning step in CI and cannot be deployed.",
+    "metadata": {
+      "source_path": "/app/data/raw/security_secrets_guidelines.md",
+      "title": "Security Guidelines for Handling Secrets",
+      "format": "markdown",
+      "filename": "security_secrets_guidelines.md",
+      "doc_id": "e96472bdbe55",
+      "position": 2
+    }
+  },
+  {
+    "chunk_id": "e96472bdbe55_structure_aware_3",
+    "text": "## Access Review\n\nVault access is scoped per-service, not per-team, and is reviewed quarterly by the Security team.\nAny engineer who has not accessed a given secret path in 90 days has that grant automatically\nrevoked and must re-request access if needed.",
+    "metadata": {
+      "source_path": "/app/data/raw/security_secrets_guidelines.md",
+      "title": "Security Guidelines for Handling Secrets",
+      "format": "markdown",
+      "filename": "security_secrets_guidelines.md",
+      "doc_id": "e96472bdbe55",
+      "position": 3
+    }
+  },
+  {
+    "chunk_id": "e96472bdbe55_structure_aware_4",
+    "text": "## Incident Response for Leaked Credentials\n\nA leaked credential is treated as a security incident, not a routine bug. File it via the\nIncident Response Runbook process at Sev-2 minimum, rotate the credential, and check access logs\nfor the exposure window before closing the incident.",
+    "metadata": {
+      "source_path": "/app/data/raw/security_secrets_guidelines.md",
+      "title": "Security Guidelines for Handling Secrets",
+      "format": "markdown",
+      "filename": "security_secrets_guidelines.md",
+      "doc_id": "e96472bdbe55",
+      "position": 4
+    }
+  },
+  {
+    "chunk_id": "c0ad1e82ac19_structure_aware_0",
+    "text": "Third-Party API Integration Guide\nVetting a New Integration\nBefore integrating any third-party API, the owning team files an integration request\nreviewed by both the Security team and the Platform team. Security checks the vendor's\ndata handling terms; Platform checks for an existing internal client before a new one\nis built from scratch, since duplicate vendor clients are a recurring source of drift.\nCredential Management\nThird-party API credentials are stored in Vault under the `integrations/` path, following\nthe same rules as the Security Guidelines for Handling Secrets. Every third-party\ncredential has an assigned owner and is rotated at minimum every 180 days, or immediately\nif the vendor reports a breach.\nResilience Requirements\nEvery call to a third-party API must have a timeout no longer than 5 seconds and must be\nwrapped in a circuit breaker. A vendor outage must degrade the calling service gracefully,\nnever take it down entirely. Retries use exponential backoff with a maximum of 3 attempts\nfor idempotent calls only; non-idempotent calls are never retried automatically.\nMonitoring\nEvery integration reports latency and error rate to the standard observability dashboard",
+    "metadata": {
+      "source_path": "/app/data/raw/third_party_api_integration_guide.pdf",
+      "title": "Third-Party API Integration Guide",
+      "format": "pdf",
+      "filename": "third_party_api_integration_guide.pdf",
+      "doc_id": "c0ad1e82ac19",
+      "position": 0
+    }
+  },
+  {
+    "chunk_id": "c0ad1e82ac19_structure_aware_1",
+    "text": "Monitoring\nEvery integration reports latency and error rate to the standard observability dashboard\n(see the Logging and Observability Standards) tagged by vendor name, so a vendor-side\noutage is immediately distinguishable from an internal one during an incident.\nDeprecation\nWhen a vendor integration is retired, the credential is revoked in Vault within one\nbusiness day of the last production call, and the integration is removed from the\ninternal service registry so it stops appearing in dependency graphs.",
+    "metadata": {
+      "source_path": "/app/data/raw/third_party_api_integration_guide.pdf",
+      "title": "Third-Party API Integration Guide",
+      "format": "pdf",
+      "filename": "third_party_api_integration_guide.pdf",
+      "doc_id": "c0ad1e82ac19",
+      "position": 1
+    }
+  }
+]
