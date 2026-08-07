@@ -86,6 +86,55 @@ services:
       - api
     command: ["streamlit", "run", "src/agentsys/dashboard.py", "--server.address=0.0.0.0", "--server.port=8501"]
 
+  # ---------------------------------------------------------------------
+  # rag: hybrid-search retrieval pipeline. Shares this repo's image and
+  # .env, but is otherwise independent of agentsys -- it has no database,
+  # queue, or Chroma-server dependency, because it uses Chroma in embedded
+  # mode against ./data/chroma rather than the chroma service above.
+  # ---------------------------------------------------------------------
+
+  # One-shot: builds the three chunking-strategy indexes from data/raw.
+  # rag-api waits for this to finish successfully before starting.
+  rag-seed:
+    build: .
+    env_file:
+      - .env
+    environment:
+      CHROMA_PERSIST_DIR: "/app/data/chroma"
+    volumes:
+      - ./data:/app/data
+    command: ["python", "scripts/run_ingest.py", "--strategy", "all"]
+
+  rag-api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      CHROMA_PERSIST_DIR: "/app/data/chroma"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      rag-seed:
+        condition: service_completed_successfully
+    command: ["uvicorn", "rag.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  rag-dashboard:
+    build: .
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      RAG_API_URL: "http://rag-api:8000"
+      CHROMA_PERSIST_DIR: "/app/data/chroma"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - rag-api
+    command: ["streamlit", "run", "src/rag/simple_upload.py", "--server.address=0.0.0.0", "--server.port=8501"]
+
 volumes:
   pgdata:
   chromadata:

@@ -1,25 +1,44 @@
-# fastapi/uvicorn/pydantic are pinned forward of where this project started
-# because mcp 2.0.0 requires starlette>=1.x, and fastapi 0.115 called a
-# starlette Router API (on_startup=) that starlette 1.x removed -- the old
-# pins and MCP support are mutually exclusive, so MCP set the floor here.
+# Shared by both packages in this repo (src/agentsys and src/rag). The two
+# were separate projects until they were merged; their pins were reconciled
+# first, and no package needed a different version in each -- see docs/MERGE.md.
+
+# --- web / config (shared) ---
+# fastapi/uvicorn/pydantic sit forward of where these projects started because
+# mcp 2.0.0 requires starlette>=1.x, and fastapi 0.115 called a starlette
+# Router API (on_startup=) that starlette 1.x removed. MCP support and the old
+# pins were mutually exclusive, so MCP set the floor for both packages.
 fastapi==0.141.1
 uvicorn[standard]==0.52.1
 pydantic==2.13.4
 pydantic-settings==2.5.2
 python-dotenv==1.0.1
+httpx==0.27.2
+requests==2.32.3
+streamlit==1.38.0
+
+# --- LLM + vector store (shared) ---
 openai==1.51.0
+chromadb==0.5.11
+
+# --- agentsys: orchestration, persistence, tools ---
 sqlmodel==0.0.22
 psycopg[binary]==3.2.3
 celery==5.4.0
 redis==5.1.1
 langgraph==0.2.34
 langchain-core==0.3.9
-chromadb==0.5.11
-httpx==0.27.2
-beautifulsoup4==4.12.3
 docker==7.1.0
+beautifulsoup4==4.12.3
 mcp[cli]==2.0.0
-streamlit==1.38.0
-requests==2.32.3
+
+# --- rag: retrieval, chunking, document loading, eval ---
+rank-bm25==0.2.2
+langchain-text-splitters==0.3.0
+pypdf==5.0.1
+tiktoken==0.8.0
+fpdf2==2.7.9
+numpy==2.1.1
+
+# --- tests ---
 pytest==8.3.3
 pytest-asyncio==0.24.0

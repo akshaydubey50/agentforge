@@ -39,10 +39,15 @@ jobs:
 
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # agentsys: Chroma as an HTTP service (the container above)
       DATABASE_URL: postgresql+psycopg://agent:agent@localhost:5432/agentsys
       REDIS_URL: redis://localhost:6379/0
       CHROMA_HOST: localhost
       CHROMA_PORT: 8001
+      # rag: Chroma embedded in a local directory -- a different mode of the
+      # same library, not the service above. See docs/MERGE.md.
+      CHROMA_PERSIST_DIR: ./data/chroma
+      EMBEDDING_MODEL: text-embedding-3-small
 
     steps:
       - uses: actions/checkout@v4
@@ -61,8 +66,15 @@ jobs:
       - name: Pre-pull the code_execution sandbox image
         run: docker pull python:3.11-slim
 
-      - name: Seed sample business data
+      - name: Seed sample business data (agentsys)
         run: python scripts/seed_sample_db.py
 
-      - name: Run tests
+      # data/chroma is gitignored and rebuildable, so a fresh checkout has no
+      # index -- rag's retrieval and generation tests query one and would fail
+      # without this. It costs real embedding calls, which is the price of the
+      # no-mocks testing approach both packages use.
+      - name: Build retrieval indexes (rag)
+        run: python scripts/run_ingest.py --strategy all
+
+      - name: Run tests (both packages)
         run: pytest tests/ -v

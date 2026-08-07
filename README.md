@@ -6,6 +6,22 @@ demonstrate what makes an agent system production infrastructure rather than a s
 chat-loop demo: it can be paused, handed to a human, resumed by a different process entirely, and
 every decision it made is inspectable afterward.
 
+## Two packages in this repo
+
+| Package | What it is | Docs |
+|---|---|---|
+| **`src/agentsys/`** | The agent platform described below: planning, parallel subtask execution, sub-agent delegation, tool use, human escalation, tracing, and an MCP plugin backbone for connecting third-party tools. | this file |
+| **`src/rag/`** | A hybrid-search RAG pipeline (dense + BM25 → RRF → LLM rerank → grounded generation → per-claim citation verification), with a 50-case golden-set eval across three chunking strategies. | [docs/RAG_PIPELINE.md](docs/RAG_PIPELINE.md) |
+
+They were separate projects and were merged into one repository, with both git
+histories preserved. Neither imports the other — see
+[docs/MERGE.md](docs/MERGE.md) for what had to be reconciled, the known
+Chroma-mode inconsistency, and how to run both stacks.
+
+```bash
+docker compose up -d --build   # both stacks: agentsys on 8100/8601, rag on 8000/8501
+```
+
 ## Proof it actually works
 
 A real task run end-to-end through the full Docker stack (Postgres + Redis + Chroma + Celery

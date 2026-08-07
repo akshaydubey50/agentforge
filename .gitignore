@@ -3,7 +3,6 @@ __pycache__/
 .venv/
 venv/
 .env
-data/workspace/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
@@ -11,3 +10,12 @@ dist/
 build/
 .DS_Store
 *.log
+.claude/
+
+# agentsys: per-task sandboxed file_io workspace
+data/workspace/
+
+# rag: embedded Chroma index and generated chunk files, both rebuildable
+# from data/raw via scripts/run_ingest.py
+data/chroma/
+data/processed/*.jsonl

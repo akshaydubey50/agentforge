@@ -1,9 +1,13 @@
 [project]
-name = "agent-orchestration-system"
-version = "0.1.0"
+name = "agentforge"
+version = "0.2.0"
 requires-python = ">=3.11"
 
 [tool.setuptools.packages.find]
+# Discovers both packages in this repo: agentsys (agent orchestration) and
+# rag (hybrid-search retrieval + eval). They share an environment but not a
+# namespace -- neither imports the other directly; the agent reaches the RAG
+# pipeline the same way any external caller would.
 where = ["src"]
 
 [build-system]
