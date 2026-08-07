@@ -22,13 +22,21 @@ timeout is only real once we catch that exception and explicitly `container.kill
 it ourselves, which is what `_run_container` below does.
 
 Convention for `success` vs. `error`: `success=True` means the tool successfully ran
-the code to completion inside the sandbox, *regardless of the script's own exit code*
--- a script that raises or calls `sys.exit(1)` is a normal, successful tool call whose
-`output["exit_code"]` is nonzero. `success=False` is reserved for the tool failing to
-do its job: Docker being unreachable, the image missing, or the run timing out (timeout
-is treated as a tool-level failure with `error="timed out after {timeout_s}s"`, since
-"we don't know what the code would have produced" is a distinct outcome from "the code
-ran and told us its result").
+the code to completion inside the sandbox *and* that run produced something to report,
+regardless of the script's own exit code -- a script that raises or calls `sys.exit(1)`
+is a normal, successful tool call whose `output["exit_code"]` is nonzero, because its
+traceback on stderr is a real, usable result. `success=False` is reserved for the tool
+failing to deliver a usable result: Docker being unreachable, the image missing, the run
+timing out (`error="timed out after {timeout_s}s"`, since "we don't know what the code
+would have produced" is a distinct outcome from "the code ran and told us its result"),
+or the script exiting cleanly having printed nothing at all.
+
+That last case is deliberately a failure rather than an empty success. Because the
+container is destroyed the moment the run finishes, stdout/stderr are the only channels
+whose contents outlive it -- a silent exit-0 script has therefore computed something and
+thrown it away, which is never the caller's intent and is not a result worth passing to
+the reviewer. Reporting it as a failure with a message naming the fix puts it in front of
+the reject-and-revise loop, which can act on it, instead of in front of a human.
 """
 
 from __future__ import annotations
@@ -105,6 +113,30 @@ class CodeExecutionTool(Tool):
             output = {"stdout": stdout, "stderr": stderr, "exit_code": exit_code}
             if timed_out:
                 return ToolResult(success=False, output=output, error=f"timed out after {timeout_s}s")
+            if exit_code == 0 and not stdout.strip() and not stderr.strip():
+                # The bare-expression mistake, caught structurally instead of
+                # hoped away by a prompt warning. The specialist repeatedly
+                # writes `(a, b)` instead of `print(a, b)`; the arithmetic is
+                # right, the result is silently discarded, and the reviewer --
+                # seeing a "successful" call with nothing in it -- escalates to
+                # a human rather than retrying, which wastes the whole task.
+                #
+                # In this system a script's ONLY durable output channel is
+                # stdout: the container is destroyed immediately after the run,
+                # so anything not printed is definitionally lost. A silent
+                # exit-0 script therefore isn't a valid success to report, and
+                # returning it as a failure with an actionable message routes it
+                # into the existing reject-and-revise loop, where the feedback
+                # tells the specialist exactly what to change.
+                return ToolResult(
+                    success=False,
+                    output=output,
+                    error=(
+                        "the script ran without errors but produced no output, so its result was "
+                        "lost -- this sandbox discards everything except stdout. Wrap the value "
+                        "you want in print(), e.g. print(result) rather than a bare `result`."
+                    ),
+                )
             return ToolResult(success=True, output=output)
         finally:
             container.remove(force=True)

@@ -47,6 +47,12 @@ class EscalationStatus(str, Enum):
     TOOK_OVER = "took_over"
 
 
+class SubAgentRunStatus(str, Enum):
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
 class Task(SQLModel, table=True):
     id: str = Field(default_factory=_uuid, primary_key=True)
     request_text: str
@@ -129,6 +135,41 @@ class SampleMetric(SQLModel, table=True):
     quarter: str
     revenue_usd: int
     headcount: int
+
+
+class SubAgentRun(SQLModel, table=True):
+    """A bounded, isolated tool-use loop delegated to from one subtask via
+    the delegate_subagent tool (tools/delegate_subagent.py). Deliberately a
+    separate table from Subtask -- it's a runtime-spawned execution, not a
+    planned unit of work, and must never be visible to select_subtask_node's
+    dependency scheduler."""
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    task_id: str = Field(foreign_key="task.id", index=True)
+    subtask_id: str = Field(foreign_key="subtask.id", index=True)
+    depth: int
+    goal: str
+    status: SubAgentRunStatus = Field(default=SubAgentRunStatus.RUNNING)
+    output: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+    completed_at: datetime | None = None
+
+
+class LlmCall(SQLModel, table=True):
+    """One row per OpenAI call, written by agentsys.cost.record_llm_call right
+    after every call site in graph/nodes.py and tools/delegate_subagent.py --
+    this is what /v1/analytics' cost figures are aggregated from."""
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    task_id: str = Field(foreign_key="task.id", index=True)
+    subtask_id: str | None = Field(default=None, foreign_key="subtask.id")
+    purpose: str
+    """One of: plan, tool_selection, reasoning, review, synthesize, subagent_step."""
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    cost_usd: float
+    created_at: datetime = Field(default_factory=_now)
 
 
 class MemoryEntry(SQLModel, table=True):

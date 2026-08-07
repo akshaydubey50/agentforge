@@ -28,7 +28,24 @@ def get_value(task_id: str, field: str) -> Any | None:
     return json.loads(raw) if raw is not None else None
 
 
+def append_value(task_id: str, field: str, item: Any) -> None:
+    """Appends to a list field with a single atomic Redis RPUSH, instead of the
+    read-modify-write (get -> append -> set) pattern set_value would require.
+    Required once parallel subtasks can write to the same task's scratchpad
+    concurrently: two branches both reading the same list and writing back
+    would silently lose one branch's note (last write wins)."""
+    get_redis().rpush(_key(task_id, field), json.dumps(item))
+
+
+def get_list(task_id: str, field: str) -> list[Any]:
+    raw_items = get_redis().lrange(_key(task_id, field), 0, -1)
+    return [json.loads(raw) for raw in raw_items]
+
+
 def get_all(task_id: str) -> dict[str, Any]:
+    """Only reads string-valued fields written via set_value -- a field
+    written with append_value is a Redis list and client.get() on it raises
+    WRONGTYPE, so callers mixing both must use get_list for list fields."""
     client = get_redis()
     pattern = _key(task_id, "*")
     result = {}

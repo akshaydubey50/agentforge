@@ -165,13 +165,15 @@ with tab_analytics:
         stats = None
 
     if stats:
-        cols = st.columns(3)
+        cols = st.columns(4)
         cols[0].metric("Total tasks", stats["total_tasks"])
         cols[1].metric("Total tool calls", stats["total_tool_calls"])
         cols[2].metric("Escalations", sum(stats["escalations_by_status"].values()))
+        cols[3].metric("Total LLM cost", f"${stats['total_cost_usd']:.4f}")
 
         st.write("**Tasks by status:**", stats["tasks_by_status"])
         st.write("**Escalations by resolution:**", stats["escalations_by_status"])
+        st.write("**Cost by purpose:**", stats["cost_by_purpose"])
 
         st.write("**Per-tool performance:**")
         for tool_name, tstats in stats["tool_stats"].items():

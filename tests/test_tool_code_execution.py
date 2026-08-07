@@ -95,3 +95,27 @@ def test_docker_unreachable_returns_failure_not_exception(tool, monkeypatch):
 
     assert result.success is False
     assert result.error is not None
+
+
+def test_silent_script_is_a_failure_naming_the_fix(tool):
+    """Regression test for a bug that recurred after a prompt-only fix: the
+    specialist writes a bare expression instead of print(), the arithmetic is
+    correct, and the result is silently discarded when the container dies.
+
+    Reported as a failure (not an empty success) so the reject-and-revise loop
+    handles it automatically -- previously the reviewer saw a "successful" call
+    with nothing in it and escalated to a human instead."""
+    result = tool.run(code="q1 = 1800000\nq2 = 2100000\n(q2 - q1, (q2 - q1) / q1 * 100)")
+
+    assert result.success is False
+    assert result.output["exit_code"] == 0, "the script itself ran fine; only its output was lost"
+    assert "print(" in result.error, "the error must name the actual fix, not just report emptiness"
+
+
+def test_script_writing_only_to_stderr_is_still_a_success(tool):
+    """The silent-script check must not misfire on a script that reported
+    something usable -- stderr is a real result channel too."""
+    result = tool.run(code="import sys; print('warned', file=sys.stderr)")
+
+    assert result.success is True
+    assert "warned" in result.output["stderr"]

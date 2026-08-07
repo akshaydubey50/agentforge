@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: agent
+          POSTGRES_PASSWORD: agent
+          POSTGRES_DB: agentsys
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agent -d agentsys"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+      chroma:
+        image: chromadb/chroma:0.5.11
+        ports:
+          - 8001:8000
+
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      DATABASE_URL: postgresql+psycopg://agent:agent@localhost:5432/agentsys
+      REDIS_URL: redis://localhost:6379/0
+      CHROMA_HOST: localhost
+      CHROMA_PORT: 8001
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+
+      # Pre-pull so the code_execution tool's first real test run isn't also
+      # paying image-pull latency inside its own timeout window.
+      - name: Pre-pull the code_execution sandbox image
+        run: docker pull python:3.11-slim
+
+      - name: Seed sample business data
+        run: python scripts/seed_sample_db.py
+
+      - name: Run tests
+        run: pytest tests/ -v

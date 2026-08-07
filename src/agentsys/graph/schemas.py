@@ -29,3 +29,19 @@ class ReviewOutput(BaseModel):
     score: int = Field(ge=1, le=5)
     verdict: Literal["pass", "reject", "escalate"]
     feedback: str
+
+
+class SubAgentStep(BaseModel):
+    next_action: Literal["call_tool", "finish"]
+    tool_name: str | None = Field(
+        default=None, description="Required when next_action is 'call_tool'."
+    )
+    tool_input_json: str | None = Field(
+        default=None,
+        description="A JSON object (as a string) with exactly the keyword arguments that "
+        "tool's run() expects. Required when next_action is 'call_tool'.",
+    )
+    final_answer: str | None = Field(
+        default=None, description="Required when next_action is 'finish'."
+    )
+    rationale: str

@@ -35,6 +35,12 @@ Available tools:
 Context from earlier subtasks in this task (may be empty):
 {prior_context}
 {revision_feedback}
+Choose "none" ONLY when the subtask can be answered purely by reasoning over the request and the \
+context above. If the subtask needs any fact you cannot derive from those — a real-world value, \
+the current date or time, a random or simulated outcome, a database row, anything external — you \
+MUST pick a tool that can obtain it. You cannot produce such a value by thinking about it, and \
+guessing one is a failure, not an answer. If the user named a specific tool, use that tool.
+
 If you choose a real tool, tool_input_json must be a valid JSON object string with exactly the \
 keyword arguments that tool expects. If no tool is needed, set tool_name to "none" and \
 tool_input_json to "{{}}"."""
@@ -48,11 +54,29 @@ Subtask: {subtask_description}
 Context from earlier subtasks in this task (may be empty):
 {prior_context}
 {revision_feedback}
+Work only from the request and the context above. Do not invent any fact you cannot derive from \
+them — not a measurement, not a date or time, not a random or simulated result, not a database \
+value. If completing this subtask actually requires information you don't have, say plainly that \
+it requires a tool you weren't given and state exactly what's missing. Reporting that honestly is \
+correct behavior here; producing a confident, plausible-looking number that you actually made up \
+is the single worst outcome, because everything downstream will treat it as real.
+
 Produce the subtask's output directly."""
 
 
 REVIEW_PROMPT = """You are the reviewer validating a specialist's completed subtask. Judge \
 whether the output actually satisfies the subtask, not just whether it looks plausible.
+
+A successful tool call's returned data IS ground truth for this subtask — you are not being \
+asked to independently re-verify it against some outside source, and you don't have access to \
+one. If the tool succeeded and its output directly answers what the subtask asked for, that is \
+a pass, full stop. Do NOT escalate over generic epistemic caution: not because you can't verify \
+a data source's real-world accuracy, not because a date or figure seems unusual (this system's \
+sample data intentionally uses forward-dated quarters — that is expected, not suspicious), and \
+not because you'd personally want more context before trusting it. That kind of caution sounds \
+rigorous but actually defeats the entire point of the tool: if it ran without error and returned \
+well-formed data matching the request, evaluating whether that data is "real" is out of scope for \
+this review.
 
 Subtask: {subtask_description}
 
@@ -63,11 +87,39 @@ Specialist's output:
 {output}
 
 Score 1-5 and give a verdict:
-- pass: the output genuinely satisfies the subtask
-- reject: the output is wrong, incomplete, or the tool call failed in a way a retry could fix \
-  (e.g. a transient error, a malformed query) — explain what the retry should do differently
-- escalate: this isn't something a retry can fix (e.g. the tool fundamentally can't do this, or \
-  the subtask itself seems ambiguous/risky enough to need a human) — explain why"""
+- pass: the output genuinely satisfies the subtask, using the tool's result as ground truth
+- reject: the output is concretely wrong given what the tool actually returned, incomplete, or \
+  the tool call failed in a way a retry could fix (e.g. a transient error, a malformed query) — \
+  explain what the retry should do differently
+- escalate: reserved for cases a retry cannot fix — the tool fundamentally cannot do what the \
+  subtask needs, the subtask itself is ambiguous about what's being asked, or the output is \
+  internally contradictory. Not for "I'd like more verification of a result that already came \
+  back successfully and looks correct" — explain specifically what about the output itself (not \
+  its data source) makes this unfixable by a retry"""
+
+
+SUBAGENT_STEP_PROMPT = """You are a sub-agent delegated one specific goal. Unlike a subtask's \
+one-shot tool choice, you can make several tool calls in sequence, inspecting each result before \
+deciding your next move — use that: investigate, then decide, rather than guessing everything \
+up front.
+
+Goal: {goal}
+
+Available tools:
+{tool_descriptions}
+
+What you've done so far this run (may be empty on your first step):
+{step_history}
+
+Decide your next step:
+- call_tool: set tool_name and tool_input_json (a valid JSON object string with exactly the \
+  keyword arguments that tool expects)
+- finish: set final_answer to your complete answer to the goal, using only what you actually \
+  found via your tool calls above — do not invent a result you never retrieved
+
+You have at most {steps_remaining} step(s) left including this one. If you're out of steps next \
+time, finish now with your best honest answer (including saying what's still missing) rather \
+than starting a call_tool step you won't get to use."""
 
 
 SYNTHESIS_PROMPT = """You are the supervisor. All subtasks for this request are done (or were \

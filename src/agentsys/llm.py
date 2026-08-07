@@ -14,13 +14,16 @@ def get_client() -> OpenAI:
     return _client
 
 
-def complete(prompt: str, *, model: str | None = None) -> str:
+def complete(prompt: str, *, model: str | None = None) -> tuple[str, object]:
+    """Returns (text, completion) rather than just text -- callers that need
+    to record cost (see agentsys.cost) need the raw completion for its
+    model/usage fields; callers that don't just take the first element."""
     client = get_client()
     response = client.chat.completions.create(
         model=model or settings.llm_model,
         messages=[{"role": "user", "content": prompt}],
     )
-    return response.choices[0].message.content or ""
+    return response.choices[0].message.content or "", response
 
 
 def embed_texts(texts: list[str], *, model: str = "text-embedding-3-small") -> list[list[float]]:

@@ -77,7 +77,16 @@ def test_multi_subtask_task_respects_dependency_order():
     task = _get_task(task_id)
     subtasks = _get_subtasks(task_id)
 
-    assert task.status == TaskStatus.COMPLETED
+    # COMPLETED is the common case; AWAITING_APPROVAL is also acceptable --
+    # review_node's independent reviewer model (gpt-4o, see config.py's
+    # reviewer_llm_model) can be more conservative than the specialist's
+    # gpt-4o-mini and legitimately escalate a technically-correct tool
+    # result over data-provenance concerns rather than rubber-stamp it. This
+    # test cares about dependency ordering, not review outcome -- same
+    # tolerance test_reviewer_rejects_bad_output_and_specialist_revises_on_retry
+    # already applies for the same reason (real LLM reviews aren't
+    # deterministic, and a stricter reviewer choosing to escalate isn't a bug).
+    assert task.status in (TaskStatus.COMPLETED, TaskStatus.AWAITING_APPROVAL)
     assert len(subtasks) >= 2
     # every subtask's dependencies must have an earlier position — this is the
     # cycle/self-reference prevention plan_node enforces, verified here on a
@@ -226,3 +235,31 @@ def test_memory_informed_planning_retrieves_prior_task_summary():
     # this task — verify it's actually retrievable, not just written.
     results = long_term.retrieve_relevant(f"task involving the word {marker}", k=3)
     assert any(marker in r.content for r in results)
+
+
+def test_specialist_does_not_fabricate_values_it_cannot_know():
+    """Regression test for a real bug found during live MCP verification.
+
+    Asked to roll dice, the specialist chose tool_name="none" with the
+    rationale that rolling dice "can be achieved through reasoning", then the
+    reasoning-only path invented four results (7, 3, 11, 5) and the reviewer
+    passed them. Random outcomes are unknowable by reasoning, so those numbers
+    were pure fabrication presented as fact.
+
+    Same failure class as the synthesis fabrication bug, one layer earlier:
+    SYNTHESIS_PROMPT had been hardened against inventing data, but
+    TOOL_SELECTION_PROMPT and REASONING_ONLY_PROMPT never were. This asserts a
+    real tool is used for a value that cannot be reasoned out.
+    """
+    task_id = _create_task(
+        "Roll four 12-sided dice and report each roll and the total."
+    )
+    run_task(task_id)
+
+    subtasks = _get_subtasks(task_id)
+    tools_used = {s.assigned_tool for s in subtasks if s.assigned_tool}
+
+    assert tools_used, (
+        "no subtask used any tool — the specialist reasoned its way to a random "
+        "result, which means it made the numbers up"
+    )

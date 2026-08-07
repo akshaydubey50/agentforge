@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from sqlmodel import select
 
@@ -5,6 +7,7 @@ import agentsys.db.models  # noqa: F401  registers tables on SQLModel.metadata b
 from agentsys.db.models import (
     Escalation,
     EscalationStatus,
+    LlmCall,
     MemoryEntry,
     Subtask,
     SubtaskStatus,
@@ -28,12 +31,16 @@ from agentsys.schemas import (
 )
 from agentsys.tools.registry import get_registry
 
-app = FastAPI(title="Agent Orchestration System", version="0.1.0")
-
-
-@app.on_event("startup")
-def on_startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Replaces the older @app.on_event("startup") hook, which FastAPI
+    deprecates -- the deprecation became a startup warning once the MCP
+    dependency forced fastapi/starlette forward (see requirements.txt)."""
     init_db()
+    yield
+
+
+app = FastAPI(title="Agent Orchestration System", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -170,6 +177,7 @@ def analytics() -> dict:
         tasks = session.exec(select(Task)).all()
         tool_calls = session.exec(select(ToolCall)).all()
         escalations = session.exec(select(Escalation)).all()
+        llm_calls = session.exec(select(LlmCall)).all()
 
     by_status = {}
     for t in tasks:
@@ -189,12 +197,18 @@ def analytics() -> dict:
     for e in escalations:
         escalations_by_status[e.status.value] = escalations_by_status.get(e.status.value, 0) + 1
 
+    cost_by_purpose: dict[str, float] = {}
+    for lc in llm_calls:
+        cost_by_purpose[lc.purpose] = round(cost_by_purpose.get(lc.purpose, 0.0) + lc.cost_usd, 6)
+
     return {
         "tasks_by_status": by_status,
         "tool_stats": by_tool,
         "escalations_by_status": escalations_by_status,
         "total_tasks": len(tasks),
         "total_tool_calls": len(tool_calls),
+        "total_cost_usd": round(sum(lc.cost_usd for lc in llm_calls), 6),
+        "cost_by_purpose": cost_by_purpose,
     }
 
 
