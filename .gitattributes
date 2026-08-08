@@ -1,0 +1,5 @@
+# Shell scripts get copied straight into a Linux Docker image (see
+# Dockerfile's `COPY scripts/ scripts/`) -- a CRLF line ending would break
+# the shebang and every line inside the container. Force LF regardless of
+# what a Windows checkout's core.autocrlf would otherwise do.
+*.sh text eol=lf
