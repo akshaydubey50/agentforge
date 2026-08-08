@@ -1,7 +1,12 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func
 from sqlmodel import select
+
+from agentsys.config import settings as agent_settings
 
 import agentsys.db.models  # noqa: F401  registers tables on SQLModel.metadata before init_db()
 from agentsys.db.models import (
@@ -22,10 +27,12 @@ from agentsys.memory.chroma_client import get_chroma_client
 from agentsys.schemas import (
     CreateTaskRequest,
     EscalationDecisionRequest,
+    EscalationListOut,
     EscalationOut,
     MemoryEntryOut,
     SubtaskOut,
     TaskDetailOut,
+    TaskListOut,
     TaskOut,
     TraceSpanOut,
 )
@@ -41,6 +48,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Agent Orchestration System", version="0.1.0", lifespan=lifespan)
+
+# Dev-only connectivity fix, not auth: the Next.js dev server (web/) needs to
+# call this API cross-origin. Tighten (or replace with per-tenant auth) once
+# the frontend is served from a real origin -- see docs on the open auth gap.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
@@ -98,11 +115,81 @@ def create_task(body: CreateTaskRequest) -> TaskOut:
     return out
 
 
-@app.get("/v1/tasks", response_model=list[TaskOut])
-def list_tasks(limit: int = 50) -> list[TaskOut]:
+# file_io's read action loads with read_text(encoding="utf-8") -- only these
+# formats are guaranteed readable by the agent; a PDF/binary upload would
+# just throw a decode error inside the tool, so it's rejected up front
+# instead of accepted and silently failing later.
+_ATTACHABLE_SUFFIXES = {".txt", ".md", ".csv", ".json", ".py", ".log", ".yaml", ".yml"}
+
+
+@app.post("/v1/tasks/upload", response_model=TaskOut)
+def create_task_with_files(
+    request_text: str = Form(...), files: list[UploadFile] = File(default=[])
+) -> TaskOut:
+    from agentsys.worker import run_agent_task
+
+    for f in files:
+        suffix = Path(f.filename or "").suffix.lower()
+        if suffix not in _ATTACHABLE_SUFFIXES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unsupported attachment type '{suffix}' -- allowed: {sorted(_ATTACHABLE_SUFFIXES)}",
+            )
+
     with get_session() as session:
-        tasks = session.exec(select(Task).order_by(Task.created_at.desc()).limit(limit)).all()
-    return [_task_out(t) for t in tasks]
+        task = Task(request_text=request_text)
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+        out = _task_out(task)
+
+    saved_names: list[str] = []
+    if files:
+        task_dir = Path(agent_settings.workspace_dir) / out.id
+        task_dir.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            filename = Path(f.filename or "").name  # strip any path components -- traversal guard
+            (task_dir / filename).write_bytes(f.file.read())
+            saved_names.append(filename)
+
+        # The specialist only sees request_text -- this is how it learns the
+        # file exists at all, same reasoning as db_query's tool description
+        # needing to state the exact data format (see README's "real bugs
+        # found" #1): give it upfront, don't make it guess.
+        attachment_note = (
+            "\n\n(Attached file"
+            + ("s" if len(saved_names) > 1 else "")
+            + ": "
+            + ", ".join(saved_names)
+            + " -- already in your workspace, read with file_io.)"
+        )
+        with get_session() as session:
+            task = session.get(Task, out.id)
+            task.request_text = task.request_text + attachment_note
+            session.add(task)
+            session.commit()
+            session.refresh(task)
+            out = _task_out(task)
+
+    run_agent_task.delay(out.id)
+    return out
+
+
+@app.get("/v1/tasks", response_model=TaskListOut)
+def list_tasks(status: str = "all", limit: int = 50, offset: int = 0) -> TaskListOut:
+    with get_session() as session:
+        count_query = select(func.count()).select_from(Task)
+        query = select(Task).order_by(Task.created_at.desc())
+        if status != "all":
+            try:
+                status_value = TaskStatus(status)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"unknown status '{status}'")
+            count_query = count_query.where(Task.status == status_value)
+            query = query.where(Task.status == status_value)
+        total = session.exec(count_query).one()
+        tasks = session.exec(query.offset(offset).limit(limit)).all()
+    return TaskListOut(items=[_task_out(t) for t in tasks], total=total)
 
 
 @app.get("/v1/tasks/{task_id}", response_model=TaskDetailOut)
@@ -141,14 +228,21 @@ def _escalation_out(e: Escalation) -> EscalationOut:
     )
 
 
-@app.get("/v1/escalations", response_model=list[EscalationOut])
-def list_escalations(status: str = "pending") -> list[EscalationOut]:
+@app.get("/v1/escalations", response_model=EscalationListOut)
+def list_escalations(status: str = "pending", limit: int = 50, offset: int = 0) -> EscalationListOut:
     with get_session() as session:
+        count_query = select(func.count()).select_from(Escalation)
         query = select(Escalation).order_by(Escalation.created_at.desc())
         if status != "all":
-            query = query.where(Escalation.status == EscalationStatus(status))
-        escalations = session.exec(query).all()
-    return [_escalation_out(e) for e in escalations]
+            try:
+                status_value = EscalationStatus(status)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"unknown status '{status}'")
+            count_query = count_query.where(Escalation.status == status_value)
+            query = query.where(Escalation.status == status_value)
+        total = session.exec(count_query).one()
+        escalations = session.exec(query.offset(offset).limit(limit)).all()
+    return EscalationListOut(items=[_escalation_out(e) for e in escalations], total=total)
 
 
 @app.post("/v1/escalations/{escalation_id}/decide", response_model=EscalationOut)

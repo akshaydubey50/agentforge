@@ -32,6 +32,11 @@ class TaskDetailOut(TaskOut):
     subtasks: list[SubtaskOut]
 
 
+class TaskListOut(BaseModel):
+    items: list[TaskOut]
+    total: int
+
+
 class EscalationOut(BaseModel):
     id: str
     task_id: str
@@ -42,6 +47,11 @@ class EscalationOut(BaseModel):
     decided_by: str | None
     created_at: datetime
     decided_at: datetime | None
+
+
+class EscalationListOut(BaseModel):
+    items: list[EscalationOut]
+    total: int
 
 
 class EscalationDecisionRequest(BaseModel):

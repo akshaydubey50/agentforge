@@ -73,7 +73,7 @@
   },
   {
     "chunk_id": "e124097084d9_fixed_overlap_0",
-    "text": "Akshay Dubey\nMumbai, India\n\u2642phone+91-8779197850 /envel\u2322peakshaydubey1818@gmail.com /linkedinakshay-dubey-2060 /githubakshay-dubey\nSummary\nFull Stack Engineer with 4+ years of experience building production-grade applications at enterprise scale. Currently atFynd\n(Reliance-backed), building AI-powered hiring platform with LLM-driven candidate intelligence, multi-model orchestration,\nand vector search. Previously delivered e-commerce modules for Fynd\u2019s retail platform serving 2,300+ brands.\nSkills\nFrontend: React.js, Next.js, TypeScript, JavaScript, Redux, Zustand, RTK Query, Tailwind CSS\nBackend: Node.js, Express.js, Python (FastAPI), GraphQL, REST APIs, Kafka, JWT Authentication\nAI/LLM: OpenAI API, OpenRouter, LangChain, LangGraph, RAG Pipelines, Vector Search, Langfuse (Observability)",
+    "text": "Akshay Dubey\nMumbai, India\n+91-8779197850|akshaydubey1818@gmail.com |akshay-dubey-2060 |akshaydubey50\nSummary\nAI Full Stack Engineer with 4+ years of experience building production-grade applications at enterprise scale. Currently at\nFynd(Reliance-backed), building an AI-powered hiring platform with multi-model LLM orchestration, RAG pipelines, and\nvector search. Builds and shipsLangGraph-based multi-agent systemsend-to-end \u2013 planning, tool-use,\nhuman-in-the-loop escalation, and full execution tracing \u2013 validated with real test suites and quantified evaluations, not demos.\nSkills\nAI/Agentic Systems: LangChain, LangGraph (multi-agent orchestration, ReAct reasoning patterns), RAG Pipelines",
     "metadata": {
       "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
       "title": "Akshay Dubey",
@@ -85,7 +85,7 @@
   },
   {
     "chunk_id": "e124097084d9_fixed_overlap_1",
-    "text": "AI/LLM: OpenAI API, OpenRouter, LangChain, LangGraph, RAG Pipelines, Vector Search, Langfuse (Observability)\nDatabases: PostgreSQL, pgvector, MongoDB, Redis, Prisma ORM\nCloud & DevOps: GCP (Cloud Run), Docker, CI/CD Pipelines, Vercel, Supabase, Firebase\nTools: Git, Sentry, PostHog, PG Boss, Cloudflare, MCP Protocol\nExperience\nFynd (Shopsense Retail Technologies) Mumbai, India\nAI Full Stack Engineer March 2025 \u2013 Present\nAI Hiring Platform (HireFirst/Orion):\n\u2022Implementedmulti-model LLM council systemusing OpenRouter coordinating GPT-4, Claude, and Gemini through\na 3-stage pipeline: independent analysis, cross-model ranking, and chairman synthesis for enterprise hiring decisions.\n\u2022Extendedmulti-vector RAG pipelineusing OpenAI text-embedding-3-large with 7 semantic vectors (skills, role,",
+    "text": "Skills\nAI/Agentic Systems: LangChain, LangGraph (multi-agent orchestration, ReAct reasoning patterns), RAG Pipelines\n(hybrid dense + BM25 retrieval, RRF fusion, LLM reranking), Vector Search (pgvector, ChromaDB), Prompt Engineering,\nLangfuse (LLM Observability), MCP (Model Context Protocol)\nFrontend: React.js, Next.js, TypeScript, JavaScript, Redux, Zustand, RTK Query, Tailwind CSS\nBackend: Node.js, Express.js, Python (FastAPI), GraphQL, REST APIs, Kafka, Celery, JWT Authentication\nDatabases: PostgreSQL, pgvector, MongoDB, Redis, Prisma ORM\nCloud & DevOps: GCP (Cloud Run), Docker, CI/CD Pipelines, Vercel, Supabase, Firebase\nPractices & Tools: Agile/Scrum, Git, Sentry, PostHog, PG Boss, Cloudflare\nExperience\nFynd (Shopsense Retail Technologies) Mumbai, India",
     "metadata": {
       "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
       "title": "Akshay Dubey",
@@ -97,7 +97,7 @@
   },
   {
     "chunk_id": "e124097084d9_fixed_overlap_2",
-    "text": "\u2022Extendedmulti-vector RAG pipelineusing OpenAI text-embedding-3-large with 7 semantic vectors (skills, role,\ndomain, seniority, functional, education, full-profile) stored inpgvectorfor candidate-job matching with weighted\nsimilarity scoring.\n\u2022Contributed toasynchronous processing pipelineusing PG Boss queue with multi-stage orchestration (Parse,\nDeduplicate, Score), exponential backoff retry, and fuzzy deduplication for bulk candidate processing.\n\u2022IntegratedLangfuse for LLM observability\u2014 enabling trace debugging across multi-model council sessions and\ntoken usage monitoring.\n\u2022Implemented tool-enabled AI agents usingMCP (Model Context Protocol)with circuit breakers on AI/storage\nservices for resilient document processing.\nE-commerce Platform (Fynd Commerce \u2014 2,300+ brands, 20K+ stores):",
+    "text": "Practices & Tools: Agile/Scrum, Git, Sentry, PostHog, PG Boss, Cloudflare\nExperience\nFynd (Shopsense Retail Technologies) Mumbai, India\nAI Full Stack Engineer March 2025 \u2013 Present\nHireFirst / Orion \u2013 AI Hiring Intelligence Platform\n\u2022Implementedmulti-model LLM council systemusing OpenRouter coordinating GPT-4, Claude, and Gemini through\na 3-stage pipeline: independent analysis, cross-model ranking, and chairman synthesis for enterprise hiring decisions.\n\u2022Extendedmulti-vector RAG pipelineusing OpenAI text-embedding-3-large with 7 semantic vectors (skills, role,\ndomain, seniority, functional, education, full-profile) stored inpgvectorfor candidate-job matching with weighted\nsimilarity scoring.",
     "metadata": {
       "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
       "title": "Akshay Dubey",
@@ -109,7 +109,7 @@
   },
   {
     "chunk_id": "e124097084d9_fixed_overlap_3",
-    "text": "services for resilient document processing.\nE-commerce Platform (Fynd Commerce \u2014 2,300+ brands, 20K+ stores):\n\u2022Developed full-stacke-commerce bundle modulesusing React.js, TypeScript, andPython FastAPI, building REST\nAPIs, implementing pricing distribution algorithms, and integrating Kafka event streaming for commerce workflows.\n\u2022Built and enhancedPython FastAPIbackend services, collaborating with frontend and backend teams to design\nscalable REST APIs, optimize request handling, and ensure seamless frontend-backend integration.\n\u2022Implementedpolygon-based geospatial shipping zonesusing point-in-polygon calculations for hyperlocal delivery\noptimization.\n\u2022Served asMaintenance DRI, leveraging Sentry and PostHog to diagnose, troubleshoot, and resolve production issues",
+    "text": "domain, seniority, functional, education, full-profile) stored inpgvectorfor candidate-job matching with weighted\nsimilarity scoring.\n\u2022Contributed toasynchronous processing pipelineusing PG Boss queue with multi-stage orchestration (Parse,\nDeduplicate, Score), exponential backoff retry, and fuzzy deduplication for bulk candidate processing, in an\nAgile/Scrumdelivery environment.\n\u2022IntegratedLangfuse for LLM observability\u2014 enabling trace debugging across multi-model council sessions and\ntoken usage monitoring.\n\u2022Implemented tool-enabled AI agents usingMCP (Model Context Protocol)with circuit breakers on AI/storage\nservices for resilient document processing.\n\u2022Monitored and maintained theGCP deployment pipeline, performing deployment check-ins and diagnosing/fixing",
     "metadata": {
       "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
       "title": "Akshay Dubey",
@@ -121,7 +121,7 @@
   },
   {
     "chunk_id": "e124097084d9_fixed_overlap_4",
-    "text": "optimization.\n\u2022Served asMaintenance DRI, leveraging Sentry and PostHog to diagnose, troubleshoot, and resolve production issues\nacross the retail platform while improving application reliability.\nOsian Infotech Pvt Ltd Mumbai, India\nSoftware Developer March 2022 \u2013 February 2025\n\u2022Developed and maintained production applications usingReact.js,TypeScript, andPython FastAPI, building\nresponsive user interfaces, developing REST APIs, implementing backend business logic, and delivering seamless\nfrontend-backend integration for enterprise applications.\n\u2022Optimized application performance using React memoization, lazy loading, and code splitting, improving Core Web\nVitals and overall user experience.",
+    "text": "\u2022Monitored and maintained theGCP deployment pipeline, performing deployment check-ins and diagnosing/fixing\npipeline issues to keep releases reliable.\nFynd Commerce \u2013 E-commerce Platform (2,300+ brands, 20K+ stores)\n\u2022Developed full-stacke-commerce bundle modulesusing React.js, TypeScript, andPython FastAPI, building\nREST and GraphQL APIs, implementing pricing distribution algorithms, and integrating Kafka event streaming for\ncommerce workflows.\n\u2022Built and enhancedPython FastAPIbackend services, collaborating with frontend and backend teams to design\nscalable APIs, optimize request handling, and ensure seamless frontend-backend integration.\n\u2022Implementedpolygon-based geospatial shipping zonesusing point-in-polygon calculations for hyperlocal delivery\noptimization.",
     "metadata": {
       "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
       "title": "Akshay Dubey",
@@ -133,7 +133,7 @@
   },
   {
     "chunk_id": "e124097084d9_fixed_overlap_5",
-    "text": "\u2022Optimized application performance using React memoization, lazy loading, and code splitting, improving Core Web\nVitals and overall user experience.\n\u2022ImplementedRedux Toolkitand RTK Query for state management and API caching, ensuring efficient data flow and\nconsistent application state across modules.\nProjects\nContent Creation FYI|Next.js, PostgreSQL, Supabase, Prisma, NextAuth, TypeScriptcontentcreation.fyi\n\u2022Built full-stackNext.jsplatform with PostgreSQL on Supabase, Prisma ORM, and API routes serving 200+ curated\ntools for content creators.\n\u2022ImplementedNextAuthauthentication with JWT sessions, protected API routes, and engagement features including\nbookmarking, upvoting, and server-side rendering for SEO optimization.\nEducation\nMumbai University Maharashtra, India",
+    "text": "\u2022Implementedpolygon-based geospatial shipping zonesusing point-in-polygon calculations for hyperlocal delivery\noptimization.\n\u2022Served asMaintenance DRI, leveraging Sentry and PostHog to diagnose, troubleshoot, and resolve production issues\nacross the retail platform while improving application reliability.\nOsian Infotech Pvt Ltd Mumbai, India\nSoftware Developer March 2022 \u2013 February 2025\n\u2022Built and maintainedPython FastAPI backend servicesand REST APIs for enterprise applications \u2013 implementing\nbusiness logic, request handling, and data flow between services \u2013 alongside React.js/TypeScript frontends for the same\nmodules.\n\u2022UsedRedux Toolkitand RTK Query for state/API caching, and React memoization/code-splitting for performance,\nimproving Core Web Vitals across modules.",
     "metadata": {
       "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
       "title": "Akshay Dubey",
@@ -145,7 +145,7 @@
   },
   {
     "chunk_id": "e124097084d9_fixed_overlap_6",
-    "text": "bookmarking, upvoting, and server-side rendering for SEO optimization.\nEducation\nMumbai University Maharashtra, India\nBachelor of Science in Computer Science (BSc.CS); CGPA: 7.27 July 2019 \u2013 March 2022",
+    "text": "AI Agent Projects\nAgentForge\u2013 Multi-Agent System with Human-in-the-Loop\nLangGraph, FastAPI, Postgres, Redis, ChromaDB, Celery, Docker|github.com/akshaydubey50/agentforge\n\u2022Built a production-stylemulti-agent systeminLangGraph\u2013 Supervisor plans, Specialists execute tools, a Reviewer\nvalidates \u2013 with retry-on-rejection, escalation to a human via API/dashboard, andfull execution tracing(every node\nlogs a TraceSpan for input, output, status, timing).\n\u2022Designedpersistent, resumable task statein Postgres (not the in-memory graph checkpointer), enabling a paused\ntask to be approved and resumed by an entirely different worker process, verified by an automated pause/resume\nintegration test.",
     "metadata": {
       "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
       "title": "Akshay Dubey",
@@ -153,6 +153,42 @@
       "filename": "Akshay Dubey Resume AI Fullstack Engineer.pdf",
       "doc_id": "e124097084d9",
       "position": 6
+    }
+  },
+  {
+    "chunk_id": "e124097084d9_fixed_overlap_7",
+    "text": "task to be approved and resumed by an entirely different worker process, verified by an automated pause/resume\nintegration test.\n\u2022Implemented sandboxedagent toolswith real safety constraints: regex + transaction-level read-only SQL enforcement,\nnetwork-disabled Docker code execution with enforced timeouts, and path-traversal-proof sandboxed file I/O.\n\u2022Addedlong-term memory(ChromaDB + Postgres) that ranks past task recall by a blend of semantic similarity and\nimportance, informing future planning.\n\u2022Validated with45 automated tests (43 passing, 2 gracefully-skipped)against real Postgres, Redis, Chroma,\nDocker, and OpenAI calls \u2013 including a regression test that catches the system fabricating unretrieved data.\nHybrid RAG Eval\u2013 Hybrid-Search RAG with Quantified Evaluation",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "doc_id": "e124097084d9",
+      "position": 7
+    }
+  },
+  {
+    "chunk_id": "e124097084d9_fixed_overlap_8",
+    "text": "Hybrid RAG Eval\u2013 Hybrid-Search RAG with Quantified Evaluation\nPython, FastAPI, ChromaDB, BM25, OpenAI|github.com/akshaydubey50/hybrid-rag-eval\n\u2022Built ahybrid retrieval RAG pipelinecombining dense embeddings (OpenAI + ChromaDB) and sparse BM25 via\nReciprocal Rank Fusion, followed by anLLM rerankingstage over fused candidates.\n\u2022Implemented independentcitation verification(a separate LLM pass checks each cited claim against source text) and\namultiplicative confidence score, so an honest \u201dno answer\u201d scores zero confidence instead of a false-positive blend.\n\u2022Ran a hand-written50-case golden evaluation setacross 3 chunking strategies (150 total evaluations, zero errors),\nachieving up to98% answer correctness,98%+ citation precision, and100% correct refusalon out-of-scope\nquestions.",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "doc_id": "e124097084d9",
+      "position": 8
+    }
+  },
+  {
+    "chunk_id": "e124097084d9_fixed_overlap_9",
+    "text": "achieving up to98% answer correctness,98%+ citation precision, and100% correct refusalon out-of-scope\nquestions.\n\u2022Shipped as a Dockerized service (FastAPI + Streamlit dashboard) with a repeatable eval harness (run eval.py) so\nretrieval-strategy tradeoffs are measured, not assumed.\nEducation\nMumbai University Maharashtra, India\nBachelor of Science in Computer Science (BSc.CS); CGPA: 7.27 July 2019 \u2013 March 2022",
+    "metadata": {
+      "source_path": "/app/data/raw/Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "title": "Akshay Dubey",
+      "format": "pdf",
+      "filename": "Akshay Dubey Resume AI Fullstack Engineer.pdf",
+      "doc_id": "e124097084d9",
+      "position": 9
     }
   },
   {

@@ -45,6 +45,13 @@ def _build_registry() -> ToolRegistry:
     except ImportError:
         logger.warning("delegate_subagent tool not available")
 
+    try:
+        from agentsys.tools.knowledge_search import KnowledgeSearchTool
+
+        registry.register(KnowledgeSearchTool())
+    except ImportError:
+        logger.warning("knowledge_search tool not available")
+
     _register_mcp_tools(registry)
 
     return registry

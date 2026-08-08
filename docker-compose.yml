@@ -44,6 +44,7 @@ services:
       CHROMA_HOST: "chroma"
       CHROMA_PORT: "8000"
       WORKSPACE_DIR: "/app/data/workspace"
+      RAG_API_URL: "http://rag-api:8000"
     volumes:
       - ./data:/app/data
     depends_on:
@@ -62,6 +63,7 @@ services:
       CHROMA_HOST: "chroma"
       CHROMA_PORT: "8000"
       WORKSPACE_DIR: "/app/data/workspace"
+      RAG_API_URL: "http://rag-api:8000"
     volumes:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock

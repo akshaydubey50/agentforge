@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     chroma_host: str = "localhost"
     chroma_port: int = 8001
+    rag_api_url: str = "http://localhost:8000"
+    """Base URL for src/rag's separate FastAPI service. The two packages don't
+    import each other (see docs/MERGE.md) -- this is the one HTTP seam between
+    them, used by tools/knowledge_search.py so the agent can actually use
+    documents uploaded to Knowledge. Overridden to the docker-network hostname
+    (http://rag-api:8000) in docker-compose.yml for the api/worker containers."""
 
     max_subtask_retries: int = 2
     plan_confidence_escalation_threshold: int = 3
