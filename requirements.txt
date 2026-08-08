@@ -23,6 +23,7 @@ chromadb==0.5.11
 # --- agentsys: orchestration, persistence, tools ---
 sqlmodel==0.0.22
 psycopg[binary]==3.2.3
+psycopg2-binary==2.9.9
 celery==5.4.0
 redis==5.1.1
 langgraph==0.2.34
