@@ -26,11 +26,11 @@ from rag.schemas import (
 
 app = FastAPI(title="RAG Production Pipeline", version="0.1.0")
 
-# Dev-only connectivity fix, matching agentsys/main.py -- see that file's
-# comment for the reasoning. Same open-until-auth-exists caveat applies.
+# Not auth: matching agentsys/main.py's CORS setup -- see that file's comment
+# for the reasoning. Same open-until-auth-exists caveat applies.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=settings.cors_allowed_origins_list,
     allow_methods=["*"],
     allow_headers=["*"],
 )

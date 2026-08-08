@@ -31,12 +31,17 @@ def _build_registry() -> ToolRegistry:
     except ImportError:
         logger.warning("db_query tool not available")
 
-    try:
-        from agentsys.tools.code_execution import CodeExecutionTool
+    from agentsys.config import settings
 
-        registry.register(CodeExecutionTool())
-    except ImportError:
-        logger.warning("code_execution tool not available")
+    if settings.enable_code_execution:
+        try:
+            from agentsys.tools.code_execution import CodeExecutionTool
+
+            registry.register(CodeExecutionTool())
+        except ImportError:
+            logger.warning("code_execution tool not available")
+    else:
+        logger.info("code_execution tool disabled via ENABLE_CODE_EXECUTION=false (no Docker socket in this env)")
 
     try:
         from agentsys.tools.delegate_subagent import DelegateSubagentTool

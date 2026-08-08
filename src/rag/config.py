@@ -14,6 +14,15 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     embedding_model: str = "text-embedding-3-small"
 
+    cors_allowed_origins: str = "http://localhost:3000"
+    """Comma-separated, not a JSON list -- matches agentsys/config.py's setting
+    of the same name/shape, same reasoning: easy to type into a deployment
+    platform's env-var UI without JSON-array syntax."""
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
     @property
     def raw_data_dir(self) -> Path:
         return PROJECT_ROOT / "data" / "raw"

@@ -49,12 +49,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Agent Orchestration System", version="0.1.0", lifespan=lifespan)
 
-# Dev-only connectivity fix, not auth: the Next.js dev server (web/) needs to
-# call this API cross-origin. Tighten (or replace with per-tenant auth) once
-# the frontend is served from a real origin -- see docs on the open auth gap.
+# Not auth: this is connectivity, not access control. Origins come from
+# CORS_ALLOWED_ORIGINS (comma-separated, see config.py) so the deployed web/
+# frontend's real origin can be added without a code change -- defaults to
+# just the Next.js dev server. Tighten (or replace with per-tenant auth) once
+# there's a real auth story -- see docs on the open auth gap.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=agent_settings.cors_allowed_origins_list,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -29,6 +29,25 @@ class Settings(BaseSettings):
     documents uploaded to Knowledge. Overridden to the docker-network hostname
     (http://rag-api:8000) in docker-compose.yml for the api/worker containers."""
 
+    cors_allowed_origins: str = "http://localhost:3000"
+    """Comma-separated, not a JSON list -- a human typing this into a
+    deployment platform's env-var UI (Railway, etc.) shouldn't have to get
+    JSON-array syntax right. Split via cors_allowed_origins_list below."""
+
+    enable_code_execution: bool = True
+    """code_execution sandboxes Python by spawning a sibling Docker container,
+    which needs the host's Docker socket (see docker-compose.yml's worker
+    volume mount) -- unavailable on platforms like Railway that don't expose
+    one. Set false there so the tool degrades out of the registry cleanly
+    (same shape as every other tool's ImportError handling in registry.py)
+    instead of failing every call. True is the right default everywhere this
+    actually has Docker access, which is every environment except a
+    Docker-socket-less cloud deploy."""
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
     max_subtask_retries: int = 2
     plan_confidence_escalation_threshold: int = 3
     review_escalation_threshold: int = 2
