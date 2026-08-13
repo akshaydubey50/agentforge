@@ -1,62 +1,45 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import useSWR from "swr";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { ThemeToggle } from "./ThemeToggle";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-const PRIMARY = [
-  { href: "/ask", icon: "✳", label: "Ask" },
-  { href: "/runs", icon: "◷", label: "Runs" },
-];
-const CAPABILITIES = [
-  { href: "/knowledge", icon: "◫", label: "Knowledge" },
-  { href: "/tools", icon: "⚙", label: "Tools" },
-  { href: "/automations", icon: "↻", label: "Automations" },
-];
-const ACCOUNT = [
-  { href: "/usage", icon: "◔", label: "Usage" },
-  { href: "/settings", icon: "⚑", label: "Settings" },
-];
+export const LAST_TASK_STORAGE_KEY = "agentforge:last-task-id";
 
-function GroupLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-2 pb-1 pt-3 text-[9.5px] font-extrabold uppercase tracking-wider text-text-faint">
-      {children}
-    </div>
-  );
-}
-
-function NavLink({
+function RailIcon({
   href,
-  icon,
+  glyph,
   label,
   active,
-  count,
+  badge,
 }: {
   href: string;
-  icon: string;
+  glyph: string;
   label: string;
   active: boolean;
-  count?: number;
+  badge?: boolean;
 }) {
   return (
-    <Link
-      href={href}
-      className={cn(
-        "flex items-center gap-2 rounded-[var(--rs)] px-2 py-1.5 text-[13px] font-medium text-text-muted transition-colors",
-        "hover:bg-surface-3 hover:text-text",
-        active && "bg-brand-wash font-semibold text-brand hover:bg-brand-wash hover:text-brand"
-      )}
-    >
-      <span className="w-4 flex-none text-center">{icon}</span>
-      {label}
-      {!!count && (
-        <span className="ml-auto rounded-full bg-warn px-1.5 text-[10px] font-extrabold text-white">{count}</span>
-      )}
-    </Link>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link
+          href={href}
+          className={cn(
+            "relative flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[9px] text-[16px] text-text-faint transition-colors",
+            "hover:bg-surface-3 hover:text-text",
+            active && "bg-surface-3 text-role-supervisor hover:text-role-supervisor"
+          )}
+        >
+          {glyph}
+          {badge && <span className="absolute right-[5px] top-[5px] h-[7px] w-[7px] rounded-full bg-role-human" />}
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -66,40 +49,46 @@ export function Sidebar() {
     refreshInterval: 5000,
   });
 
+  // The rail's Graph icon needs a task to point at when the user isn't
+  // already looking at one -- task detail pages write their id here on
+  // mount (see TaskFeedPage/AgentGraphPage), so the rail can jump back into
+  // whichever task was last open instead of dead-ending at nothing.
+  const [lastTaskId, setLastTaskId] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      setLastTaskId(localStorage.getItem(LAST_TASK_STORAGE_KEY));
+    } catch {
+      // localStorage unavailable -- Graph just falls back to the task list
+    }
+  }, [pathname]);
+
+  const taskMatch = pathname.match(/^\/tasks\/([^/]+)/);
+  const currentTaskId = taskMatch ? taskMatch[1] : null;
+  const isGraphRoute = pathname.endsWith("/graph");
+
+  const graphHref = currentTaskId
+    ? `/tasks/${currentTaskId}/graph`
+    : lastTaskId
+      ? `/tasks/${lastTaskId}/graph`
+      : "/tasks";
+
   return (
-    <nav className="flex w-[214px] flex-none flex-col gap-0.5 border-r border-border bg-surface-2 p-3">
-      <div className="flex items-center gap-2 px-2 pb-4 pt-1">
-        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-brand text-[12.5px] font-extrabold text-brand-foreground">
-          A
-        </div>
-        <b className="font-serif-display text-[15px] tracking-tight text-text">AgentForge</b>
+    <nav className="flex w-[60px] flex-none flex-col items-center gap-1.5 border-r border-border bg-rail py-4">
+      <div className="mb-3.5 flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] bg-gradient-to-br from-role-supervisor to-[#6D5AE0] text-[13px] font-bold text-background">
+        AF
       </div>
 
-      {PRIMARY.map((item) => (
-        <NavLink key={item.href} {...item} active={pathname.startsWith(item.href)} />
-      ))}
-      <NavLink
+      <RailIcon href="/tasks" glyph="▤" label="Tasks" active={pathname.startsWith("/tasks") && !isGraphRoute} />
+      <RailIcon href={graphHref} glyph="◈" label="Agent graph" active={pathname.startsWith("/tasks") && isGraphRoute} />
+      <RailIcon
         href="/approvals"
-        icon="✓"
+        glyph="!"
         label="Approvals"
         active={pathname.startsWith("/approvals")}
-        count={pendingCount}
+        badge={!!pendingCount}
       />
-
-      <GroupLabel>Capabilities</GroupLabel>
-      {CAPABILITIES.map((item) => (
-        <NavLink key={item.href} {...item} active={pathname.startsWith(item.href)} />
-      ))}
-
-      <GroupLabel>Account</GroupLabel>
-      {ACCOUNT.map((item) => (
-        <NavLink key={item.href} {...item} active={pathname.startsWith(item.href)} />
-      ))}
-
-      <div className="mt-auto border-t border-border pt-2.5 text-[11px] text-text-faint">
-        Open dev build · no sign-in yet
-        <ThemeToggle />
-      </div>
+      <RailIcon href="/memory" glyph="⬡" label="Memory" active={pathname.startsWith("/memory")} />
+      <RailIcon href="/analytics" glyph="▨" label="Analytics" active={pathname.startsWith("/analytics")} />
     </nav>
   );
 }

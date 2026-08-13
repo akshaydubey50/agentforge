@@ -30,6 +30,7 @@ from agentsys.schemas import (
     EscalationListOut,
     EscalationOut,
     MemoryEntryOut,
+    MemoryListOut,
     SubtaskOut,
     TaskDetailOut,
     TaskListOut,
@@ -231,7 +232,9 @@ def _escalation_out(e: Escalation) -> EscalationOut:
 
 
 @app.get("/v1/escalations", response_model=EscalationListOut)
-def list_escalations(status: str = "pending", limit: int = 50, offset: int = 0) -> EscalationListOut:
+def list_escalations(
+    status: str = "pending", limit: int = 50, offset: int = 0, task_id: str | None = None
+) -> EscalationListOut:
     with get_session() as session:
         count_query = select(func.count()).select_from(Escalation)
         query = select(Escalation).order_by(Escalation.created_at.desc())
@@ -242,6 +245,9 @@ def list_escalations(status: str = "pending", limit: int = 50, offset: int = 0) 
                 raise HTTPException(status_code=400, detail=f"unknown status '{status}'")
             count_query = count_query.where(Escalation.status == status_value)
             query = query.where(Escalation.status == status_value)
+        if task_id is not None:
+            count_query = count_query.where(Escalation.task_id == task_id)
+            query = query.where(Escalation.task_id == task_id)
         total = session.exec(count_query).one()
         escalations = session.exec(query.offset(offset).limit(limit)).all()
     return EscalationListOut(items=[_escalation_out(e) for e in escalations], total=total)
@@ -308,16 +314,23 @@ def analytics() -> dict:
     }
 
 
-@app.get("/v1/memory", response_model=list[MemoryEntryOut])
-def list_memory(limit: int = 50) -> list[MemoryEntryOut]:
+@app.get("/v1/memory", response_model=MemoryListOut)
+def list_memory(kind: str = "all", limit: int = 50, offset: int = 0) -> MemoryListOut:
     with get_session() as session:
-        entries = session.exec(
-            select(MemoryEntry).order_by(MemoryEntry.created_at.desc()).limit(limit)
-        ).all()
-    return [
-        MemoryEntryOut(
-            id=e.id, task_id=e.task_id, kind=e.kind, content=e.content, importance=e.importance,
-            created_at=e.created_at, last_accessed_at=e.last_accessed_at,
-        )
-        for e in entries
-    ]
+        count_query = select(func.count()).select_from(MemoryEntry)
+        query = select(MemoryEntry).order_by(MemoryEntry.created_at.desc())
+        if kind != "all":
+            count_query = count_query.where(MemoryEntry.kind == kind)
+            query = query.where(MemoryEntry.kind == kind)
+        total = session.exec(count_query).one()
+        entries = session.exec(query.offset(offset).limit(limit)).all()
+    return MemoryListOut(
+        items=[
+            MemoryEntryOut(
+                id=e.id, task_id=e.task_id, kind=e.kind, content=e.content, importance=e.importance,
+                created_at=e.created_at, last_accessed_at=e.last_accessed_at,
+            )
+            for e in entries
+        ],
+        total=total,
+    )
