@@ -81,6 +81,16 @@ export interface ToolInfo {
   description: string;
 }
 
+export interface MemoryEntryOut {
+  id: string;
+  task_id: string | null;
+  kind: string;
+  content: string;
+  importance: number;
+  created_at: string;
+  last_accessed_at: string;
+}
+
 export interface AnalyticsOut {
   tasks_by_status: Record<string, number>;
   tool_stats: Record<
@@ -134,8 +144,10 @@ export const api = {
 
   getTrace: (taskId: string) => request<TraceSpanOut[]>(`/v1/tasks/${taskId}/trace`),
 
-  listEscalations: (status: "pending" | "all" = "pending", limit = 25, offset = 0) =>
-    request<Page<EscalationOut>>(`/v1/escalations?status=${status}&limit=${limit}&offset=${offset}`),
+  listEscalations: (status: "pending" | "all" = "pending", limit = 25, offset = 0, taskId?: string) =>
+    request<Page<EscalationOut>>(
+      `/v1/escalations?status=${status}&limit=${limit}&offset=${offset}${taskId ? `&task_id=${taskId}` : ""}`
+    ),
 
   countPendingEscalations: () =>
     request<Page<EscalationOut>>(`/v1/escalations?status=pending&limit=1&offset=0`).then((p) => p.total),
@@ -158,6 +170,9 @@ export const api = {
   listTools: () => request<{ tools: ToolInfo[] }>("/v1/tools").then((r) => r.tools),
 
   getAnalytics: () => request<AnalyticsOut>("/v1/analytics"),
+
+  listMemory: (kind = "all", limit = 25, offset = 0) =>
+    request<Page<MemoryEntryOut>>(`/v1/memory?kind=${kind}&limit=${limit}&offset=${offset}`),
 };
 
 export const isActiveStatus = (status: TaskStatus) =>

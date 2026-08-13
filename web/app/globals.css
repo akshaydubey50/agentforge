@@ -1,117 +1,59 @@
 @import "tailwindcss";
 
-/* Warm-editorial token system. Both themes get equal care -- the dark
-   variant is a considered warm-dark palette, not an inverted light one.
-   Kept the approved sage accent (#2F5D50 / #6FBFA4) exactly; only the
-   neutrals, borders, and shadows shifted warmer. */
-:root {
-  --bg: #faf6ef;
-  --s1: #ffffff;
-  --s2: #f3ede1;
-  --s3: #eae0cc;
-  --bd: #e5dbc8;
-  --bd2: #d3c4a8;
-  --t1: #2b2620;
-  --t2: #6b6152;
-  --t3: #97897a;
-  --ac: #2f5d50;
-  --ac2: #e4efea;
-  --acT: #ffffff;
-  --ok: #2c7a52;
-  --okB: #e1f2e8;
-  --wn: #96601a;
-  --wnB: #fbeedc;
-  --bad: #a93b32;
-  --badB: #fbe6e3;
-  --badT: #ffffff;
-  --run: #2a5fa8;
-  --runB: #e3ecf9;
-  --sh1: 0 1px 2px rgba(43, 38, 32, 0.06);
-  --sh2: 0 6px 18px rgba(43, 38, 32, 0.1);
-  --sh3: 0 24px 60px rgba(43, 38, 32, 0.16);
-  --rs: 7px;
-  --rm: 12px;
-  --rl: 18px;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #16130f;
-    --s1: #1e1a14;
-    --s2: #251f17;
-    --s3: #2e2719;
-    --bd: #382f20;
-    --bd2: #493d28;
-    --t1: #f2ebdd;
-    --t2: #b3a68f;
-    --t3: #8a7d68;
-    --ac: #6fbfa4;
-    --ac2: #1b2a22;
-    --acT: #0a140f;
-    --ok: #63c68c;
-    --okB: #12241a;
-    --wn: #d9a45c;
-    --wnB: #261c0d;
-    --bad: #e8776c;
-    --badB: #2a1512;
-    --badT: #200e0a;
-    --run: #6ba3e8;
-    --runB: #101d2e;
-    --sh1: 0 1px 3px rgba(0, 0, 0, 0.5);
-    --sh2: 0 6px 20px rgba(0, 0, 0, 0.55);
-    --sh3: 0 24px 60px rgba(0, 0, 0, 0.7);
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #16130f;
-  --s1: #1e1a14;
-  --s2: #251f17;
-  --s3: #2e2719;
-  --bd: #382f20;
-  --bd2: #493d28;
-  --t1: #f2ebdd;
-  --t2: #b3a68f;
-  --t3: #8a7d68;
-  --ac: #6fbfa4;
-  --ac2: #1b2a22;
-  --acT: #0a140f;
-  --ok: #63c68c;
-  --okB: #12241a;
-  --wn: #d9a45c;
-  --wnB: #261c0d;
-  --bad: #e8776c;
-  --badB: #2a1512;
-  --badT: #200e0a;
-  --run: #6ba3e8;
-  --runB: #101d2e;
+/* AgentForge dark system -- matches the static mockups (./mockups/*.html)
+   exactly. Deliberately dark-only (no light variant): this is an ops/
+   inspector surface, not a document-reading surface, and the mockups never
+   defined a light palette. lib/theme.ts + ThemeToggle are left in place for
+   the legacy /ask /runs /knowledge /tools /automations /usage /settings
+   routes (unlinked from the rail, still reachable by URL) but the toggle is
+   now a no-op: every branch below resolves to the same dark values. */
+:root,
+:root[data-theme="dark"],
+:root[data-theme="light"] {
+  --bg: #0d1017;
+  --s1: #171c27;
+  --s2: #12161f;
+  --s3: #1f2733;
+  --bd: #242b38;
+  --bd2: #33394a;
+  --t1: #e6eaf2;
+  --t2: #8792a6;
+  --t3: #4b5364;
+  --ac: #a78bfa;
+  --ac2: rgba(167, 139, 250, 0.14);
+  --acT: #0d1017;
+  --ok: #34d399;
+  --okB: rgba(52, 211, 153, 0.14);
+  --wn: #f5a623;
+  --wnB: rgba(245, 166, 35, 0.14);
+  --bad: #f87171;
+  --badB: rgba(248, 113, 113, 0.14);
+  --badT: #08140e;
+  --run: #f5a623;
+  --runB: rgba(245, 166, 35, 0.1);
   --sh1: 0 1px 3px rgba(0, 0, 0, 0.5);
   --sh2: 0 6px 20px rgba(0, 0, 0, 0.55);
   --sh3: 0 24px 60px rgba(0, 0, 0, 0.7);
-}
-:root[data-theme="light"] {
-  --bg: #faf6ef;
-  --s1: #ffffff;
-  --s2: #f3ede1;
-  --s3: #eae0cc;
-  --bd: #e5dbc8;
-  --bd2: #d3c4a8;
-  --t1: #2b2620;
-  --t2: #6b6152;
-  --t3: #97897a;
-  --ac: #2f5d50;
-  --ac2: #e4efea;
-  --acT: #ffffff;
-  --ok: #2c7a52;
-  --okB: #e1f2e8;
-  --wn: #96601a;
-  --wnB: #fbeedc;
-  --bad: #a93b32;
-  --badB: #fbe6e3;
-  --badT: #ffffff;
-  --run: #2a5fa8;
-  --runB: #e3ecf9;
-  --sh1: 0 1px 2px rgba(43, 38, 32, 0.06);
-  --sh2: 0 6px 18px rgba(43, 38, 32, 0.1);
-  --sh3: 0 24px 60px rgba(43, 38, 32, 0.16);
+  --rs: 7px;
+  --rm: 12px;
+  --rl: 18px;
+
+  /* AgentForge-specific: rail/canvas surfaces, agent-role accents, and the
+     6-state task/subtask status palette from the mockups' shared design
+     system note. Not part of the shadcn mapping below -- consumed directly
+     by the new tasks/graph/approvals/memory/analytics components. */
+  --rail: #12161f;
+  --canvas: #0f131b;
+  --role-supervisor: #a78bfa;
+  --role-specialist: #f5a623;
+  --role-reviewer: #2dd4bf;
+  --role-human: #60a5fa;
+  --status-pending: #4b5364;
+  --status-running: #f5a623;
+  --status-awaiting: #60a5fa;
+  --status-completed: #34d399;
+  --status-failed: #f87171;
+  --status-revision: #fb923c;
 }
 
 /* Tailwind theme mapping -- utilities like bg-background/text-text/border-border
@@ -121,6 +63,7 @@
 @theme inline {
   --font-sans: var(--font-inter), "Segoe UI", -apple-system, sans-serif;
   --font-serif: var(--font-fraunces), Georgia, serif;
+  --font-mono: var(--font-jetbrains-mono), "SF Mono", Consolas, monospace;
 
   /* shadcn's standard semantic names -- generated components (components/ui/*)
      reference these directly, so they stay compatible with future
@@ -170,6 +113,19 @@
   --color-run: var(--run);
   --color-run-wash: var(--runB);
 
+  --color-rail: var(--rail);
+  --color-canvas: var(--canvas);
+  --color-role-supervisor: var(--role-supervisor);
+  --color-role-specialist: var(--role-specialist);
+  --color-role-reviewer: var(--role-reviewer);
+  --color-role-human: var(--role-human);
+  --color-status-pending: var(--status-pending);
+  --color-status-running: var(--status-running);
+  --color-status-awaiting: var(--status-awaiting);
+  --color-status-completed: var(--status-completed);
+  --color-status-failed: var(--status-failed);
+  --color-status-revision: var(--status-revision);
+
   --radius-sm: var(--rs);
   --radius-md: var(--rm);
   --radius-lg: var(--rl);
@@ -212,7 +168,7 @@ a {
   font-feature-settings: "ss01" 1;
 }
 .mono {
-  font-family: "Cascadia Code", "SF Mono", Consolas, monospace;
+  font-family: var(--font-mono);
 }
 .tabular {
   font-variant-numeric: tabular-nums;

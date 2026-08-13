@@ -81,3 +81,8 @@ class MemoryEntryOut(BaseModel):
     importance: int
     created_at: datetime
     last_accessed_at: datetime
+
+
+class MemoryListOut(BaseModel):
+    items: list[MemoryEntryOut]
+    total: int
