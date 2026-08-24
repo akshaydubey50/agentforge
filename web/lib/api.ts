@@ -128,6 +128,80 @@ export interface AnalyticsOut {
   cost_by_purpose: Record<string, number>;
 }
 
+// --- System view (mirrors src/agentsys/system_api.py) -----------------------
+// The node/edge lists come from the COMPILED LangGraph, not a hand-kept list,
+// so anything drawn from them stays true as the graph changes. See that
+// module's docstring for the honesty rule this depends on.
+
+export type AgentRoleName = "supervisor" | "specialist" | "reviewer" | "human";
+
+export interface TopologyNode {
+  id: string;
+  label: string;
+  role: AgentRoleName;
+  kind: string;
+  summary: string;
+  href: string | null;
+  /** Which TraceSpan.span_type this node writes, for looking up live
+   *  activity in SystemSummary.activity_24h. Null for the terminals. */
+  span_type: string | null;
+  terminal: boolean;
+}
+
+export interface TopologyEdge {
+  source: string;
+  target: string;
+  /** A router decision (route_entry / route_after) rather than an
+   *  unconditional hand-off -- drawn dashed. */
+  conditional: boolean;
+}
+
+export interface SubsystemFact {
+  label: string;
+  value: string;
+  note?: string;
+}
+
+export interface Subsystem {
+  id: string;
+  label: string;
+  summary: string;
+  href: string;
+  facts: SubsystemFact[];
+}
+
+export interface SystemTool {
+  name: string;
+  summary: string;
+  requires_approval: boolean;
+  /** The MCP server this tool came from, or null for a first-party tool. */
+  server: string | null;
+}
+
+export interface SystemTopology {
+  graph: { nodes: TopologyNode[]; edges: TopologyEdge[] };
+  tools: SystemTool[];
+  subsystems: Subsystem[];
+}
+
+export interface SystemSummary {
+  tasks: {
+    by_status: Record<string, number>;
+    total: number;
+    active: number;
+    awaiting_approval: number;
+  };
+  approvals_pending: number;
+  memory_entries: number;
+  tools_registered: number;
+  steps_run: number;
+  tool_calls: { total: number; failed: number };
+  spend: { usd: number; llm_calls: number; tokens_in: number; tokens_out: number };
+  trace_spans_24h: number;
+  /** Keyed by TraceSpan.span_type -- join to a node via its `span_type`. */
+  activity_24h: Record<string, { runs: number; errors: number }>;
+}
+
 // A 401 here means the session cookie is missing/expired -- every caller
 // bounces to /login instead of each page having to check response.status
 // itself. window.location (not next/navigation's router) because api.ts is
@@ -219,6 +293,12 @@ export const api = {
     }),
 
   listTools: () => request<{ tools: ToolInfo[] }>("/v1/tools").then((r) => r.tools),
+
+  // Describes code and config, not this user's data, so it's safe to cache
+  // hard -- the System page revalidates only /summary on a timer.
+  getSystemTopology: () => request<SystemTopology>("/v1/system/topology"),
+
+  getSystemSummary: () => request<SystemSummary>("/v1/system/summary"),
 
   getAnalytics: () => request<AnalyticsOut>("/v1/analytics"),
 
