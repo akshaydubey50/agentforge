@@ -24,7 +24,7 @@ from agentsys.db.session import get_session
 from agentsys.graph.prompts import SUBAGENT_STEP_PROMPT
 from agentsys.graph.schemas import SubAgentStep
 from agentsys.graph.tracing import span
-from agentsys.llm import get_client
+from agentsys.llm import structured_complete
 from agentsys.tools.base import Tool, ToolResult
 
 
@@ -35,10 +35,13 @@ class DelegateSubagentTool(Tool):
         "sequence, inspecting each result before deciding what to do next -- unlike a normal "
         "tool choice, which is exactly one call. Use this ONLY when the subtask genuinely "
         "requires investigating one thing, seeing the result, and deciding what to do next "
-        "based on it (e.g. look something up, then decide what follow-up query or computation "
-        "the result implies). Do NOT use this when a single tool call already suffices -- "
+        "based on it -- e.g. look up which vendor a company uses, THEN query that specific "
+        "vendor's pricing (the second query can't be written until the first result is known). "
+        "Do NOT use this when a single tool call already suffices -- "
         "that's slower and costs more for no benefit. Arguments: goal (str, required) -- what "
-        "the sub-agent should accomplish, usually just the subtask description restated. Do "
+        "the sub-agent should accomplish, usually just the subtask description restated, e.g. "
+        "goal=\"Find which cloud provider Acme Robotics uses, then look up that provider's "
+        "current pricing for the relevant tier\". Do "
         "not pass task_id, subtask_id, or depth -- they're filled in automatically."
     )
 
@@ -77,12 +80,7 @@ class DelegateSubagentTool(Tool):
                 task_id, "subagent_tool_call", f"subagent_step_{step_num}",
                 subtask_id=subtask_id, input={"goal": goal, "step": step_num},
             ) as s:
-                completion = get_client().beta.chat.completions.parse(
-                    model=settings.llm_model,
-                    messages=[{"role": "user", "content": prompt}],
-                    response_format=SubAgentStep,
-                )
-                decision = completion.choices[0].message.parsed
+                decision, completion = structured_complete(prompt, SubAgentStep, model=settings.llm_model)
                 s["output"] = decision.model_dump()
             cost.record_llm_call(task_id, subtask_id, "subagent_step", completion)
 

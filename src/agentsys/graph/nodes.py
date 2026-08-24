@@ -1,35 +1,51 @@
 import json
+import logging
 from datetime import datetime, timezone
 
-from langgraph.types import Send
+from sqlalchemy import func
 from sqlmodel import select
 
-from agentsys import cost
+from agentsys import artifacts, cost, deadcalls
+from agentsys.cancellation import TaskCancelled, is_cancel_requested
 from agentsys.config import settings
 from agentsys.db.models import (
     Escalation,
+    LlmCall,
     Review,
     Subtask,
     SubtaskStatus,
     Task,
+    TaskMessage,
     TaskStatus,
     ToolCall,
+    TraceSpan,
 )
 from agentsys.db.session import get_session
 from agentsys.graph.prompts import (
-    PLAN_PROMPT,
+    AGENT_STEP_PROMPT,
+    MEMORY_REFLECTION_PROMPT,
     REASONING_ONLY_PROMPT,
     REVIEW_PROMPT,
+    SKETCH_PROMPT,
     SYNTHESIS_PROMPT,
     TOOL_SELECTION_PROMPT,
 )
-from agentsys.graph.schemas import PlanOutput, ReviewOutput, ToolChoice
+from agentsys.graph.schemas import (
+    MemoryReflection,
+    NextStepDecision,
+    ReviewOutput,
+    SketchOutput,
+    ToolChoice,
+)
 from agentsys.graph.state import AgentState
 from agentsys.graph.tracing import span
-from agentsys.llm import complete, get_client
+from agentsys.llm import complete, structured_complete
 from agentsys.memory import long_term, short_term
+from agentsys.sanitize import scrub_nul
 from agentsys.tools.base import ToolResult
 from agentsys.tools.registry import get_registry
+
+logger = logging.getLogger(__name__)
 
 
 def _tool_descriptions() -> str:
@@ -37,9 +53,64 @@ def _tool_descriptions() -> str:
     return "\n".join(f"- {t['name']}: {t['description']}" for t in tools) or "(no tools available)"
 
 
-def _create_escalation(task_id: str, subtask_id: str | None, reason: str) -> None:
+def _check_cancelled(task_id: str) -> None:
+    """Cooperative cancellation checkpoint. Called at the top of the two
+    nodes that begin real work (sketch_node, agent_step_node) -- a worker
+    blocked in an LLM call can't be preempted, so the guarantee is "no
+    further expensive steps start", not "stops instantly". See
+    cancellation.py."""
+    if is_cancel_requested(task_id):
+        raise TaskCancelled(task_id)
+
+
+def _set_task_status(session, task: Task, status: TaskStatus) -> None:
+    """Writes a task status, EXCEPT over a cancel. CANCELLED is terminal and
+    user-chosen, and a node that passed _check_cancelled before the cancel
+    landed will still run to the end of its own body and write its status --
+    without this guard that write silently resurrects a cancelled task
+    (observed live: a task showed 'cancelled', then flipped back to
+    'running' when sketch_node finished the step it was already inside)."""
+    if task.status == TaskStatus.CANCELLED:
+        return
+    task.status = status
+    task.updated_at = datetime.now(timezone.utc)
+    session.add(task)
+
+
+_UNPRODUCTIVE_FIELD = "unproductive_streak"
+
+
+def _task_cost_usd(task_id: str) -> float:
+    """Total spend on this task so far, summed from the LlmCall rows
+    cost.record_llm_call already writes after every call -- the ceiling
+    reuses that record rather than tracking spend a second way."""
     with get_session() as session:
-        session.add(Escalation(task_id=task_id, subtask_id=subtask_id, reason=reason, context={}))
+        total = session.exec(
+            select(func.sum(LlmCall.cost_usd)).where(LlmCall.task_id == task_id)
+        ).one()
+    return float(total or 0.0)
+
+
+def _unproductive_streak(task_id: str) -> int:
+    return int(short_term.get_value(task_id, _UNPRODUCTIVE_FIELD) or 0)
+
+
+def _record_step_productivity(task_id: str, *, productive: bool) -> None:
+    """A step is unproductive when its tool call failed or was skipped as a
+    known dead call. The counter is a STREAK, not a total -- one good step
+    means the agent found a way forward, so the budget for exploring should
+    reset with it."""
+    streak = 0 if productive else _unproductive_streak(task_id) + 1
+    short_term.set_value(task_id, _UNPRODUCTIVE_FIELD, streak)
+
+
+def _create_escalation(
+    task_id: str, subtask_id: str | None, reason: str, *, kind: str = "plan", context: dict | None = None
+) -> None:
+    with get_session() as session:
+        session.add(
+            Escalation(task_id=task_id, subtask_id=subtask_id, reason=reason, kind=kind, context=context or {})
+        )
         session.commit()
     with span(task_id, "escalation", "escalation_created", subtask_id=subtask_id, input={"reason": reason}) as s:
         s["output"] = {"reason": reason}
@@ -64,21 +135,90 @@ def _revision_feedback(subtask_id: str, attempt_count: int) -> str:
     )
 
 
-def _gather_prior_context(task_id: str, current_subtask_id: str) -> str:
+def _gather_prior_context(task_id: str, current_subtask_id: str | None = None) -> str:
+    """What's been done so far, under a context budget rather than in full.
+
+    Every completed step used to be included verbatim on every subsequent
+    step, so the prompt only ever grew -- measured at 2,772 -> 19,305 tokens
+    across twelve steps of one real task. The most recent
+    settings.context_recent_steps_full steps stay verbatim (those are what
+    the next decision actually turns on); older ones are truncated to a
+    recognizable head. Nothing is lost -- the full text stays in Postgres,
+    and any output big enough to matter was already spilled to a file the
+    agent can re-read on demand (see artifacts.spill)."""
     with get_session() as session:
         done = session.exec(
             select(Subtask)
             .where(Subtask.task_id == task_id, Subtask.status == SubtaskStatus.DONE)
             .order_by(Subtask.position)
         ).all()
-    lines = [f"- {s.description}: {s.output}" for s in done if s.id != current_subtask_id]
 
-    notes = short_term.get_list(task_id, "scratchpad_notes")
-    if notes:
-        lines.append("Scratchpad notes from earlier tool calls this task:")
-        lines.extend(f"  * {n}" for n in notes)
+    relevant = [s for s in done if s.id != current_subtask_id]
+    if not relevant:
+        return "(no prior context yet)"
 
-    return "\n".join(lines) if lines else "(no prior context yet)"
+    cutoff = len(relevant) - settings.context_recent_steps_full
+    lines = []
+    for index, subtask in enumerate(relevant):
+        output = subtask.output or ""
+        if index < cutoff and len(output) > settings.context_older_step_chars:
+            output = (
+                f"{output[: settings.context_older_step_chars]}"
+                f"… [truncated, {len(output)} chars total — this is an earlier step; "
+                f"its full output is still available if a later step needs it]"
+            )
+        lines.append(f"- {subtask.description}: {output}")
+
+    return "\n".join(lines)
+
+
+def _turn_start(task_id: str, task_created_at: datetime) -> datetime:
+    """Start-of-current-turn timestamp: the most recent follow-up
+    TaskMessage, or the task's own creation if there's never been one. Used
+    to give every follow-up its own fresh max_task_steps budget (see
+    agent_step_node) without needing a new Task column/migration --
+    everything's derived from rows that already exist."""
+    with get_session() as session:
+        last_message = session.exec(
+            select(TaskMessage).where(TaskMessage.task_id == task_id).order_by(TaskMessage.created_at.desc())
+        ).first()
+    return last_message.created_at if last_message else task_created_at
+
+
+def _gather_conversation_history(task_id: str, task: Task) -> str:
+    """Reconstructs the full back-and-forth for a continued task: the
+    original request, each turn's final answer (one 'synthesize' TraceSpan
+    per completed turn), and each user follow-up (TaskMessage), interleaved
+    in the order they actually happened. Empty string on a task's first
+    turn -- {request} alone already covers that case, so the prompt stays
+    identical to before this feature existed."""
+    with get_session() as session:
+        messages = session.exec(
+            select(TaskMessage).where(TaskMessage.task_id == task_id).order_by(TaskMessage.created_at)
+        ).all()
+        if not messages:
+            return ""
+        synth_spans = session.exec(
+            select(TraceSpan)
+            .where(TraceSpan.task_id == task_id, TraceSpan.span_type == "synthesize")
+            .order_by(TraceSpan.started_at)
+        ).all()
+
+    turns: list[tuple[datetime, str]] = [(task.created_at, f"User (original request): {task.request_text}")]
+    for s in synth_spans:
+        answer = (s.output or {}).get("final_answer")
+        if answer:
+            turns.append((s.started_at, f"Assistant (final answer): {answer}"))
+    for m in messages:
+        turns.append((m.created_at, f"User (follow-up): {m.content}"))
+    turns.sort(key=lambda t: t[0])
+
+    return (
+        "This is a continued conversation -- here is everything said so far, in order "
+        "(the original request above is repeated as the first line for context):\n"
+        + "\n".join(text for _, text in turns)
+        + "\n"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -86,123 +226,184 @@ def _gather_prior_context(task_id: str, current_subtask_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def plan_node(state: AgentState) -> AgentState:
-    """Supervisor: decompose the request into a dependency-ordered plan."""
+def sketch_node(state: AgentState) -> AgentState:
+    """Supervisor: produce a rough, non-binding outline of likely steps --
+    advisory context for agent_step_node, not a committed plan. Creates no
+    Subtask rows and no dependency graph; the loop is free to ignore,
+    extend, reorder, or abandon anything here based on what it actually
+    learns. Persisted only via the trace span below (see _load_sketch) --
+    no DB column, no migration."""
     task_id = state["task_id"]
+    _check_cancelled(task_id)
     with get_session() as session:
         task = session.get(Task, task_id)
         request_text = task.request_text
+        owner_id = task.owner_id
 
-    memories = long_term.retrieve_relevant(request_text, k=3)
+    memories = long_term.retrieve_relevant(request_text, owner_id=owner_id, k=3)
     memory_context = (
         "\n".join(f"- [{m.kind}] {m.content}" for m in memories)
         if memories
         else "(no relevant past memories)"
     )
 
-    prompt = PLAN_PROMPT.format(
+    prompt = SKETCH_PROMPT.format(
         tool_descriptions=_tool_descriptions(), memory_context=memory_context, request=request_text
     )
 
-    with span(task_id, "plan", "supervisor_decompose", input={"request": request_text}) as s:
-        completion = get_client().beta.chat.completions.parse(
-            model=settings.llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format=PlanOutput,
-        )
-        plan = completion.choices[0].message.parsed
-        s["output"] = plan.model_dump()
-    cost.record_llm_call(task_id, None, "plan", completion)
-
-    built = [
-        Subtask(task_id=task_id, position=i, description=spec.description, depends_on=[])
-        for i, spec in enumerate(plan.subtasks)
-    ]
-    position_to_id = {i: s.id for i, s in enumerate(built)}
-    for i, (subtask, spec) in enumerate(zip(built, plan.subtasks)):
-        # Only positions strictly before this one are eligible — prevents
-        # cycles and self-reference by construction rather than by detection.
-        valid = [p for p in spec.depends_on_positions if p in position_to_id and p < i]
-        subtask.depends_on = [position_to_id[p] for p in valid]
+    with span(task_id, "sketch", "supervisor_sketch", input={"request": request_text}) as s:
+        sketch, completion = structured_complete(prompt, SketchOutput, model=settings.llm_model)
+        s["output"] = sketch.model_dump()
+    cost.record_llm_call(task_id, None, "sketch", completion)
 
     with get_session() as session:
         task = session.get(Task, task_id)
-        task.status = TaskStatus.RUNNING
-        task.updated_at = datetime.now(timezone.utc)
-        session.add(task)
-        for subtask in built:
-            session.add(subtask)
+        _set_task_status(session, task, TaskStatus.RUNNING)
         session.commit()
 
-    if plan.confidence < settings.plan_confidence_escalation_threshold:
+    if sketch.confidence < settings.plan_confidence_escalation_threshold:
         _create_escalation(
-            task_id, None, f"Low plan confidence ({plan.confidence}/5): {plan.reasoning}"
+            task_id, None, f"Low sketch confidence ({sketch.confidence}/5): {sketch.reasoning}", kind="plan"
         )
         return {"task_id": task_id, "route": "escalate"}
 
-    return {"task_id": task_id, "route": "select_subtask"}
+    return {"task_id": task_id, "route": "agent_step"}
 
 
-def select_subtask_node(state: AgentState) -> AgentState:
-    """Picks up to settings.max_parallel_subtasks dependency-ready subtasks to
-    run as one concurrent wave, or routes to synthesis (all done) /
-    escalation (stuck, or a sibling in the just-finished wave escalated) if
-    there's nothing more to run. This is the barrier every run_subtask branch
-    converges back on (see graph/build.py) -- it's invoked exactly once per
-    wave regardless of how many branches ran in parallel, so it's the right
-    place to check whether any of them escalated before scheduling more."""
-    task_id = state["task_id"]
+def _load_sketch(task_id: str) -> str:
+    """The sketch is advisory-only and deliberately NOT a DB column -- it's
+    persisted purely as a TraceSpan (see sketch_node), so this reloads it on
+    every agent_step_node call, including after a resume from a brand new
+    graph.invoke() where nothing survives in AgentState across the process
+    boundary."""
+    with get_session() as session:
+        span_row = session.exec(
+            select(TraceSpan)
+            .where(TraceSpan.task_id == task_id, TraceSpan.span_type == "sketch")
+            .order_by(TraceSpan.started_at.desc())
+        ).first()
+    if not span_row or not span_row.output:
+        return "(no sketch available)"
+    outline = span_row.output.get("outline", [])
+    return "\n".join(f"- {step}" for step in outline) if outline else "(no sketch available)"
 
-    if state.get("escalated_subtask_ids"):
-        # A sibling in the wave that just finished escalated -- the whole
-        # task pauses here even if other siblings completed successfully,
-        # exactly like a sequential run would pause on the first escalation.
-        return {"task_id": task_id, "route": "escalate"}
+
+def _load_current_plan(task_id: str) -> str:
+    """The living to-do list. Reads the most recent 'plan' TraceSpan the agent
+    wrote via updated_plan; before it has revised anything, falls back to the
+    initial sketch outline as the plan's seed -- so the loop always has a plan
+    to work from and revise, and (like the sketch) it survives a fresh
+    graph.invoke() on resume with no DB column or migration, since it's just
+    the latest trace row."""
+    with get_session() as session:
+        span_row = session.exec(
+            select(TraceSpan)
+            .where(TraceSpan.task_id == task_id, TraceSpan.span_type == "plan")
+            .order_by(TraceSpan.started_at.desc())
+        ).first()
+    if span_row and span_row.output.get("plan"):
+        return "\n".join(f"- {step}" for step in span_row.output["plan"])
+    return _load_sketch(task_id)
+
+
+def _save_plan(task_id: str, plan: list[str], steps_taken: int) -> None:
+    """Persists an agent-revised plan as a 'plan' TraceSpan. Not rendered in
+    the feed (buildFeed ignores unknown span types) -- the dashboard reads the
+    latest one for the right-hand 'Plan' panel, so the human sees the to-do
+    list update in real time."""
+    with span(task_id, "plan", "agent_update_plan", input={"steps_taken": steps_taken}) as s:
+        s["output"] = {"plan": plan}
+
+
+def _run_tool_call(task_id: str, subtask_id: str, tool_name: str, kwargs: dict) -> tuple[bool, str]:
+    """Actually invokes a tool and records the ToolCall row + tool_call
+    TraceSpan. Returns (tool_success, output_text) for the caller to fold
+    into the subtask's output. Shared by _execute_subtask's normal path and
+    run_gated_tool_call's post-approval resume path -- same recording,
+    scrubbing, spillover, and dead-call bookkeeping either way, so a gated
+    call that gets approved looks identical in the trace to one that never
+    needed gating."""
+    registry = get_registry()
+    start = datetime.now(timezone.utc)
+    with span(task_id, "tool_call", tool_name, subtask_id=subtask_id, input=kwargs) as s:
+        try:
+            result = registry.get(tool_name).run(**kwargs)
+        except TypeError as exc:
+            # The specialist's LLM call can construct arguments that don't
+            # match the tool's actual signature (wrong/missing kwarg name).
+            # That's a fixable mistake, not a system failure — surface it
+            # as a failed ToolResult so the reviewer can reject-and-retry
+            # with the corrected signature, instead of crashing the graph.
+            result = ToolResult(success=False, error=f"invalid arguments for {tool_name}: {exc}")
+        # A tool result can carry a NUL byte from a scraped page or a read
+        # file; scrub before any of it reaches a JSONB/text column below.
+        result.output = scrub_nul(result.output)
+        if result.error:
+            result.error = scrub_nul(result.error)
+        s["output"] = result.model_dump()
+        s["status"] = "ok" if result.success else "error"
+    latency_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
 
     with get_session() as session:
-        subtasks = session.exec(select(Subtask).where(Subtask.task_id == task_id)).all()
-
-    terminal = {SubtaskStatus.DONE, SubtaskStatus.SKIPPED, SubtaskStatus.FAILED}
-    done_ids = {s.id for s in subtasks if s.status in (SubtaskStatus.DONE, SubtaskStatus.SKIPPED)}
-    runnable_statuses = {SubtaskStatus.PENDING, SubtaskStatus.NEEDS_REVISION}
-    pending = [s for s in subtasks if s.status in runnable_statuses]
-
-    if not pending:
-        if all(s.status in terminal for s in subtasks):
-            return {"task_id": task_id, "route": "synthesize"}
-        _create_escalation(task_id, None, "No pending subtasks but not all are terminal — inconsistent state.")
-        return {"task_id": task_id, "route": "escalate"}
-
-    ready = [s for s in pending if all(dep in done_ids for dep in s.depends_on)]
-    if not ready:
-        _create_escalation(
-            task_id, None, "No subtask is ready to run (unresolved dependencies) — needs human review."
+        session.add(
+            ToolCall(
+                subtask_id=subtask_id,
+                tool_name=tool_name,
+                input=kwargs,
+                output=result.output if result.success else {"error": result.error},
+                success=result.success,
+                latency_ms=latency_ms,
+            )
         )
-        return {"task_id": task_id, "route": "escalate"}
-
-    wave = ready[: settings.max_parallel_subtasks]
-    with get_session() as session:
-        for s in wave:
-            subtask = session.get(Subtask, s.id)
-            subtask.status = SubtaskStatus.RUNNING
-            session.add(subtask)
         session.commit()
 
-    return {
-        "task_id": task_id,
-        "route": "execute",
-        "current_subtask_id": wave[0].id,
-        "ready_subtask_ids": [s.id for s in wave],
-    }
+    if not result.success:
+        # Remembered for the rest of this task so a later step can't
+        # re-propose the identical call -- see deadcalls.py.
+        deadcalls.record_failure(task_id, tool_name, kwargs)
+        return False, f"Tool call failed: {result.error}"
+
+    output_text = json.dumps(result.output)
+    if len(output_text) > settings.max_tool_output_chars:
+        # Spill the payload to the workspace and keep only a preview +
+        # pointer in what goes back into the prompt. The ToolCall row above
+        # already holds the FULL output, so this shrinks context without
+        # touching the audit trail.
+        output_text = json.dumps(
+            artifacts.spill(task_id, subtask_id, tool_name, output_text)
+        )
+
+    return True, output_text
 
 
-def _execute_subtask(task_id: str, subtask_id: str) -> bool:
+def run_gated_tool_call(task_id: str, subtask_id: str, tool_name: str, kwargs: dict) -> tuple[bool, str]:
+    """Entry point for escalations.apply_escalation_decision's approve path
+    on a tool_approval escalation -- actually executes the tool call that
+    was held at the gate in _execute_subtask below, using the exact
+    tool_name/kwargs stored in Escalation.context (see the gate's
+    _create_escalation call)."""
+    return _run_tool_call(task_id, subtask_id, tool_name, kwargs)
+
+
+def _execute_subtask(
+    task_id: str, subtask_id: str, preselected_choice: ToolChoice | None = None
+) -> bool | None:
     """Specialist: pick a tool (or pure reasoning) and complete the subtask.
-    Returns tool_success for the immediately-following review step. Kept as
-    a plain function (not a graph node) so run_subtask_node can call it
-    inside its own retry loop without going through a LangGraph edge --
-    which matters once multiple subtasks run as parallel Send branches (see
-    run_subtask_node's docstring for why)."""
+    Returns tool_success for the immediately-following review step, or None
+    if the chosen tool needed human approval and got gated instead of run
+    (see the needs_approval check below) -- the caller (agent_step_node)
+    must treat None as "stop, do not call _review_subtask, this turn ends
+    in an escalation" rather than a falsy tool_success. Kept as a plain
+    function (not a graph node) so agent_step_node can call it inside its
+    own retry loop without going through a LangGraph edge.
+
+    preselected_choice lets the caller skip a redundant tool-selection LLM
+    call on a fresh subtask's first attempt -- agent_step_node's own single
+    decide-next-step call already chose the tool, and reusing that choice is
+    the entire point of collapsing step-authoring and tool-selection into
+    one call. It's only honored on attempt 1; a retry (attempt_count > 1)
+    always re-asks TOOL_SELECTION_PROMPT with the reviewer's feedback in
+    hand, since the preselected choice already failed review."""
     with get_session() as session:
         subtask = session.get(Subtask, subtask_id)
         subtask.attempt_count += 1
@@ -215,24 +416,27 @@ def _execute_subtask(task_id: str, subtask_id: str) -> bool:
     prior_context = _gather_prior_context(task_id, subtask_id)
     revision_feedback = _revision_feedback(subtask_id, attempt_count)
 
-    with span(
-        task_id, "tool_selection", "specialist_choose_tool", subtask_id=subtask_id,
-        input={"description": description},
-    ) as s:
-        prompt = TOOL_SELECTION_PROMPT.format(
-            subtask_description=description,
-            tool_descriptions=_tool_descriptions(),
-            prior_context=prior_context,
-            revision_feedback=revision_feedback,
-        )
-        completion = get_client().beta.chat.completions.parse(
-            model=settings.llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format=ToolChoice,
-        )
-        choice = completion.choices[0].message.parsed
-        s["output"] = choice.model_dump()
-    cost.record_llm_call(task_id, subtask_id, "tool_selection", completion)
+    if preselected_choice is not None and attempt_count == 1:
+        choice = preselected_choice
+        with span(
+            task_id, "tool_selection", "specialist_choose_tool", subtask_id=subtask_id,
+            input={"description": description, "source": "agent_step_decision"},
+        ) as s:
+            s["output"] = choice.model_dump()
+    else:
+        with span(
+            task_id, "tool_selection", "specialist_choose_tool", subtask_id=subtask_id,
+            input={"description": description},
+        ) as s:
+            prompt = TOOL_SELECTION_PROMPT.format(
+                subtask_description=description,
+                tool_descriptions=_tool_descriptions(),
+                prior_context=prior_context,
+                revision_feedback=revision_feedback,
+            )
+            choice, completion = structured_complete(prompt, ToolChoice, model=settings.llm_model)
+            s["output"] = choice.model_dump()
+        cost.record_llm_call(task_id, subtask_id, "tool_selection", completion)
 
     tool_success = True
     if choice.tool_name and choice.tool_name != "none" and choice.tool_name in registry.names():
@@ -242,46 +446,62 @@ def _execute_subtask(task_id: str, subtask_id: str) -> bool:
             kwargs = {}
         if choice.tool_name == "file_io":
             kwargs.setdefault("task_id", task_id)
+        elif choice.tool_name == "generate_tweet":
+            # Injected so the tool's internal generate/evaluate/optimize steps
+            # write real TraceSpans and book their cost against this task.
+            kwargs.setdefault("task_id", task_id)
+            kwargs.setdefault("subtask_id", subtask_id)
         elif choice.tool_name == "delegate_subagent":
             kwargs.setdefault("goal", description)
             kwargs.setdefault("task_id", task_id)
             kwargs.setdefault("subtask_id", subtask_id)
             kwargs.setdefault("depth", 1)
+        elif choice.tool_name in ("gmail_search", "gmail_read", "google_drive_search", "google_drive_read"):
+            # user_id decides whose connected Gmail/Drive the call acts as --
+            # injected from the task's owner, never left for the LLM to
+            # supply, the same reasoning as task_id/subtask_id above but
+            # security-sensitive rather than just plumbing.
+            with get_session() as session:
+                kwargs["user_id"] = session.get(Task, task_id).owner_id
 
-        start = datetime.now(timezone.utc)
-        with span(task_id, "tool_call", choice.tool_name, subtask_id=subtask_id, input=kwargs) as s:
-            try:
-                result = registry.get(choice.tool_name).run(**kwargs)
-            except TypeError as exc:
-                # The specialist's LLM call can construct arguments that don't
-                # match the tool's actual signature (wrong/missing kwarg name).
-                # That's a fixable mistake, not a system failure — surface it
-                # as a failed ToolResult so the reviewer can reject-and-retry
-                # with the corrected signature, instead of crashing the graph.
-                result = ToolResult(success=False, error=f"invalid arguments for {choice.tool_name}: {exc}")
-            s["output"] = result.model_dump()
-            s["status"] = "ok" if result.success else "error"
-        latency_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
-
-        with get_session() as session:
-            session.add(
-                ToolCall(
-                    subtask_id=subtask_id,
-                    tool_name=choice.tool_name,
-                    input=kwargs,
-                    output=result.output if result.success else {"error": result.error},
-                    success=result.success,
-                    latency_ms=latency_ms,
-                )
+        if registry.get(choice.tool_name).needs_approval(kwargs):
+            # Gate BEFORE the tool ever runs -- unlike the other three
+            # escalation kinds (plan/review/budget), which all react to an
+            # outcome that already happened, this one heads it off. See
+            # run_gated_tool_call below for what "approve" actually does on
+            # resume, and escalations.apply_escalation_decision for why that
+            # can't just be "mark this subtask DONE" like the others.
+            with get_session() as session:
+                subtask = session.get(Subtask, subtask_id)
+                subtask.assigned_tool = choice.tool_name
+                subtask.status = SubtaskStatus.ESCALATED
+                subtask.output = f"Awaiting human approval to run '{choice.tool_name}'."
+                session.add(subtask)
+                session.commit()
+            _create_escalation(
+                task_id, subtask_id,
+                f"Tool '{choice.tool_name}' performs a side-effecting action and requires approval "
+                f"before it runs. Proposed call: {json.dumps(kwargs)}",
+                kind="tool_approval",
+                context={"tool_name": choice.tool_name, "kwargs": kwargs},
             )
-            session.commit()
+            return None  # sentinel: gated, agent_step_node must not call _review_subtask
 
-        tool_success = result.success
-        output_text = json.dumps(result.output) if result.success else f"Tool call failed: {result.error}"
+        if deadcalls.is_dead(task_id, choice.tool_name, kwargs):
+            # This exact call already failed earlier in this task. Running it
+            # again costs a real API call to get the identical error -- on the
+            # run that motivated this, the same unreadable .docx and .zip were
+            # each retried a second time, four wasted steps out of eleven.
+            tool_success = False
+            output_text = (
+                f"Tool call skipped: this exact {choice.tool_name} call already failed earlier in "
+                f"this task and was not retried. Try a different approach or a different input -- "
+                f"repeating it will not produce a different result."
+            )
+        else:
+            tool_success, output_text = _run_tool_call(task_id, subtask_id, choice.tool_name, kwargs)
 
-        if result.success:
-            note = f"{choice.tool_name} on '{description[:60]}' -> {json.dumps(result.output)[:200]}"
-            short_term.append_value(task_id, "scratchpad_notes", note)
+        _record_step_productivity(task_id, productive=tool_success)
     else:
         with span(task_id, "reasoning", "specialist_reason", subtask_id=subtask_id, input={"description": description}) as s:
             prompt = REASONING_ONLY_PROMPT.format(
@@ -292,6 +512,9 @@ def _execute_subtask(task_id: str, subtask_id: str) -> bool:
             output_text, completion = complete(prompt)
             s["output"] = {"text": output_text}
         cost.record_llm_call(task_id, subtask_id, "reasoning", completion)
+        # A reasoning step that produced output is progress -- the streak
+        # tracks tool-call dead ends, not "didn't call a tool".
+        _record_step_productivity(task_id, productive=True)
 
     with get_session() as session:
         subtask = session.get(Subtask, subtask_id)
@@ -305,10 +528,10 @@ def _execute_subtask(task_id: str, subtask_id: str) -> bool:
 
 def _review_subtask(task_id: str, subtask_id: str, tool_success: bool) -> str:
     """Reviewer: validate the specialist's output. Returns the next step for
-    run_subtask_node's own retry loop to act on: "select_subtask" (pass,
-    this branch is done), "execute" (reject-and-revise, under the retry
-    cap), or "escalate" (reject exhausted, or the reviewer says this isn't
-    fixable by a retry)."""
+    agent_step_node's own retry loop to act on: "agent_step" (pass, this
+    step is done -- the loop moves on to its next decide-next-step call),
+    "execute" (reject-and-revise, under the retry cap), or "escalate"
+    (reject exhausted, or the reviewer says this isn't fixable by a retry)."""
     with get_session() as session:
         subtask = session.get(Subtask, subtask_id)
         description, output, tool_used, attempt_count = (
@@ -322,12 +545,7 @@ def _review_subtask(task_id: str, subtask_id: str, tool_success: bool) -> str:
             tool_success=tool_success,
             output=output,
         )
-        completion = get_client().beta.chat.completions.parse(
-            model=settings.reviewer_llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format=ReviewOutput,
-        )
-        review = completion.choices[0].message.parsed
+        review, completion = structured_complete(prompt, ReviewOutput, model=settings.reviewer_llm_model)
         s["output"] = review.model_dump()
     cost.record_llm_call(task_id, subtask_id, "review", completion)
 
@@ -339,7 +557,7 @@ def _review_subtask(task_id: str, subtask_id: str, tool_success: bool) -> str:
         subtask = session.get(Subtask, subtask_id)
         if review.verdict == "pass":
             subtask.status = SubtaskStatus.DONE
-            route = "select_subtask"
+            route = "agent_step"
         elif review.verdict == "reject" and attempt_count < settings.max_subtask_retries:
             subtask.status = SubtaskStatus.NEEDS_REVISION
             route = "execute"
@@ -348,6 +566,7 @@ def _review_subtask(task_id: str, subtask_id: str, tool_success: bool) -> str:
             _create_escalation(
                 task_id, subtask_id,
                 f"Reviewer verdict '{review.verdict}' after {attempt_count} attempt(s): {review.feedback}",
+                kind="review",
             )
             route = "escalate"
         session.add(subtask)
@@ -356,44 +575,161 @@ def _review_subtask(task_id: str, subtask_id: str, tool_success: bool) -> str:
     return route
 
 
-def run_subtask_node(state: AgentState) -> AgentState:
-    """Runs one subtask to a terminal outcome (done or escalated), including
-    its full reject-and-retry loop, in a single node invocation. This is
-    what makes it safe to invoke many of these in parallel via Send (see
-    graph/build.py): each invocation only writes to Postgres, keyed by its
-    own subtask_id, and to escalated_subtask_ids -- a reducer-backed
-    accumulator (see state.py) that's safe for multiple parallel branches to
-    write to in the same superstep. Nothing here writes route/
-    current_subtask_id/tool_success to graph state at all -- those stay
-    local Python variables for the duration of this one call, which is what
-    avoids LangGraph's InvalidUpdateError the moment two parallel branches
-    would otherwise produce different values for the same shared field."""
+def agent_step_node(state: AgentState) -> AgentState:
+    """The continuous loop: gather everything learned so far, make ONE
+    structured decision (author the next unit of work + pick its tool, or
+    declare the request done), then run that unit of work to a terminal
+    outcome via the same _execute_subtask/_review_subtask machinery a
+    plan-time subtask used to go through. Self-loops (see graph/build.py)
+    until the model finishes, escalates, or the step budget runs out.
+
+    steps_taken is computed by counting Subtask rows in Postgres, not read
+    from AgentState -- that's what makes the step budget survive a resume
+    after a human escalation decision, which is a brand new graph.invoke()
+    call with a fresh, empty AgentState. The step *budget* itself, however,
+    is per-turn, not lifetime: steps_taken_this_turn only counts subtasks
+    created since the current turn started (the last TaskMessage follow-up,
+    or task creation if there's never been one -- see _turn_start), so a
+    task that already used most of its budget on the original request isn't
+    penalized when the user continues the conversation afterward. The
+    "did the model try to finish having done nothing at all" guard below
+    stays lifetime-based on purpose: on a follow-up turn, finishing with
+    zero *new* steps can be entirely correct (the existing subtask outputs
+    already answer the follow-up) -- it's only suspicious on a task's very
+    first decision, when nothing has ever been done."""
     task_id = state["task_id"]
-    subtask_id = state["current_subtask_id"]
+    _check_cancelled(task_id)
+
+    with get_session() as session:
+        task = session.get(Task, task_id)
+        request_text = task.request_text
+        existing = session.exec(
+            select(Subtask).where(Subtask.task_id == task_id).order_by(Subtask.position)
+        ).all()
+
+    steps_taken = len(existing)
+    turn_start = _turn_start(task_id, task.created_at)
+    steps_taken_this_turn = sum(1 for s in existing if s.created_at >= turn_start)
+    if steps_taken_this_turn >= settings.max_task_steps:
+        _create_escalation(
+            task_id, None,
+            f"Exceeded max_task_steps ({settings.max_task_steps}) without the agent choosing to "
+            "finish -- needs human review.",
+            kind="budget",
+        )
+        return {"task_id": task_id, "route": "escalate"}
+
+    # Stop condition three: spend. max_task_steps bounds how MANY steps run
+    # and the worker's wall clock bounds how LONG, but neither bounds what
+    # they cost -- a few document-sized contexts can outspend a dozen cheap
+    # steps. Checked before deciding, so the ceiling is never blown by the
+    # very call that discovers it.
+    spent = _task_cost_usd(task_id)
+    if spent >= settings.max_task_cost_usd:
+        _create_escalation(
+            task_id, None,
+            f"Reached the cost ceiling for one task (${spent:.4f} of "
+            f"${settings.max_task_cost_usd:.2f}) -- needs human review before spending more.",
+            kind="budget",
+        )
+        return {"task_id": task_id, "route": "escalate"}
+
+    # Stop condition four: progress. A loop that keeps failing doesn't
+    # error, it just bills -- so consecutive steps that produced nothing
+    # usable end the turn rather than spending the rest of the budget
+    # discovering the same thing again.
+    if _unproductive_streak(task_id) >= settings.max_unproductive_steps:
+        _create_escalation(
+            task_id, None,
+            f"Stopped making progress: {settings.max_unproductive_steps} consecutive steps failed "
+            "or repeated a known-dead tool call. Needs a human to redirect the approach.",
+            kind="budget",
+        )
+        return {"task_id": task_id, "route": "escalate"}
+
+    plan_text = _load_current_plan(task_id)
+    prior_context = _gather_prior_context(task_id)
+    conversation = _gather_conversation_history(task_id, task)
+
+    with span(
+        task_id, "agent_step", f"decide_step_{steps_taken + 1}",
+        input={"steps_taken": steps_taken, "steps_taken_this_turn": steps_taken_this_turn},
+    ) as s:
+        prompt = AGENT_STEP_PROMPT.format(
+            request=request_text,
+            conversation=conversation,
+            plan=plan_text,
+            tool_descriptions=_tool_descriptions(),
+            prior_context=prior_context,
+            dead_calls=deadcalls.describe(task_id),
+            steps_taken=steps_taken_this_turn,
+            steps_remaining=settings.max_task_steps - steps_taken_this_turn,
+        )
+        decision, completion = structured_complete(prompt, NextStepDecision, model=settings.llm_model)
+        s["output"] = decision.model_dump()
+    cost.record_llm_call(task_id, None, "agent_step", completion)
+
+    # Persist the living to-do list whenever the agent revised it, so the next
+    # step (and the dashboard) sees the current plan rather than the stale one.
+    if decision.updated_plan:
+        _save_plan(task_id, decision.updated_plan, steps_taken)
+
+    if decision.next_action == "finish":
+        if steps_taken == 0:
+            # Safety net, not expected in normal operation: the model tried
+            # to declare the request done without doing any work on a
+            # task's very first decision. Treat this like the old
+            # "stuck/inconsistent state" escalations rather than let
+            # synthesize_node run with zero subtask outputs.
+            _create_escalation(
+                task_id, None,
+                "Agent chose to finish before completing any step -- needs human review.",
+                kind="budget",
+            )
+            return {"task_id": task_id, "route": "escalate"}
+        return {"task_id": task_id, "route": "synthesize"}
+
+    # next_action == "act"
+    with get_session() as session:
+        subtask = Subtask(
+            task_id=task_id,
+            position=steps_taken,
+            description=decision.subtask_description or "(no description provided)",
+            depends_on=[],
+            status=SubtaskStatus.RUNNING,
+        )
+        session.add(subtask)
+        session.commit()
+        session.refresh(subtask)
+        subtask_id = subtask.id
+
+    preselected = None
+    if decision.tool_name:
+        preselected = ToolChoice(
+            tool_name=decision.tool_name,
+            tool_input_json=decision.tool_input_json or "{}",
+            rationale=decision.rationale,
+        )
 
     route = "execute"
     while route == "execute":
-        tool_success = _execute_subtask(task_id, subtask_id)
+        tool_success = _execute_subtask(task_id, subtask_id, preselected_choice=preselected)
+        preselected = None  # only ever valid for the first attempt
+        if tool_success is None:
+            # Gated on a requires_approval tool -- _execute_subtask already
+            # created the tool_approval escalation and set the subtask
+            # ESCALATED; nothing to review, this turn just ends here.
+            return {"task_id": task_id, "route": "escalate"}
         route = _review_subtask(task_id, subtask_id, tool_success)
 
-    escalated = [subtask_id] if route == "escalate" else []
-    # Deliberately NOT returning task_id here: LangGraph's LastValue channel
-    # (the default for a plain, non-reducer field) raises InvalidUpdateError
-    # the instant it receives more than one write in a step -- even when
-    # every parallel branch would write the identical value. task_id was
-    # already set by select_subtask_node in a prior (non-parallel) step and
-    # never changes, so simply not re-writing it here avoids the conflict;
-    # escalated_subtask_ids is the only field this node needs to write.
-    return {"escalated_subtask_ids": escalated}
+    return {"task_id": task_id, "route": route}  # "agent_step" (pass) or "escalate"
 
 
 def escalate_node(state: AgentState) -> AgentState:
     task_id = state["task_id"]
     with get_session() as session:
         task = session.get(Task, task_id)
-        task.status = TaskStatus.AWAITING_APPROVAL
-        task.updated_at = datetime.now(timezone.utc)
-        session.add(task)
+        _set_task_status(session, task, TaskStatus.AWAITING_APPROVAL)
         session.commit()
     return {"task_id": task_id}
 
@@ -413,30 +749,67 @@ def synthesize_node(state: AgentState) -> AgentState:
         f"{i + 1}. {s.description}\n   -> {s.output or '(skipped/failed)'}"
         for i, s in enumerate(subtasks)
     )
+    conversation = _gather_conversation_history(task_id, task)
 
     with span(task_id, "synthesize", "supervisor_synthesize", input={"request": request_text}) as s:
-        prompt = SYNTHESIS_PROMPT.format(request=request_text, subtask_outputs=outputs)
+        prompt = SYNTHESIS_PROMPT.format(request=request_text, conversation=conversation, subtask_outputs=outputs)
         final_answer, completion = complete(prompt)
         s["output"] = {"final_answer": final_answer}
     cost.record_llm_call(task_id, None, "synthesize", completion)
 
     with get_session() as session:
         task = session.get(Task, task_id)
-        task.status = TaskStatus.COMPLETED
-        task.final_output = final_answer
-        task.updated_at = datetime.now(timezone.utc)
-        session.add(task)
+        if task.status != TaskStatus.CANCELLED:
+            task.final_output = final_answer
+        _set_task_status(session, task, TaskStatus.COMPLETED)
         session.commit()
 
-    tools_used = sorted({s.assigned_tool for s in subtasks if s.assigned_tool})
-    long_term.add_memory(
-        f"Task '{request_text}' completed. Tools used: {tools_used}. Outcome: {final_answer[:300]}",
-        kind="episodic",
-        task_id=task_id,
-        importance=3,
-    )
+    _reflect_and_save_memory(task_id, request_text, subtasks, final_answer)
     short_term.clear(task_id)
     return {"task_id": task_id}
+
+
+def _reflect_and_save_memory(task_id: str, request_text: str, subtasks, final_answer: str) -> None:
+    """Curated long-term memory, not a firehose. The old behavior saved an
+    episodic summary of EVERY completed task at a flat importance -- so the
+    store filled with 'Task test completed', 'Task hello completed' noise that
+    then polluted the retrieval sketch_node relies on. Instead: one reflection
+    call decides whether this task produced a durable, generalizable lesson
+    worth recalling on a future task, and only THAT gets saved -- with a real,
+    model-assigned kind (episodic/fact/preference) and importance -- followed
+    by a prune so the store can't grow unbounded. This mirrors how production
+    agent memory (e.g. LangGraph's store + reflection patterns) curates rather
+    than logs. Best-effort: a memory hiccup must never fail an
+    already-completed task, so everything here is guarded."""
+    tools_used = sorted({s.assigned_tool for s in subtasks if s.assigned_tool})
+    try:
+        with get_session() as session:
+            owner_id = session.get(Task, task_id).owner_id
+
+        with span(task_id, "memory", "memory_reflection", input={"request": request_text}) as s:
+            reflection, completion = structured_complete(
+                MEMORY_REFLECTION_PROMPT.format(
+                    request=request_text, tools_used=tools_used, outcome=final_answer[:500]
+                ),
+                MemoryReflection,
+                model=settings.llm_model,
+            )
+            s["output"] = reflection.model_dump()
+        cost.record_llm_call(task_id, None, "reflection", completion)
+
+        if reflection.worth_saving and reflection.content.strip():
+            long_term.add_memory(
+                reflection.content,
+                kind=reflection.kind,
+                owner_id=owner_id,
+                task_id=task_id,
+                importance=reflection.importance,
+            )
+            # Bounded growth -- nothing else calls this, so a memory that's
+            # never pruned is a memory that grows forever.
+            long_term.prune_low_value_memories(owner_id)
+    except Exception as exc:  # noqa: BLE001 -- memory is best-effort, never fail the task
+        logger.warning("memory reflection/save failed for task %s (continuing): %s", task_id, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -445,30 +818,14 @@ def synthesize_node(state: AgentState) -> AgentState:
 
 
 def route_entry(state: AgentState) -> str:
-    """A task with no subtasks yet needs planning; a task resuming after a
-    human decision already has subtasks and just needs to keep executing."""
+    """A task with no subtasks yet needs a sketch; a task resuming after a
+    human decision (or mid-loop) already has subtasks and just needs to
+    keep looping."""
     task_id = state["task_id"]
     with get_session() as session:
         exists = session.exec(select(Subtask).where(Subtask.task_id == task_id).limit(1)).first()
-    return "select_subtask" if exists else "plan"
+    return "agent_step" if exists else "sketch"
 
 
 def route_after(state: AgentState) -> str:
     return state.get("route", "escalate")  # type: ignore[return-value]
-
-
-def route_after_select_subtask(state: AgentState) -> str | list[Send]:
-    """Same route field select_subtask_node always wrote, except the
-    "execute" case now fans out via Send instead of routing to a single
-    fixed edge -- one Send per ready subtask in the wave, each carrying its
-    own current_subtask_id as that branch's local starting state. Only this
-    one routing site needs Send; run_subtask_node's own internal retry loop
-    and select_subtask_node's other two outcomes (synthesize/escalate) are
-    unaffected and keep using plain string routes."""
-    route = state.get("route", "escalate")
-    if route != "execute":
-        return route  # type: ignore[return-value]
-
-    task_id = state["task_id"]
-    ready_ids = state.get("ready_subtask_ids", [])
-    return [Send("run_subtask", {"task_id": task_id, "current_subtask_id": sid}) for sid in ready_ids]

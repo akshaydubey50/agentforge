@@ -19,7 +19,10 @@ const TONE_STROKE: Record<StatusTone, string> = {
 };
 
 export function AgentGraphView({ task, spans, escalations }: { task: TaskDetailOut; spans: TraceSpanOut[]; escalations: EscalationOut[] }) {
-  const { nodes: graphNodes, edges: graphEdges } = useMemo(() => buildGraph(task, spans, escalations), [task, spans, escalations]);
+  const { nodes: graphNodes, edges: graphEdges } = useMemo(
+    () => buildGraph(task, spans, escalations, task.messages),
+    [task, spans, escalations]
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const rfNodes: AgentFlowNode[] = graphNodes.map((n) => ({

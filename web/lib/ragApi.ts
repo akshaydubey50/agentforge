@@ -25,7 +25,11 @@ export interface IngestResponse {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${RAG_API_BASE_URL}${path}`, init);
+  const res = await fetch(`${RAG_API_BASE_URL}${path}`, { ...init, credentials: "include" });
+  if (res.status === 401) {
+    if (typeof window !== "undefined") window.location.href = "/login";
+    throw new Error("not authenticated");
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`${init?.method || "GET"} ${path} failed: ${res.status} ${body}`);

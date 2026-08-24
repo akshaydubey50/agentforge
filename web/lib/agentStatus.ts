@@ -26,3 +26,11 @@ export const SUBTASK_STATUS_META: Record<SubtaskStatus, { label: string; dot: st
 export function isActiveTaskStatus(status: TaskStatus) {
   return status === "pending" || status === "running";
 }
+
+// Matches the backend's _MESSAGEABLE_STATUSES (src/agentsys/main.py):
+// a follow-up only makes sense once the agent has actually stopped and
+// produced something to react to. awaiting_approval has its own resolution
+// path (the escalation gate) instead.
+export function canContinueConversation(status: TaskStatus) {
+  return status === "completed" || status === "failed";
+}

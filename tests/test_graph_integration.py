@@ -6,11 +6,23 @@ import uuid
 
 from sqlmodel import select
 
-from agentsys.db.models import Escalation, Review, Subtask, SubtaskStatus, Task, TaskStatus, ToolCall
+from agentsys.config import settings
+from agentsys.db.models import (
+    Escalation,
+    Review,
+    Subtask,
+    SubtaskStatus,
+    Task,
+    TaskStatus,
+    ToolCall,
+    TraceSpan,
+)
 from agentsys.db.session import get_session, init_db
 from agentsys.escalations import apply_escalation_decision
+from agentsys.graph.nodes import sketch_node
 from agentsys.graph.runner import run_task
 from agentsys.memory import long_term
+from conftest import get_test_owner_id
 
 
 def setup_module() -> None:
@@ -19,7 +31,7 @@ def setup_module() -> None:
 
 def _create_task(request_text: str) -> str:
     with get_session() as session:
-        task = Task(request_text=request_text)
+        task = Task(request_text=request_text, owner_id=get_test_owner_id())
         session.add(task)
         session.commit()
         session.refresh(task)
@@ -67,7 +79,7 @@ def test_db_query_task_uses_the_right_tool_and_produces_correct_output():
     assert any(c.tool_name == "db_query" and c.success for c in calls)
 
 
-def test_multi_subtask_task_respects_dependency_order():
+def test_multi_step_task_creates_steps_incrementally_and_covers_both_quarters():
     task_id = _create_task(
         "Look up Blue Harbor Logistics revenue for both 2026-Q1 and 2026-Q2 in our database, "
         "then state whether it grew and by how much in dollars."
@@ -82,19 +94,18 @@ def test_multi_subtask_task_respects_dependency_order():
     # reviewer_llm_model) can be more conservative than the specialist's
     # gpt-4o-mini and legitimately escalate a technically-correct tool
     # result over data-provenance concerns rather than rubber-stamp it. This
-    # test cares about dependency ordering, not review outcome -- same
+    # test cares about incremental step creation, not review outcome -- same
     # tolerance test_reviewer_rejects_bad_output_and_specialist_revises_on_retry
     # already applies for the same reason (real LLM reviews aren't
     # deterministic, and a stricter reviewer choosing to escalate isn't a bug).
     assert task.status in (TaskStatus.COMPLETED, TaskStatus.AWAITING_APPROVAL)
     assert len(subtasks) >= 2
-    # every subtask's dependencies must have an earlier position — this is the
-    # cycle/self-reference prevention plan_node enforces, verified here on a
-    # real LLM-generated plan rather than a hand-crafted fixture.
-    position_by_id = {s.id: s.position for s in subtasks}
-    for s in subtasks:
-        for dep_id in s.depends_on:
-            assert position_by_id[dep_id] < s.position
+    # Subtasks are now created one at a time by agent_step_node's own decide
+    # loop rather than committed upfront as a dependency DAG -- every one
+    # gets depends_on=[] and positions must be a gapless 0..N-1 sequence,
+    # proving genuine incremental creation rather than a stale leftover.
+    assert [s.position for s in subtasks] == list(range(len(subtasks)))
+    assert all(s.depends_on == [] for s in subtasks)
 
 
 def test_reviewer_rejects_bad_output_and_specialist_revises_on_retry():
@@ -132,9 +143,12 @@ def test_synthesis_does_not_fabricate_data_beyond_what_subtasks_actually_retriev
     """Regression test for a real bug: the planner once produced a single
     Q1-only subtask for a request that needed both quarters, and synthesis
     papered over the gap by inventing a plausible-looking Q2 figure dressed
-    up as a second subtask citation that never actually ran. Fixed via the
-    PLAN_PROMPT (one-shot planning, no deferred subtasks) and SYNTHESIS_PROMPT
-    (explicit no-fabrication instruction) in graph/prompts.py. This test
+    up as a second subtask citation that never actually ran. Originally fixed
+    via PLAN_PROMPT's one-shot-planning guardrail plus SYNTHESIS_PROMPT's
+    no-fabrication instruction; after the move to a continuous reasoning loop
+    the same completeness guardrail now lives in AGENT_STEP_PROMPT ("don't
+    finish having quietly skipped part of what was asked"), with
+    SYNTHESIS_PROMPT's no-fabrication instruction unchanged. This test
     verifies the fix holds: every dollar figure in the final answer must be
     traceable to an actual tool_call result, not just plausible-looking."""
     task_id = _create_task(
@@ -203,13 +217,16 @@ def test_escalation_take_over_resumes_and_completes_task():
     assert resolved.output == "manually provided answer"
 
 
-def test_escalation_reject_at_plan_level_fails_task_cleanly():
+def test_escalation_reject_at_task_level_fails_task_cleanly():
+    """"Task-level" = subtask_id is None -- fired by sketch_node's low-confidence
+    check or agent_step_node's step-budget/premature-finish guards, as opposed
+    to a subtask-level escalation from an exhausted reject-and-retry loop."""
     task_id = _create_task("test")
     with get_session() as session:
         task = session.get(Task, task_id)
         task.status = TaskStatus.AWAITING_APPROVAL
         session.add(task)
-        escalation = Escalation(task_id=task_id, subtask_id=None, reason="forced plan-level escalation for test")
+        escalation = Escalation(task_id=task_id, subtask_id=None, reason="forced task-level escalation for test")
         session.add(escalation)
         session.commit()
         session.refresh(escalation)
@@ -233,7 +250,9 @@ def test_memory_informed_planning_retrieves_prior_task_summary():
 
     # The synthesize step should have written an episodic memory mentioning
     # this task — verify it's actually retrievable, not just written.
-    results = long_term.retrieve_relevant(f"task involving the word {marker}", k=3)
+    results = long_term.retrieve_relevant(
+        f"task involving the word {marker}", owner_id=get_test_owner_id(), k=3
+    )
     assert any(marker in r.content for r in results)
 
 
@@ -263,3 +282,46 @@ def test_specialist_does_not_fabricate_values_it_cannot_know():
         "no subtask used any tool — the specialist reasoned its way to a random "
         "result, which means it made the numbers up"
     )
+
+
+def test_sketch_does_not_create_subtask_rows():
+    task_id = _create_task("Say hello in exactly one short sentence.")
+    sketch_node({"task_id": task_id})
+    assert _get_subtasks(task_id) == []
+
+
+def test_agent_step_loop_creates_subtasks_incrementally_and_stops_on_finish():
+    task_id = _create_task(
+        "Look up Blue Harbor Logistics revenue for both 2026-Q1 and 2026-Q2 in our database, "
+        "then state whether it grew and by how much in dollars."
+    )
+    run_task(task_id)
+
+    subtasks = _get_subtasks(task_id)
+    assert [s.position for s in subtasks] == list(range(len(subtasks)))
+    assert all(s.depends_on == [] for s in subtasks)
+
+    with get_session() as session:
+        decide_spans = session.exec(
+            select(TraceSpan)
+            .where(TraceSpan.task_id == task_id, TraceSpan.span_type == "agent_step")
+            .order_by(TraceSpan.started_at)
+        ).all()
+    assert decide_spans, "no agent_step decision spans were recorded"
+    assert decide_spans[-1].output["next_action"] == "finish"
+    assert all(sp.output["next_action"] == "act" for sp in decide_spans[:-1])
+
+
+def test_step_budget_escalates_cleanly(monkeypatch):
+    monkeypatch.setattr(settings, "max_task_steps", 1)
+    task_id = _create_task(
+        "Look up Blue Harbor Logistics revenue for both 2026-Q1 and 2026-Q2 in our database, "
+        "then state whether it grew and by how much in dollars."
+    )
+    run_task(task_id)
+
+    task = _get_task(task_id)
+    assert task.status == TaskStatus.AWAITING_APPROVAL
+    with get_session() as session:
+        escalations = session.exec(select(Escalation).where(Escalation.task_id == task_id)).all()
+    assert any(e.subtask_id is None and "max_task_steps" in e.reason for e in escalations)

@@ -11,10 +11,13 @@ import { TaskDetailHeader } from "@/components/feed/TaskDetailHeader";
 import { TaskContextPanel } from "@/components/feed/TaskContextPanel";
 import { FeedMessage } from "@/components/feed/FeedMessage";
 import { FeedEscalationGate } from "@/components/feed/FeedEscalationGate";
+import { FeedComposer } from "@/components/feed/FeedComposer";
+import { FeedFilterBar, applyRoleFilter, useRoleFilter } from "@/components/feed/FeedFilterBar";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 
 export default function TaskFeedPage() {
   const { taskId } = useParams<{ taskId: string }>();
+  const [roleFilter, setRoleFilter] = useRoleFilter();
 
   const { data: task } = useSWR(["task", taskId], () => api.getTask(taskId), {
     refreshInterval: (data) => (data && isActiveTaskStatus(data.status) ? 1500 : data?.status === "awaiting_approval" ? 4000 : 0),
@@ -42,6 +45,15 @@ export default function TaskFeedPage() {
     mutate("pending-escalations-count");
   };
 
+  const sendMessage = async (content: string) => {
+    await api.sendTaskMessage(taskId, content);
+    // The task flips back to "running" server-side and a fresh worker run
+    // starts -- refresh task (for status + the new TaskMessage row) and the
+    // trace (new agent_step/tool_call/... spans will start appearing).
+    mutate(["task", taskId]);
+    mutate(["trace", taskId]);
+  };
+
   if (!task) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -52,7 +64,9 @@ export default function TaskFeedPage() {
     );
   }
 
-  const items = buildFeed(spans ?? [], task.subtasks, escalations?.items ?? []);
+  const items = buildFeed(spans ?? [], task.subtasks, escalations?.items ?? [], task.messages);
+  const visibleItems = applyRoleFilter(items, roleFilter);
+  const hiddenCount = items.length - visibleItems.length;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -61,10 +75,12 @@ export default function TaskFeedPage() {
         <div className="flex min-w-0 flex-1 flex-col border-r border-border">
           <div className="flex-1 overflow-y-auto px-5.5 py-5.5">
             <div className="mb-4.5 text-center text-[11px] text-text-faint">
-              Task submitted · {items.length} event{items.length === 1 ? "" : "s"} · human approval enabled
+              Task submitted · {items.length} event{items.length === 1 ? "" : "s"}
+              {hiddenCount > 0 && ` · ${hiddenCount} hidden`} · human approval enabled
             </div>
+            <FeedFilterBar filter={roleFilter} onChange={setRoleFilter} />
             <div className="space-y-4.5">
-              {items.map((item) =>
+              {visibleItems.map((item) =>
                 item.kind === "escalation" ? (
                   <FeedEscalationGate
                     key={item.key}
@@ -76,8 +92,12 @@ export default function TaskFeedPage() {
                 )
               )}
               {items.length === 0 && <div className="text-center text-[12.5px] text-text-faint">Waiting on the first trace span…</div>}
+              {items.length > 0 && visibleItems.length === 0 && (
+                <div className="text-center text-[12.5px] text-text-faint">Everything in this task is hidden by the filters above.</div>
+              )}
             </div>
           </div>
+          <FeedComposer status={task.status} onSend={sendMessage} />
         </div>
         <TaskContextPanel task={task} spans={spans ?? []} />
       </div>

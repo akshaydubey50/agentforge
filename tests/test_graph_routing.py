@@ -1,14 +1,14 @@
 """Deterministic tests for the graph's control-flow logic — no LLM calls, so
-these are fast and fully reproducible. The LLM-driven nodes (plan/execute/
+these are fast and fully reproducible. The LLM-driven nodes (sketch/agent_step/
 review/synthesize) are covered separately in test_graph_integration.py."""
-
-import uuid
 
 from sqlmodel import select
 
+from agentsys.config import settings
 from agentsys.db.models import Escalation, Subtask, SubtaskStatus, Task
 from agentsys.db.session import get_session, init_db
-from agentsys.graph.nodes import route_entry, select_subtask_node
+from agentsys.graph.nodes import _load_sketch, agent_step_node, route_entry
+from conftest import get_test_owner_id
 
 
 def setup_module() -> None:
@@ -17,7 +17,7 @@ def setup_module() -> None:
 
 def _make_task(request_text: str = "test") -> str:
     with get_session() as session:
-        task = Task(request_text=request_text)
+        task = Task(request_text=request_text, owner_id=get_test_owner_id())
         session.add(task)
         session.commit()
         return task.id
@@ -35,53 +35,33 @@ def _make_subtask(task_id: str, position: int, status: SubtaskStatus, depends_on
         return subtask
 
 
-def test_route_entry_plans_a_fresh_task():
+def test_route_entry_sketches_a_fresh_task():
     task_id = _make_task()
-    assert route_entry({"task_id": task_id}) == "plan"
+    assert route_entry({"task_id": task_id}) == "sketch"
 
 
 def test_route_entry_resumes_a_task_with_existing_subtasks():
     task_id = _make_task()
     _make_subtask(task_id, 0, SubtaskStatus.DONE)
-    assert route_entry({"task_id": task_id}) == "select_subtask"
+    assert route_entry({"task_id": task_id}) == "agent_step"
 
 
-def test_select_subtask_picks_the_dependency_ready_one():
+def test_load_sketch_falls_back_when_no_sketch_span_exists():
     task_id = _make_task()
-    first = _make_subtask(task_id, 0, SubtaskStatus.DONE)
-    _make_subtask(task_id, 1, SubtaskStatus.PENDING, depends_on=[first.id])
-    _make_subtask(task_id, 2, SubtaskStatus.PENDING, depends_on=["nonexistent-id-not-done"])
-
-    result = select_subtask_node({"task_id": task_id})
-
-    assert result["route"] == "execute"
-    with get_session() as session:
-        picked = session.get(Subtask, result["current_subtask_id"])
-    assert picked.position == 1
-    assert picked.status == SubtaskStatus.RUNNING
+    assert _load_sketch(task_id) == "(no sketch available)"
 
 
-def test_select_subtask_routes_to_synthesize_when_all_terminal():
+def test_agent_step_escalates_when_step_budget_exhausted(monkeypatch):
+    monkeypatch.setattr(settings, "max_task_steps", 2)
     task_id = _make_task()
     _make_subtask(task_id, 0, SubtaskStatus.DONE)
-    _make_subtask(task_id, 1, SubtaskStatus.SKIPPED)
+    _make_subtask(task_id, 1, SubtaskStatus.DONE)
 
-    result = select_subtask_node({"task_id": task_id})
-    assert result["route"] == "synthesize"
+    result = agent_step_node({"task_id": task_id})
 
-
-def test_select_subtask_escalates_when_nothing_is_ready():
-    task_id = _make_task()
-    # A pending subtask whose only dependency will never complete (not in the
-    # done set and not itself runnable) — this is the "stuck" case.
-    fake_dep_id = str(uuid.uuid4())
-    _make_subtask(task_id, 0, SubtaskStatus.FAILED)  # terminal, not "done", so dep never satisfied
-    _make_subtask(task_id, 1, SubtaskStatus.PENDING, depends_on=[fake_dep_id])
-
-    result = select_subtask_node({"task_id": task_id})
     assert result["route"] == "escalate"
-
     with get_session() as session:
         escalations = session.exec(select(Escalation).where(Escalation.task_id == task_id)).all()
     assert len(escalations) == 1
     assert escalations[0].subtask_id is None
+    assert "max_task_steps" in escalations[0].reason

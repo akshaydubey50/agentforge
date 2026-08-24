@@ -103,7 +103,7 @@ export default function KnowledgePage() {
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".md,.txt,.pdf,.html,.htm"
+              accept=".md,.txt,.pdf,.html,.htm,.png,.jpg,.jpeg,.gif,.webp"
               className="hidden"
               onChange={(e) => handleFilesPicked(e.target.files)}
             />

@@ -9,6 +9,7 @@ from sqlmodel import select
 from agentsys.db.models import SampleMetric, SubAgentRun, Subtask, SubtaskStatus, Task
 from agentsys.db.session import get_session, init_db
 from agentsys.tools.delegate_subagent import DelegateSubagentTool
+from conftest import get_test_owner_id
 
 pytestmark = pytest.mark.usefixtures("_seeded_db")
 
@@ -29,7 +30,7 @@ def _seeded_db():
 
 def _make_task_and_subtask(description: str) -> tuple[str, str]:
     with get_session() as session:
-        task = Task(request_text=description)
+        task = Task(request_text=description, owner_id=get_test_owner_id())
         session.add(task)
         session.commit()
         session.refresh(task)

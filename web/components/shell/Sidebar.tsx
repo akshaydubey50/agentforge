@@ -43,6 +43,44 @@ function RailIcon({
   );
 }
 
+function UserRailIcon() {
+  const { data: user } = useSWR("current-user", () => api.getMe());
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const logout = async () => {
+    setLoggingOut(true);
+    try {
+      await api.logout();
+    } finally {
+      window.location.href = "/login";
+    }
+  };
+
+  if (!user) return null;
+  const initial = (user.name || user.email)[0]?.toUpperCase();
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={logout}
+          disabled={loggingOut}
+          className="relative flex h-[34px] w-[34px] flex-none items-center justify-center overflow-hidden rounded-full bg-surface-3 text-[12.5px] font-semibold text-text-muted transition-opacity hover:opacity-80"
+        >
+          {user.picture_url ? (
+            // eslint-disable-next-line @next/next/no-img-element -- an
+            // external Google-hosted avatar, not a local/optimizable asset.
+            <img src={user.picture_url} alt="" className="h-full w-full object-cover" />
+          ) : (
+            initial
+          )}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right">{user.name || user.email} — sign out</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const { data: pendingCount } = useSWR("pending-escalations-count", () => api.countPendingEscalations(), {
@@ -87,8 +125,14 @@ export function Sidebar() {
         active={pathname.startsWith("/approvals")}
         badge={!!pendingCount}
       />
+      <RailIcon href="/knowledge" glyph="◫" label="Knowledge" active={pathname.startsWith("/knowledge")} />
       <RailIcon href="/memory" glyph="⬡" label="Memory" active={pathname.startsWith("/memory")} />
       <RailIcon href="/analytics" glyph="▨" label="Analytics" active={pathname.startsWith("/analytics")} />
+      <RailIcon href="/integrations" glyph="⧉" label="Integrations" active={pathname.startsWith("/integrations")} />
+
+      <div className="mt-auto">
+        <UserRailIcon />
+      </div>
     </nav>
   );
 }

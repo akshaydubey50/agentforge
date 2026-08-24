@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from agentsys.config import settings
+from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.file_io import FileIOTool
 
 TASK_ID = "test-task-123"
@@ -27,7 +28,8 @@ def test_write_then_read_roundtrip(tool):
 
     read_result = tool.run(action="read", task_id=TASK_ID, path="notes.txt")
     assert read_result.success
-    assert read_result.output["content"] == "hello world"
+    # read wraps content as untrusted external data (see sanitize.wrap_untrusted)
+    assert read_result.output["content"] == wrap_untrusted("hello world", "file_io")
 
 
 def test_write_creates_parent_directories(tool):
@@ -36,7 +38,7 @@ def test_write_creates_parent_directories(tool):
 
     read_result = tool.run(action="read", task_id=TASK_ID, path="nested/dir/file.txt")
     assert read_result.success
-    assert read_result.output["content"] == "data"
+    assert read_result.output["content"] == wrap_untrusted("data", "file_io")
 
 
 def test_list_includes_written_file(tool):

@@ -30,6 +30,7 @@ export interface SubtaskOut {
   status: SubtaskStatus;
   output: string | null;
   attempt_count: number;
+  created_at: string;
 }
 
 export interface TaskOut {
@@ -41,8 +42,16 @@ export interface TaskOut {
   updated_at: string;
 }
 
+export interface TaskMessageOut {
+  id: string;
+  role: string;
+  content: string;
+  created_at: string;
+}
+
 export interface TaskDetailOut extends TaskOut {
   subtasks: SubtaskOut[];
+  messages: TaskMessageOut[];
 }
 
 export interface EscalationOut {
@@ -81,6 +90,21 @@ export interface ToolInfo {
   description: string;
 }
 
+export interface UserOut {
+  id: string;
+  email: string;
+  name: string | null;
+  picture_url: string | null;
+}
+
+export interface GoogleConnectionOut {
+  connected: boolean;
+  configured: boolean;
+  google_email: string | null;
+  scopes: string[];
+  connected_at: string | null;
+}
+
 export interface MemoryEntryOut {
   id: string;
   task_id: string | null;
@@ -104,11 +128,24 @@ export interface AnalyticsOut {
   cost_by_purpose: Record<string, number>;
 }
 
+// A 401 here means the session cookie is missing/expired -- every caller
+// bounces to /login instead of each page having to check response.status
+// itself. window.location (not next/navigation's router) because api.ts is
+// a plain module, not a component -- it has no router instance to call.
+function redirectToLogin() {
+  if (typeof window !== "undefined") window.location.href = "/login";
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
+  if (res.status === 401) {
+    redirectToLogin();
+    throw new Error("not authenticated");
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`${init?.method || "GET"} ${path} failed: ${res.status} ${body}`);
@@ -129,7 +166,15 @@ export const api = {
     const form = new FormData();
     form.append("request_text", requestText);
     for (const file of files) form.append("files", file);
-    const res = await fetch(`${API_BASE_URL}/v1/tasks/upload`, { method: "POST", body: form });
+    const res = await fetch(`${API_BASE_URL}/v1/tasks/upload`, {
+      method: "POST",
+      body: form,
+      credentials: "include",
+    });
+    if (res.status === 401) {
+      redirectToLogin();
+      throw new Error("not authenticated");
+    }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error(`POST /v1/tasks/upload failed: ${res.status} ${body}`);
@@ -141,6 +186,12 @@ export const api = {
     request<Page<TaskOut>>(`/v1/tasks?status=${status}&limit=${limit}&offset=${offset}`),
 
   getTask: (taskId: string) => request<TaskDetailOut>(`/v1/tasks/${taskId}`),
+
+  sendTaskMessage: (taskId: string, content: string) =>
+    request<TaskOut>(`/v1/tasks/${taskId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
 
   getTrace: (taskId: string) => request<TraceSpanOut[]>(`/v1/tasks/${taskId}/trace`),
 
@@ -173,7 +224,27 @@ export const api = {
 
   listMemory: (kind = "all", limit = 25, offset = 0) =>
     request<Page<MemoryEntryOut>>(`/v1/memory?kind=${kind}&limit=${limit}&offset=${offset}`),
+
+  getGoogleStatus: () => request<GoogleConnectionOut>("/v1/integrations/google/status"),
+
+  disconnectGoogle: () =>
+    request<GoogleConnectionOut>("/v1/integrations/google/disconnect", { method: "POST" }),
+
+  getMe: () => request<UserOut>("/v1/auth/me"),
+
+  logout: () => request<{ ok: boolean }>("/v1/auth/logout", { method: "POST" }),
 };
+
+// Sign-in AND (re)connecting Drive/Gmail are the same OAuth grant (see
+// google_oauth.py's login_or_connect) -- this one URL serves both the
+// /login page's "Sign in with Google" button and the Integrations page's
+// "Reconnect" affordance (which passes next="/integrations" to land back
+// there instead of the dashboard root). Must be a full-page browser
+// navigation, NOT an api-client fetch -- Google's consent screen can't
+// render inside XHR/CORS. The frontend points window.location / an
+// <a href> at this.
+export const googleLoginUrl = (next = "/") =>
+  `${API_BASE_URL}/v1/auth/google/login?next=${encodeURIComponent(next)}`;
 
 export const isActiveStatus = (status: TaskStatus) =>
   status === "pending" || status === "running";

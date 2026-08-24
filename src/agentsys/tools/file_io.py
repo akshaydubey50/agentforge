@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agentsys.config import settings
+from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.base import Tool, ToolResult
 
 
@@ -13,10 +14,20 @@ class FileIOTool(Tool):
     description = (
         "Reads, writes, or lists files inside this task's sandboxed workspace directory. "
         "Arguments: action (str, required, one of 'read'/'write'/'list'), "
-        "path (str, required, relative path within the task workspace), "
-        "content (str, required only for action='write'). "
-        "Do not pass task_id — it's filled in automatically."
+        "path (str, required, relative path within the task workspace -- no leading "
+        "slash and no '..'), content (str, required only for action='write'). "
+        "Do not pass task_id — it's filled in automatically. Examples: write a file "
+        "with {\"action\": \"write\", \"path\": \"report.txt\", \"content\": \"...\"}; "
+        "read it back with {\"action\": \"read\", \"path\": \"report.txt\"} (returns "
+        "{content: \"...\"}); see what's already there with "
+        "{\"action\": \"list\", \"path\": \".\"} (returns {files: [...]})."
     )
+
+    def needs_approval(self, kwargs: dict) -> bool:
+        """Only 'write' is side-effecting -- 'read'/'list' stay ungated so
+        the specialist isn't blocked on human approval to look at its own
+        workspace."""
+        return kwargs.get("action") == "write"
 
     def run(self, action: str, task_id: str, path: str, content: str | None = None) -> ToolResult:
         task_dir = Path(settings.workspace_dir) / task_id
@@ -50,7 +61,13 @@ class FileIOTool(Tool):
     def _read(resolved: Path) -> ToolResult:
         if not resolved.is_file():
             return ToolResult(success=False, error=f"file not found: {resolved}")
-        return ToolResult(success=True, output={"content": resolved.read_text(encoding="utf-8")})
+        # A file in the workspace could be a user-supplied attachment or the
+        # output of an earlier web_search/gmail/drive call written back to
+        # disk -- neither is the agent's own trusted instruction, so it's
+        # framed the same as any other fetched content (see
+        # sanitize.wrap_untrusted).
+        content = wrap_untrusted(resolved.read_text(encoding="utf-8"), "file_io")
+        return ToolResult(success=True, output={"content": content})
 
     @staticmethod
     def _list(resolved: Path) -> ToolResult:

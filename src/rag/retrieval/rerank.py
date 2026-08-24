@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 from rag.config import settings
-from rag.llm import get_client
+from rag.llm import structured_complete
 from rag.retrieval.types import RetrievedChunk
 
 _MAX_CANDIDATE_CHARS = 600
@@ -39,13 +39,7 @@ def llm_rerank(
     )
     prompt = _RERANK_PROMPT.format(query=query, candidates=numbered)
 
-    client = get_client()
-    completion = client.beta.chat.completions.parse(
-        model=model or settings.llm_model,
-        messages=[{"role": "user", "content": prompt}],
-        response_format=RerankResult,
-    )
-    parsed = completion.choices[0].message.parsed
+    parsed = structured_complete(prompt, RerankResult, model=model or settings.llm_model)
 
     score_by_id = {s.chunk_id: s.relevance for s in parsed.scores} if parsed else {}
     by_id = {c.chunk_id: c for c in candidates}

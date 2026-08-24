@@ -21,7 +21,7 @@ class RetrievedMemory:
 
 
 def add_memory(
-    content: str, *, kind: str, task_id: str | None = None, importance: int = 3
+    content: str, *, kind: str, owner_id: str, task_id: str | None = None, importance: int = 3
 ) -> str:
     memory_id = str(uuid.uuid4())
     vector = embed_texts([content])[0]
@@ -31,12 +31,18 @@ def add_memory(
         ids=[memory_id],
         embeddings=[vector],
         documents=[content],
-        metadatas=[{"kind": kind, "task_id": task_id or "", "importance": importance}],
+        # owner_id in Chroma metadata (not just the Postgres row) is what
+        # makes retrieve_relevant's per-user filter possible -- semantic
+        # retrieval goes through Chroma, not Postgres, so isolation has to
+        # be enforced at this layer too or one user's sketch_node could
+        # surface another user's private facts/preferences.
+        metadatas=[{"kind": kind, "task_id": task_id or "", "owner_id": owner_id, "importance": importance}],
     )
 
     with get_session() as session:
         entry = MemoryEntry(
             id=memory_id,
+            owner_id=owner_id,
             task_id=task_id,
             kind=kind,
             content=content,
@@ -49,17 +55,22 @@ def add_memory(
 
 
 def retrieve_relevant(
-    query: str, *, k: int = 3, kind: str | None = None, similarity_floor: float = 0.3
+    query: str, *, owner_id: str, k: int = 3, kind: str | None = None, similarity_floor: float = 0.3
 ) -> list[RetrievedMemory]:
     """Retrieval ranks by a blend of semantic similarity and importance, not
     similarity alone — a highly important preference should surface even when
-    it's a middling semantic match, which is why this isn't a raw Chroma query."""
+    it's a middling semantic match, which is why this isn't a raw Chroma query.
+    Always scoped to owner_id -- see add_memory's note on why owner_id lives
+    in Chroma metadata too, not just Postgres."""
     collection = get_memory_collection()
     if collection.count() == 0:
         return []
 
     vector = embed_texts([query])[0]
-    where = {"kind": kind} if kind else None
+    conditions = [{"owner_id": owner_id}]
+    if kind:
+        conditions.append({"kind": kind})
+    where = conditions[0] if len(conditions) == 1 else {"$and": conditions}
     results = collection.query(
         query_embeddings=[vector],
         n_results=min(k * 3, collection.count()),
@@ -105,11 +116,13 @@ def retrieve_relevant(
     return top
 
 
-def prune_low_value_memories(keep_top_n: int = 500) -> int:
+def prune_low_value_memories(owner_id: str, keep_top_n: int = 500) -> int:
     """Expiration: once long-term memory grows past keep_top_n entries, drop the
-    least important, least recently accessed ones rather than growing forever."""
+    least important, least recently accessed ones rather than growing forever.
+    Scoped to one owner -- pruning globally would let one user's memory
+    volume evict another user's entries."""
     with get_session() as session:
-        all_entries = session.exec(select(MemoryEntry)).all()
+        all_entries = session.exec(select(MemoryEntry).where(MemoryEntry.owner_id == owner_id)).all()
         if len(all_entries) <= keep_top_n:
             return 0
         ranked = sorted(

@@ -2,6 +2,7 @@ import uuid
 
 from agentsys.db.session import init_db
 from agentsys.memory import long_term, short_term
+from conftest import get_test_owner_id
 
 
 def setup_module() -> None:
@@ -24,23 +25,27 @@ def test_short_term_memory_roundtrip_and_clear():
 
 def test_long_term_memory_retrieval_ranks_by_similarity_and_importance():
     marker = uuid.uuid4().hex[:8]
+    owner_id = get_test_owner_id()
     low_importance_id = long_term.add_memory(
         f"The user {marker} prefers dark roast coffee in the morning.",
         kind="preference",
+        owner_id=owner_id,
         importance=1,
     )
     high_importance_id = long_term.add_memory(
         f"The user {marker} prefers dark roast coffee and this is critical to remember.",
         kind="preference",
+        owner_id=owner_id,
         importance=5,
     )
     unrelated_id = long_term.add_memory(
         f"Unrelated fact {marker}: the database migration guide requires a rollback plan.",
         kind="fact",
+        owner_id=owner_id,
         importance=5,
     )
 
-    results = long_term.retrieve_relevant(f"What coffee does the user {marker} like?", k=2)
+    results = long_term.retrieve_relevant(f"What coffee does the user {marker} like?", owner_id=owner_id, k=2)
 
     result_ids = {r.id for r in results}
     assert high_importance_id in result_ids
