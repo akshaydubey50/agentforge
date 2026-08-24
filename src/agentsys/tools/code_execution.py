@@ -54,13 +54,21 @@ KILL_GRACE_S = 5
 
 class CodeExecutionTool(Tool):
     name = "code_execution"
+    requires_approval = True
+    """Every call executes arbitrary code -- gated behind human approval
+    regardless of arguments (see Tool.requires_approval/needs_approval in
+    tools/base.py and the gate in graph/nodes.py's _execute_subtask)."""
     description = (
         "Runs untrusted Python code in an ephemeral, network-isolated Docker container "
         "(no network, memory/process caps, hard timeout). A real sandbox against "
         "accidents and casual abuse, not a hardened boundary against a determined "
-        "attacker -- container escapes remain a known risk class. "
+        "attacker -- container escapes remain a known risk class. No network access "
+        "means no pip install and nothing can call an external API from inside this "
+        "code -- only the Python standard library is available. "
         "Arguments: code (str, required, a Python script), "
         "timeout_s (int, optional, default 10). "
+        "Example: code=\"print(round(9600000 * 1.0885, 2))\". Returns "
+        "{stdout, stderr, exit_code}. "
         "IMPORTANT: this runs as a script, not a REPL — a bare expression like "
         "`result` produces no visible output. You MUST call print(result) to see "
         "any value."

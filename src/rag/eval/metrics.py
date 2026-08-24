@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from rag.config import settings
 from rag.eval.golden_dataset import GoldenCase
 from rag.generation.types import AnswerResult
-from rag.llm import get_client
+from rag.llm import structured_complete
 
 _JUDGE_PROMPT = """You are grading a RAG system's answer against expected key facts.
 
@@ -37,13 +37,7 @@ def judge_correctness(case: GoldenCase, result: AnswerResult, *, model: str | No
         expected_facts=case.expected_facts or "(none — correct answer is to decline)",
         answer=result.answer.text,
     )
-    client = get_client()
-    completion = client.beta.chat.completions.parse(
-        model=model or settings.llm_model,
-        messages=[{"role": "user", "content": prompt}],
-        response_format=CorrectnessJudgment,
-    )
-    parsed = completion.choices[0].message.parsed
+    parsed = structured_complete(prompt, CorrectnessJudgment, model=model or settings.llm_model)
     return parsed or CorrectnessJudgment(correctness=0.0, reasoning="judge returned no output")
 
 

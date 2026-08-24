@@ -103,11 +103,24 @@ export function GraphInspector({ node, task }: { node: GraphNodeData | null; tas
         </Section>
       )}
 
-      {node.kind === "synthesize" && (
-        <Section label="Final answer">
-          <div className="line-clamp-6 text-[12px] leading-relaxed text-text-muted">
-            {task.final_output ?? "Not reached yet."}
-          </div>
+      {node.kind === "synthesize" &&
+        (() => {
+          // node.spans holds this specific turn's synthesize span (see
+          // buildGraph) -- fall back to task.final_output only for a
+          // single-turn task where that's the same thing, so a multi-turn
+          // task doesn't show turn 2's answer when turn 1's node is selected.
+          const turnAnswer = (node.spans[0]?.output as { final_answer?: string } | undefined)?.final_answer;
+          const answer = turnAnswer ?? (node.spans.length === 0 && node.tone === "pending" ? null : task.final_output);
+          return (
+            <Section label="Final answer">
+              <div className="line-clamp-6 text-[12px] leading-relaxed text-text-muted">{answer ?? "Not reached yet."}</div>
+            </Section>
+          );
+        })()}
+
+      {node.kind === "message" && node.message && (
+        <Section label="Follow-up message">
+          <div className="text-[12px] leading-relaxed text-text-muted">{node.message.content}</div>
         </Section>
       )}
 

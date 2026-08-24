@@ -18,8 +18,18 @@ class KnowledgeSearchTool(Tool):
         "Answers a question using documents uploaded to Knowledge -- runs real hybrid "
         "search (not a keyword match) plus grounded generation with citations. Use this "
         "for anything about internal docs, policies, guides, or other uploaded material "
-        "that isn't in the metrics database and isn't public web content. "
-        "Arguments: question (str, required)."
+        "that isn't in the metrics database and isn't public web content. This INCLUDES "
+        "questions about a specific named person, candidate, or project ('who is X', 'what "
+        "is X's experience/background') -- a resume, CV, or profile document may already be "
+        "uploaded for exactly that name, so don't assume a person question means web_search. "
+        "Try this BEFORE web_search whenever a request could plausibly be answered by an "
+        "internal document -- it's the authoritative source for that material and cheaper "
+        "to check than the open web. Returns {answer, sources (titles actually cited), "
+        "confidence: {overall (0-1)}}; if sources is empty or confidence is low, that "
+        "means Knowledge genuinely doesn't have this, not that the query needs rephrasing -- "
+        "move on to web_search or another tool for the next step rather than repeating this call. "
+        "Arguments: question (str, required) -- ask a full natural-language question, e.g. "
+        "\"What is Jane Doe's work experience?\", not just a bare name or keyword."
     )
 
     def run(self, question: str) -> ToolResult:

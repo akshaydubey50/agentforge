@@ -19,3 +19,13 @@ data/workspace/
 # from data/raw via scripts/run_ingest.py
 data/chroma/
 data/processed/*.jsonl
+
+# web: Next.js/TypeScript incremental build cache and Playwright run output,
+# both regenerated on every build/test run
+web/tsconfig.tsbuildinfo
+web/test-results/
+web/playwright-report/
+
+# agentsys: eval harness run output (scripts/run_agent_eval.py); the golden
+# task set alongside it IS committed -- it's the input, this is the result
+data/eval/agent_results/

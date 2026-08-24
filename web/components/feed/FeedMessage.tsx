@@ -1,7 +1,9 @@
 import type { FeedItem } from "@/lib/traceFeed";
 import { spanDurationLabel } from "@/lib/traceFeed";
 import { ROLE_META } from "@/lib/agentRoles";
+import { humanizeValue } from "@/lib/formatValue";
 import { Markdown } from "@/components/ui/Markdown";
+import { Collapsible } from "@/components/ui/Collapsible";
 import { cn } from "@/lib/utils";
 
 function Avatar({ role }: { role: keyof typeof ROLE_META }) {
@@ -52,37 +54,50 @@ function ToolCallBody({ item }: { item: FeedItem }) {
   const status = span.ended_at === null ? "running" : output?.success === false || span.status === "error" ? "err" : "ok";
   const inputEntries = Object.entries(span.input ?? {});
 
+  // The whole card is one collapsible unit, closed by default -- a raw tool
+  // call (especially web_search's full scraped snippets) is implementation
+  // detail, not something worth taking up permanent space in the
+  // conversation. What's always visible is just the one-line summary
+  // (name + status) that IS the toggle; everything else opens on demand.
   return (
-    <div className="mt-2 overflow-hidden rounded-[9px] border border-border bg-canvas">
-      <div className="flex items-center justify-between border-b border-border bg-white/[0.02] px-3.5 py-2">
-        <span className="mono text-[12px] font-medium text-role-reviewer">⚡ {span.name}</span>
-        <span
-          className={cn(
-            "rounded-full px-2 py-0.5 text-[10px]",
-            status === "ok" && "bg-status-completed/15 text-status-completed",
-            status === "running" && "bg-status-running/15 text-status-running",
-            status === "err" && "bg-status-failed/15 text-status-failed"
-          )}
-        >
-          {status === "ok" && `ok · ${spanDurationLabel(span)}`}
-          {status === "running" && "running"}
-          {status === "err" && `error · ${spanDurationLabel(span)}`}
+    <Collapsible
+      className="mt-2 overflow-hidden rounded-[9px] border border-border bg-canvas px-3.5 py-2"
+      label={
+        <span className="flex flex-1 items-center justify-between">
+          <span className="mono text-[12px] font-medium text-role-reviewer">⚡ {span.name}</span>
+          <span
+            className={cn(
+              "rounded-full px-2 py-0.5 text-[10px]",
+              status === "ok" && "bg-status-completed/15 text-status-completed",
+              status === "running" && "bg-status-running/15 text-status-running",
+              status === "err" && "bg-status-failed/15 text-status-failed"
+            )}
+          >
+            {status === "ok" && `ok · ${spanDurationLabel(span)}`}
+            {status === "running" && "running"}
+            {status === "err" && `error · ${spanDurationLabel(span)}`}
+          </span>
         </span>
-      </div>
-      <div className="mono space-y-1 px-3.5 py-2.5 text-[11.5px] leading-relaxed text-text-muted">
+      }
+    >
+      <div className="mono space-y-1.5 border-t border-border pt-2 text-[11.5px] leading-relaxed text-text-muted">
         {inputEntries.map(([k, v]) => (
           <KV key={k} label={k}>
-            {typeof v === "string" ? v : JSON.stringify(v)}
+            <span className="whitespace-pre-wrap">{humanizeValue(v)}</span>
           </KV>
         ))}
         {output?.success && (
           <KV label="output">
-            <span className="text-status-completed">{JSON.stringify(output.output)}</span>
+            <span className="whitespace-pre-wrap text-status-completed">{humanizeValue(output.output)}</span>
           </KV>
         )}
-        {output?.success === false && <KV label="error"><span className="text-status-failed">{output.error}</span></KV>}
+        {output?.success === false && (
+          <KV label="error">
+            <span className="text-status-failed">{output.error}</span>
+          </KV>
+        )}
       </div>
-    </div>
+    </Collapsible>
   );
 }
 
@@ -96,7 +111,11 @@ export function FeedMessage({ item }: { item: FeedItem }) {
         <div className="min-w-0 flex-1">
           <Header role="supervisor" label="Supervisor" spanType="sketch" time={spanDurationLabel(span)} />
           <Bubble>
-            {out.reasoning}
+            {out.reasoning && (
+              <Collapsible label="Thinking" className="mb-2">
+                <div className="text-[12.5px] leading-relaxed text-text-muted">{out.reasoning}</div>
+              </Collapsible>
+            )}
             {out.outline && out.outline.length > 0 && (
               <ul className="mt-2 space-y-1 pl-0.5 text-[12.5px] text-text-muted">
                 {out.outline.map((step, i) => (
@@ -147,7 +166,13 @@ export function FeedMessage({ item }: { item: FeedItem }) {
         <Avatar role="specialist" />
         <div className="min-w-0 flex-1">
           <Header role="specialist" label={label} spanType={span.span_type} time={spanDurationLabel(span)} />
-          {item.rationale && <Bubble dim>{item.rationale}</Bubble>}
+          {item.rationale && (
+            <Collapsible label="Thinking" className="mb-1.5">
+              <div className="rounded-[3px_12px_12px_12px] border border-border bg-surface px-4 py-2.5 text-[13px] leading-relaxed text-text-muted">
+                {item.rationale}
+              </div>
+            </Collapsible>
+          )}
           {item.kind === "tool_call" ? (
             <ToolCallBody item={item} />
           ) : (
@@ -173,12 +198,19 @@ export function FeedMessage({ item }: { item: FeedItem }) {
         <Avatar role="reviewer" />
         <div className="min-w-0 flex-1">
           <Header role="reviewer" label={label} spanType="review" time={spanDurationLabel(span)} />
-          <Bubble dim>
-            {out.feedback}{" "}
-            <span className={cn("ml-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold", verdictClass)}>
-              {out.verdict === "pass" ? "✓ pass" : out.verdict === "reject" ? "↻ reject" : "⏸ escalate"} · {out.score}/5
-            </span>
-          </Bubble>
+          {/* Verdict pill is the always-visible summary and IS the toggle --
+              the written feedback (often several sentences) is implementation
+              detail, same treatment as tool cards. */}
+          <Collapsible
+            className="rounded-[3px_12px_12px_12px] border border-border bg-surface px-4 py-2.5"
+            label={
+              <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold", verdictClass)}>
+                {out.verdict === "pass" ? "✓ pass" : out.verdict === "reject" ? "↻ reject" : "⏸ escalate"} · {out.score}/5
+              </span>
+            }
+          >
+            <div className="border-t border-border pt-1.5 text-[13px] leading-relaxed text-text-muted">{out.feedback}</div>
+          </Collapsible>
         </div>
       </div>
     );
@@ -195,6 +227,20 @@ export function FeedMessage({ item }: { item: FeedItem }) {
           <Bubble>
             <Markdown className="text-[13.5px]">{out.final_answer ?? ""}</Markdown>
           </Bubble>
+        </div>
+      </div>
+    );
+  }
+
+  if (item.kind === "user_message") {
+    const message = item.message!;
+    const time = new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return (
+      <div className="flex gap-3">
+        <Avatar role="human" />
+        <div className="min-w-0 flex-1">
+          <Header role="human" label="You" spanType="follow_up" time={time} />
+          <Bubble>{message.content}</Bubble>
         </div>
       </div>
     );

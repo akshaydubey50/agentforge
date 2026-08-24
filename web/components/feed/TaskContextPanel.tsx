@@ -15,6 +15,16 @@ export function TaskContextPanel({ task, spans }: { task: TaskDetailOut; spans: 
   const confidence = (sketchSpan?.output as { confidence?: number })?.confidence;
   const toolCalls = spans.filter((s) => s.span_type === "tool_call").length;
 
+  // The living to-do list: latest "plan" span the agent wrote via
+  // updated_plan, falling back to the initial sketch outline before it has
+  // revised anything -- exactly mirroring _load_current_plan on the backend.
+  const latestPlanSpan = [...spans].reverse().find((s) => s.span_type === "plan");
+  const planSteps =
+    ((latestPlanSpan?.output as { plan?: string[] })?.plan ??
+      (sketchSpan?.output as { outline?: string[] })?.outline ??
+      []);
+  const doneCount = task.subtasks.filter((s) => s.status === "done").length;
+
   return (
     <div className="flex w-[300px] flex-none flex-col overflow-y-auto border-l border-border bg-rail">
       <div className="border-b border-border px-4.5 py-3.5 text-[11px] uppercase tracking-wide text-text-faint">
@@ -28,6 +38,33 @@ export function TaskContextPanel({ task, spans }: { task: TaskDetailOut; spans: 
         <Row k="elapsed">{elapsedLabel(task.created_at, task.updated_at, task.status === "running" || task.status === "pending")}</Row>
         {confidence !== undefined && <Row k="plan confidence">{confidence} / 5</Row>}
       </Section>
+
+      {planSteps.length > 0 && (
+        <Section label={`Plan · ${Math.min(doneCount, planSteps.length)}/${planSteps.length} done`}>
+          {planSteps.map((step, i) => {
+            // Plan order ≈ execution order, so the first `doneCount` items read
+            // as done, the next as in-progress, the rest as upcoming. This is
+            // the agent's *intent*; the Subtasks section below is the ground
+            // truth of what actually ran.
+            const state = i < doneCount ? "done" : i === doneCount && task.status === "running" ? "active" : "todo";
+            return (
+              <div key={i} className="mb-1.5 flex items-start gap-2 text-[12px] last:mb-0">
+                <span
+                  className={cn(
+                    "mt-[3px] flex h-3 w-3 flex-none items-center justify-center rounded-full text-[8px] font-bold",
+                    state === "done" && "bg-status-completed/20 text-status-completed",
+                    state === "active" && "bg-status-running/20 text-status-running animate-now-pulse",
+                    state === "todo" && "bg-surface-3 text-text-faint"
+                  )}
+                >
+                  {state === "done" ? "✓" : state === "active" ? "●" : ""}
+                </span>
+                <span className={cn("leading-snug", state === "done" ? "text-text-muted line-through" : "text-text")}>{step}</span>
+              </div>
+            );
+          })}
+        </Section>
+      )}
 
       <Section label="Subtasks">
         {task.subtasks.length === 0 && <div className="text-[12px] text-text-faint">none yet</div>}

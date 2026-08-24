@@ -17,7 +17,11 @@ requests==2.32.3
 streamlit==1.38.0
 
 # --- LLM + vector store (shared) ---
-openai==1.51.0
+# litellm>=1.61.20 requires openai>=1.61.0 -- litellm.py files no longer
+# import openai directly (confirmed nothing else in src/ does either), this
+# pin just keeps the resolved transitive version reproducible.
+openai==2.53.0
+litellm==1.61.20
 chromadb==0.5.11
 
 # --- agentsys: orchestration, persistence, tools ---
@@ -31,6 +35,10 @@ langchain-core==0.3.9
 docker==7.1.0
 beautifulsoup4==4.12.3
 mcp[cli]==2.0.0
+alembic==1.13.3
+# ^ real migrations for db/models.py, added alongside the User/auth schema
+# work -- init_db()'s create_all() is additive-only and can't backfill a
+# NOT NULL column onto existing rows (see alembic/README in agentsys/db).
 
 # --- rag: retrieval, chunking, document loading, eval ---
 rank-bm25==0.2.2
@@ -39,6 +47,12 @@ pypdf==5.0.1
 tiktoken==0.8.0
 fpdf2==2.7.9
 numpy==2.1.1
+# Pillow<11 pinned by streamlit's own dependency constraint below, not by
+# anything rag needs -- 10.4.0 is the latest release satisfying that.
+Pillow==10.4.0
+# ^ resizes uploaded images before the vision API call (rag/ingest/loaders.py
+#   _load_image) -- no OCR library needed, description.py uses a vision-
+#   capable chat model instead (see rag/llm.py's describe_image).
 
 # --- tests ---
 pytest==8.3.3

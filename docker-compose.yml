@@ -32,6 +32,29 @@ services:
     volumes:
       - chromadata:/chroma/chroma
 
+  # One-shot: runs `alembic upgrade head` and exits, same
+  # depends_on/service_completed_successfully pattern as rag-seed below.
+  # Migrations must run from exactly ONE place, not from both api and
+  # worker's own startup commands -- two containers racing to
+  # `CREATE TABLE alembic_version` against a fresh database is a genuine
+  # UniqueViolation, not a benign idempotent no-op (found the hard way: api
+  # and worker starting together against a brand-new DB, worker's migration
+  # won the race and api's crashed on the duplicate). api's own Dockerfile
+  # CMD still runs `alembic upgrade head` too, but only for Railway's
+  # single-service deploy, which has no separate migrate service to depend
+  # on -- here, by the time api starts, this has already finished, so that
+  # second run is just a fast idempotent no-op, not a second real migration.
+  migrate:
+    build: .
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql+psycopg://agent:agent@postgres:5432/agentsys"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+
   api:
     build: .
     ports:
@@ -52,6 +75,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   worker:
     build: .
@@ -64,6 +89,7 @@ services:
       CHROMA_PORT: "8000"
       WORKSPACE_DIR: "/app/data/workspace"
       RAG_API_URL: "http://rag-api:8000"
+      WORKER_CONCURRENCY: "${WORKER_CONCURRENCY:-4}"
     volumes:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
@@ -72,7 +98,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: ["celery", "-A", "agentsys.worker.celery_app", "worker", "--loglevel=info", "--pool=solo"]
+      migrate:
+        condition: service_completed_successfully
+    # prefork (not solo/threads/gevent) for two reasons that are really one
+    # decision: an agent task spends most of its wall clock blocked on the
+    # model API, so serial execution (the old --pool=solo) wasted almost
+    # everything -- and Celery's HARD time limit (worker.py's
+    # task_time_limit) can only force-kill a task on prefork, where each
+    # task owns a child process. On any other pool the hard limit is inert
+    # and a hung task runs forever. Concurrency is processes, so raising it
+    # costs real memory (each in-flight task holds its own graph state);
+    # 4 is a conservative default, tune via WORKER_CONCURRENCY.
+    command: ["sh", "-c", "celery -A agentsys.worker.celery_app worker --loglevel=info --pool=prefork --concurrency=${WORKER_CONCURRENCY:-4}"]
 
   dashboard:
     build: .

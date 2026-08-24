@@ -1,5 +1,6 @@
 import type { SubtaskOut } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { StepOutput } from "@/components/ask/StepOutput";
 
 function tkClasses(status: SubtaskOut["status"]) {
   if (status === "done") return "bg-ok text-white";
@@ -30,30 +31,27 @@ function stepGlyph(status: SubtaskOut["status"]) {
 export function StepList({ subtasks }: { subtasks: SubtaskOut[] }) {
   const ordered = [...subtasks].sort((a, b) => a.position - b.position);
   return (
-    <div className="mt-3.5">
+    <div className="mt-3.5 space-y-2">
       {ordered.map((s) => (
-        <div key={s.id} className="animate-step-in flex items-center gap-2 py-1 text-[13px] text-text">
-          <span
-            className={cn(
-              "flex h-[17px] w-[17px] flex-none items-center justify-center rounded-full text-[9px] font-extrabold",
-              tkClasses(s.status)
-            )}
-          >
-            {stepGlyph(s.status)}
-          </span>
-          {s.description}
+        <div key={s.id} className="animate-step-in text-[13px] text-text">
+          <div className="flex items-center gap-2 py-1">
+            <span
+              className={cn(
+                "flex h-[17px] w-[17px] flex-none items-center justify-center rounded-full text-[9px] font-extrabold",
+                tkClasses(s.status)
+              )}
+            >
+              {stepGlyph(s.status)}
+            </span>
+            {s.description}
+          </div>
           {s.status === "done" && s.output && (
-            <>
-              {" — "}
-              <b className="font-semibold">{truncate(s.output, 80)}</b>
-            </>
+            <div className="ml-[25px] border-l border-border pl-3">
+              <StepOutput output={s.output} />
+            </div>
           )}
         </div>
       ))}
     </div>
   );
-}
-
-function truncate(text: string, max: number) {
-  return text.length > max ? `${text.slice(0, max)}…` : text;
 }

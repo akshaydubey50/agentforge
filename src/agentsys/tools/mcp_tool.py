@@ -21,10 +21,11 @@ Connection lifecycle -- a real, deliberate tradeoff:
     session (subprocess spawn + MCP handshake on every call, tens to hundreds
     of ms), and it is chosen anyway because it is thread-safe by construction:
     there is no shared mutable connection state at all. That matters directly
-    here -- select_subtask_node dispatches a wave of subtasks as parallel
-    LangGraph Send branches, executed on a thread pool, so two threads can call
-    into the same MCPTool instance simultaneously. A pooled/persistent session
-    would need a per-thread or locked connection manager, and an MCP
+    here -- multiple Celery workers (or, if this codebase ever reintroduces
+    controlled parallel step execution -- see graph/nodes.py's agent_step_node
+    docstring) can call into the same MCPTool instance concurrently. A
+    pooled/persistent session would need a per-thread or locked connection
+    manager, and an MCP
     ClientSession additionally cannot be reused across separate asyncio.run()
     calls (each opens a fresh event loop; the session's streams are bound to
     the loop that created them).
@@ -72,15 +73,35 @@ def _server_params(server_config: dict) -> StdioServerParameters:
     )
 
 
+def _example_value(spec: dict) -> Any:
+    """Best-effort placeholder for one argument in an auto-generated example
+    call -- a real value if the schema names one (default/examples/enum),
+    otherwise a type-appropriate stand-in so the example JSON at least has
+    the right shape for the model to pattern-match against."""
+    if spec.get("default") is not None:
+        return spec["default"]
+    if spec.get("examples"):
+        return spec["examples"][0]
+    if spec.get("enum"):
+        return spec["enum"][0]
+    return {"string": "...", "number": 0, "integer": 0, "boolean": True, "array": [], "object": {}}.get(
+        spec.get("type"), "..."
+    )
+
+
 def _describe_schema(input_schema: dict | None) -> str:
     """Renders a JSON Schema into the plain 'Arguments: name (type, required)'
-    prose the other tool descriptions use.
+    prose the other tool descriptions use, plus an auto-generated example
+    call built from the same schema.
 
     This is not cosmetic. The specialist LLM constructs tool arguments from the
     description text alone, and two of this project's real logged bugs came from
     a tool description that failed to state how to call it. An MCP server's
     schema is machine-readable but the model reads descriptions, so it gets
-    translated rather than dumped as raw JSON Schema.
+    translated rather than dumped as raw JSON Schema -- and every first-party
+    tool's description now includes a concrete example call for the same
+    reason, so this generates one automatically rather than leaving
+    third-party MCP tools as the one category of tool without one.
     """
     if not input_schema:
         return "Takes no arguments."
@@ -89,6 +110,7 @@ def _describe_schema(input_schema: dict | None) -> str:
         return "Takes no arguments."
     required = set(input_schema.get("required") or [])
     parts = []
+    example: dict[str, Any] = {}
     for arg_name, spec in props.items():
         arg_type = spec.get("type", "any")
         req = "required" if arg_name in required else "optional"
@@ -97,7 +119,9 @@ def _describe_schema(input_schema: dict | None) -> str:
         desc = spec.get("description")
         desc_txt = f" -- {desc}" if desc else ""
         parts.append(f"{arg_name} ({arg_type}, {req}{default_txt}){desc_txt}")
-    return "Arguments: " + "; ".join(parts) + "."
+        example[arg_name] = _example_value(spec)
+    example_txt = f" Example call: {json.dumps(example)}." if example else ""
+    return "Arguments: " + "; ".join(parts) + "." + example_txt
 
 
 def _result_to_output(result: Any) -> dict:
