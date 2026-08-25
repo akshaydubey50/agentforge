@@ -104,7 +104,7 @@ def run_unit_tier() -> TierResult:
     )
 
 
-def _observed(task_id: str) -> tuple[list[dict], str | None, bool]:
+def _observed(task_id: str) -> tuple[list[dict], str | None, bool, int]:
     """What actually happened on a run: tool calls in order, the final answer,
     and whether it escalated. Read back from Postgres rather than threaded out
     of the graph, so the battery grades the same record a human would
@@ -130,6 +130,7 @@ def _observed(task_id: str) -> tuple[list[dict], str | None, bool]:
             [{"tool": c.tool_name, "args": c.input} for c in calls],
             task.final_output,
             escalated or task.status.value == "awaiting_approval",
+            len(subtask_ids),
         )
 
 
@@ -148,8 +149,8 @@ def run_one_case(case: BatteryCase, owner_id: str) -> CaseVerdict:
     except Exception as exc:  # a crashed run is a failed case, not a crashed gate
         return CaseVerdict(case.id, case.category, False, f"run raised {type(exc).__name__}: {exc}")
 
-    tool_calls, final_output, escalated = _observed(task_id)
-    return check_case(case, tool_calls, final_output, escalated)
+    tool_calls, final_output, escalated, steps = _observed(task_id)
+    return check_case(case, tool_calls, final_output, escalated, steps)
 
 
 def run_battery_tier(owner_id: str, cases: list[BatteryCase] | None = None) -> TierResult:

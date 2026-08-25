@@ -68,6 +68,16 @@ class BatteryCase(BaseModel):
     should_escalate: bool = False
     """Whether a correct run ends paused for a human rather than answered."""
 
+    expect_max_steps: int | None = None
+    """The run must reach its outcome within this many steps.
+
+    Added after a real failure that no other expectation could have caught:
+    a task where every tool call SUCCEEDED and the answer was never wrong --
+    it just never arrived, because the agent looped re-reading its own
+    spilled artifact until the step budget ran out. Correctness assertions
+    are all silent on that; "did it get there, and did it get there without
+    thrashing" is a separate property and needs its own check."""
+
 
 @dataclass
 class CaseVerdict:
@@ -92,6 +102,7 @@ def check_case(
     tool_calls: list[dict],
     final_output: str | None = None,
     did_escalate: bool = False,
+    steps_taken: int | None = None,
 ) -> CaseVerdict:
     """The whole contract, in one pure function.
 
@@ -103,9 +114,20 @@ def check_case(
     called = [call["tool"] for call in tool_calls]
     verdict = lambda ok, why: CaseVerdict(case.id, case.category, ok, why, called)  # noqa: E731
 
-    # Escalation is checked first: a run that correctly paused for a human
-    # hasn't got tool calls or a final answer to check, and grading it
-    # against them would fail a case that did exactly the right thing.
+    # The step ceiling is checked before everything else, INCLUDING the
+    # escalation branch below. A run that thrashed its way to the right
+    # outcome still thrashed, and the failure this exists for looked correct
+    # by every other measure -- every call succeeded, nothing was wrong, the
+    # answer just never arrived.
+    if case.expect_max_steps is not None and steps_taken is not None:
+        if steps_taken > case.expect_max_steps:
+            return verdict(
+                False, f"took {steps_taken} steps, expected at most {case.expect_max_steps}"
+            )
+
+    # Escalation next: a run that correctly paused for a human hasn't got
+    # tool calls or a final answer to check, and grading it against them
+    # would fail a case that did exactly the right thing.
     if case.should_escalate != did_escalate:
         return verdict(
             False,

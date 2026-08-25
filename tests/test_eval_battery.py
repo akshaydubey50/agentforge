@@ -143,3 +143,33 @@ class TestShippedBattery:
         for c in load_battery():
             if c.should_escalate:
                 assert not c.expect_output_contains, f"{c.id}: escalation case asserts output"
+
+
+class TestStepCeiling:
+    """The property that the spill/read loop violated and nothing else could
+    see: every call succeeded, nothing was wrong, the answer never arrived."""
+
+    def test_within_budget_passes(self):
+        assert check_case(case(expect_max_steps=3), [call("db_query", sql="x")], steps_taken=2).passed
+
+    def test_over_budget_fails_with_the_count(self):
+        verdict = check_case(
+            case(expect_max_steps=3), [call("db_query", sql="x")], steps_taken=14
+        )
+        assert not verdict.passed
+        assert "took 14 steps" in verdict.reason
+
+    def test_thrashing_to_a_correct_escalation_still_fails(self):
+        """The exact shape of the bug: the outcome was 'right' (it escalated),
+        but it took 14 steps to get there."""
+        verdict = check_case(
+            case(should_escalate=True, expect_max_steps=3), [], did_escalate=True, steps_taken=14
+        )
+        assert not verdict.passed
+
+    def test_no_ceiling_means_no_check(self):
+        assert check_case(case(expect_tool="db_query"), [call("db_query")], steps_taken=99).passed
+
+    def test_unknown_step_count_does_not_fail_the_case(self):
+        """A caller that can't supply steps must not turn every case red."""
+        assert check_case(case(expect_max_steps=1), [call("db_query")], steps_taken=None).passed
