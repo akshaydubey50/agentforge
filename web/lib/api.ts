@@ -166,7 +166,9 @@ export interface Subsystem {
   id: string;
   label: string;
   summary: string;
-  href: string;
+  /** Null for subsystems with no page to send you to — deployment config
+   *  read from .env at startup, which the System page already shows in full. */
+  href: string | null;
   facts: SubsystemFact[];
 }
 

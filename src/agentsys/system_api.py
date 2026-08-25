@@ -201,7 +201,10 @@ def _subsystems() -> list[dict]:
             "id": "models",
             "label": "Models",
             "summary": "Routed through LiteLLM, so a provider swap is config, not code.",
-            "href": "/settings",
+            # No href: these are deployment config, set in .env and read at
+            # startup. /settings is an explicitly unwired preview, so linking
+            # there would imply they can be changed from the UI.
+            "href": None,
             "facts": [
                 {"label": "Agent", "value": settings.llm_model},
                 # Called out because it is a deliberate architectural choice,
@@ -244,7 +247,7 @@ def _subsystems() -> list[dict]:
             "id": "guardrails",
             "label": "Stop conditions",
             "summary": "Four independent ceilings. A loop that stops making progress doesn't error, it just bills.",
-            "href": "/settings",
+            "href": None,
             "facts": [
                 {"label": "Steps", "value": f"{settings.max_task_steps} per turn"},
                 {"label": "Spend", "value": f"${settings.max_task_cost_usd:.2f} per task"},

@@ -124,31 +124,44 @@ export default function SystemPage() {
 
       <div className="mb-2.5 text-[11px] uppercase tracking-wide text-text-faint">Subsystems</div>
       <div className="mb-6 grid grid-cols-3 gap-3">
-        {topology.subsystems.map((sub) => (
-          <Link
-            key={sub.id}
-            href={sub.href}
-            className="rounded-[var(--rm)] border border-border bg-surface px-4 py-3.5 transition-colors hover:border-border-strong"
-          >
-            <div className="text-[13px] font-semibold text-text">{sub.label}</div>
-            <p className="mt-1 text-[12px] leading-relaxed text-text-muted">{sub.summary}</p>
-            <dl className="mt-3 space-y-1.5 border-t border-border pt-2.5">
-              {sub.facts.map((fact) => (
-                <div key={fact.label} className="flex items-baseline justify-between gap-3">
-                  <dt className="flex-none text-[11px] uppercase tracking-[0.06em] text-text-faint">
-                    {fact.label}
-                  </dt>
-                  <dd className="min-w-0 truncate text-right font-mono text-[11.5px] text-text">
-                    {fact.value}
-                    {fact.note && (
-                      <span className="ml-1.5 font-sans text-[10.5px] text-text-faint">{fact.note}</span>
-                    )}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </Link>
-        ))}
+        {topology.subsystems.map((sub) => {
+          const body = (
+            <>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[13px] font-semibold text-text">{sub.label}</span>
+                {sub.href && <span className="text-[11px] text-text-faint">→</span>}
+              </div>
+              <p className="mt-1 text-[12px] leading-relaxed text-text-muted">{sub.summary}</p>
+              <dl className="mt-3 space-y-1.5 border-t border-border pt-2.5">
+                {sub.facts.map((fact) => (
+                  <div key={fact.label} className="flex items-baseline justify-between gap-3">
+                    <dt className="flex-none text-[11px] uppercase tracking-[0.06em] text-text-faint">
+                      {fact.label}
+                    </dt>
+                    <dd className="min-w-0 truncate text-right font-mono text-[11.5px] text-text">
+                      {fact.value}
+                      {fact.note && (
+                        <span className="ml-1.5 font-sans text-[10.5px] text-text-faint">{fact.note}</span>
+                      )}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </>
+          );
+          const shell = "rounded-[var(--rm)] border border-border bg-surface px-4 py-3.5";
+          // Config-only subsystems render as plain cards. Sending someone to
+          // a disabled mockup would imply these are editable there.
+          return sub.href ? (
+            <Link key={sub.id} href={sub.href} className={cn(shell, "transition-colors hover:border-border-strong")}>
+              {body}
+            </Link>
+          ) : (
+            <div key={sub.id} className={shell}>
+              {body}
+            </div>
+          );
+        })}
       </div>
 
       <div className="mb-2.5 flex items-baseline justify-between">
