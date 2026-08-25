@@ -166,9 +166,20 @@ export function StepOutput({ output }: { output: string }) {
           const when = relativeTime(String(file.modified_time ?? ""));
           return (
             <li key={i} className="flex items-baseline gap-2 text-[13px]">
-              <span className="min-w-0 flex-1 truncate font-medium text-text">
-                {String(file.name ?? "(untitled)")}
-              </span>
+              {typeof file.link === "string" && file.link ? (
+                <a
+                  href={file.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-w-0 flex-1 truncate font-medium text-brand underline underline-offset-2"
+                >
+                  {String(file.name ?? "(untitled)")}
+                </a>
+              ) : (
+                <span className="min-w-0 flex-1 truncate font-medium text-text">
+                  {String(file.name ?? "(untitled)")}
+                </span>
+              )}
               {kind && <span className="flex-none text-[11.5px] text-text-faint">{kind}</span>}
               {when && <span className="flex-none text-[11.5px] text-text-faint">· {when}</span>}
             </li>

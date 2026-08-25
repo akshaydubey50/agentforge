@@ -31,8 +31,11 @@ class GoogleDriveTool(Tool):
         "page; if none is connected it will say so. Arguments: query (str, required) -- "
         "plain words to look for in file names and contents, e.g. \"Q2 revenue report\"; "
         "max_results (int, optional, default 10). Returns {files: [{name, id, "
-        "mime_type, modified_time}, ...]}. To read a file's text, use google_drive_read "
-        "with an id from these results."
+        "mime_type, modified_time, link}, ...]}. To read a file's TEXT, use "
+        "google_drive_read with an id from these results -- but only for text-like "
+        "files. For an image, video, archive or any other binary, do NOT call "
+        "google_drive_read: it cannot read them. Give the user the `link` instead, "
+        "which is exactly what a request like \"send me those photos\" is asking for."
     )
 
     def run(self, query: str, user_id: str, max_results: int = _MAX_RESULTS) -> ToolResult:
@@ -57,7 +60,12 @@ class GoogleDriveTool(Tool):
                 params={
                     "q": f"fullText contains '{safe}' and trashed = false",
                     "pageSize": max(1, min(max_results, 100)),
-                    "fields": "files(id,name,mimeType,modifiedTime)",
+                    # webViewLink matters for files this agent cannot read:
+                    # an image or an archive can still be HANDED BACK as a
+                    # link, which is usually what "get me those photos"
+                    # actually wants. Without it the only possible answer to
+                    # a picture is "I can't read that".
+                    "fields": "files(id,name,mimeType,modifiedTime,webViewLink)",
                 },
                 timeout=20.0,
             )
@@ -73,6 +81,7 @@ class GoogleDriveTool(Tool):
                 "id": f.get("id"),
                 "mime_type": f.get("mimeType"),
                 "modified_time": f.get("modifiedTime"),
+                "link": f.get("webViewLink"),
             }
             for f in resp.json().get("files", [])
         ]
@@ -137,9 +146,19 @@ class GoogleDriveReadTool(Tool):
                     timeout=30.0,
                 )
             else:
+                # An error that names the way forward, not just the wall. The
+                # old message ("isn't readable as text") was true and left the
+                # agent with nowhere to go, so it retried with another image
+                # and burned the progress budget. Observed on a "fetch me 3
+                # photos" request.
                 return ToolResult(
                     success=False,
-                    error=f"file '{name}' is {mime}, which isn't readable as text",
+                    error=(
+                        f"'{name}' is {mime} -- a binary file, so its contents cannot be read "
+                        f"as text and re-trying with another file of this type will fail the "
+                        f"same way. Use the `link` from google_drive_search to give the user "
+                        f"the file directly instead of reading it."
+                    ),
                 )
             resp.raise_for_status()
         except httpx.HTTPError as e:

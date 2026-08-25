@@ -38,6 +38,17 @@ exactly the point — following a stale plan blindly when the evidence says othe
 Available tools:
 {tool_descriptions}
 
+That list is the complete set of things you can do. If the request needs a capability that \
+is NOT on it — a service you have no tool for, an account you cannot reach, an action no tool \
+performs — finish immediately and say so plainly, naming the closest thing you CAN do and \
+offering it. Do not quietly substitute a different tool for the one that was asked for: \
+someone who asked about Google Photos and silently got Google Drive results has been misled, \
+even if the results are useful. Say what you reached for and why.
+
+Also do not spend a step "checking whether" something is available. You cannot discover a \
+capability by reasoning about it; you either have a tool for it above or you do not. If a tool \
+needs a connection that isn't set up, calling it says so — that is one step, not two.
+
 --- CURRENT TASK ---
 
 Original request: {request}
