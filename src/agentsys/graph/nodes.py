@@ -339,6 +339,23 @@ def _is_artifact_read(tool_name: str, kwargs: dict) -> bool:
     return str(kwargs.get("path", "")).replace("\\", "/").startswith(f"{artifacts.ARTIFACT_DIRNAME}/")
 
 
+def _awaiting_human(output_text: str) -> dict | None:
+    """Did the tool hand back something only a person can act on?
+
+    Read off the serialized result rather than passed out of band, because
+    _run_tool_call's contract is (success, text) and widening it for one
+    tool would touch every call site. Malformed input returns None -- a
+    tool that garbles this should not be able to wedge a task."""
+    if "_awaiting_human" not in (output_text or ""):
+        return None
+    try:
+        parsed = json.loads(output_text)
+    except (TypeError, ValueError):
+        return None
+    awaiting = parsed.get("_awaiting_human") if isinstance(parsed, dict) else None
+    return awaiting if isinstance(awaiting, dict) else None
+
+
 def _capped(text: str) -> str:
     """A hard ceiling for the one path that skips spilling. Generous enough
     that a real document arrives whole, small enough that a pathological file
@@ -513,13 +530,19 @@ def _execute_subtask(
             kwargs.setdefault("task_id", task_id)
             kwargs.setdefault("subtask_id", subtask_id)
             kwargs.setdefault("depth", 1)
-        elif choice.tool_name in ("gmail_search", "gmail_read", "google_drive_search", "google_drive_read"):
-            # user_id decides whose connected Gmail/Drive the call acts as --
-            # injected from the task's owner, never left for the LLM to
+        elif choice.tool_name in (
+            "gmail_search", "gmail_read", "google_drive_search", "google_drive_read",
+            "google_photos_pick",
+        ):
+            # user_id decides whose connected Gmail/Drive/Photos the call acts
+            # as -- injected from the task's owner, never left for the LLM to
             # supply, the same reasoning as task_id/subtask_id above but
             # security-sensitive rather than just plumbing.
             with get_session() as session:
                 kwargs["user_id"] = session.get(Task, task_id).owner_id
+            # The picker survives a pause by remembering its session against
+            # the task (see tools/google_photos.py), so it needs task_id too.
+            kwargs.setdefault("task_id", task_id)
 
         if registry.get(choice.tool_name).needs_approval(kwargs):
             # Gate BEFORE the tool ever runs -- unlike the other three
@@ -557,6 +580,31 @@ def _execute_subtask(
             )
         else:
             tool_success, output_text = _run_tool_call(task_id, subtask_id, choice.tool_name, kwargs)
+
+            # A tool can ask for a human MID-CALL, which the approval gate
+            # above cannot express: that one pauses BEFORE running, on the
+            # question "may I?". This one pauses AFTER, because the tool has
+            # produced something only a person can act on -- a picker URL, a
+            # consent link, a device code. Generic on purpose; Google Photos
+            # is just the first caller.
+            awaiting = _awaiting_human(output_text)
+            if awaiting:
+                with get_session() as session:
+                    subtask = session.get(Subtask, subtask_id)
+                    subtask.assigned_tool = choice.tool_name
+                    subtask.status = SubtaskStatus.ESCALATED
+                    subtask.output = awaiting.get("reason") or "Waiting on a person."
+                    session.add(subtask)
+                    session.commit()
+                _create_escalation(
+                    task_id, subtask_id, awaiting.get("reason") or "This step needs you.",
+                    kind=awaiting.get("kind", "human_action"),
+                    context=awaiting.get("context", {}),
+                )
+                # Same sentinel as the approval gate: nothing to review, and
+                # approving re-runs the tool, which is why a tool using this
+                # must be idempotent across the pause.
+                return None
 
         # A step is unproductive when it errored OR when it succeeded at
         # something already done. The second half used to be invisible: one

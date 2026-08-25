@@ -68,7 +68,15 @@ class EscalationOut(BaseModel):
     id: str
     task_id: str
     subtask_id: str | None
+    kind: str
+    """plan / review / budget / tool_approval / photo_pick / human_action --
+    the UI needs it to know whether a decision is "yes, proceed" or "go and do
+    something first"."""
     reason: str
+    context: dict = {}
+    """Whatever the escalation needs a person to see: the proposed tool call,
+    or a link they have to open. Without this an escalation that depends on
+    an out-of-band action (a picker URL) is impossible to act on."""
     status: str
     decision_note: str | None
     decided_by: str | None

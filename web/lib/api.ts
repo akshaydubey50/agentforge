@@ -58,7 +58,12 @@ export interface EscalationOut {
   id: string;
   task_id: string;
   subtask_id: string | null;
+  /** plan | review | budget | tool_approval | photo_pick | human_action */
+  kind: string;
   reason: string;
+  /** What the person needs to see to act — a proposed tool call, or a link
+   *  they have to open before approving. */
+  context: Record<string, unknown>;
   status: "pending" | "approved" | "rejected" | "took_over";
   decision_note: string | null;
   decided_by: string | null;

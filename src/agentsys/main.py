@@ -393,9 +393,9 @@ def get_task_trace(task_id: str, user: User = Depends(get_current_user)) -> list
 
 def _escalation_out(e: Escalation) -> EscalationOut:
     return EscalationOut(
-        id=e.id, task_id=e.task_id, subtask_id=e.subtask_id, reason=e.reason,
-        status=e.status.value, decision_note=e.decision_note, decided_by=e.decided_by,
-        created_at=e.created_at, decided_at=e.decided_at,
+        id=e.id, task_id=e.task_id, subtask_id=e.subtask_id, kind=e.kind, reason=e.reason,
+        context=e.context or {}, status=e.status.value, decision_note=e.decision_note,
+        decided_by=e.decided_by, created_at=e.created_at, decided_at=e.decided_at,
     )
 
 

@@ -62,6 +62,19 @@ class Settings(BaseSettings):
     are the same OAuth grant (see google_oauth.login_or_connect), so there is
     only one callback."""
 
+    enable_google_photos: bool = False
+    """The Google Photos picker tool (tools/google_photos.py).
+
+    OFF by default, and it is not a preference -- turning it on adds an OAuth
+    scope, and Google records granted scopes, so every already-connected
+    account must disconnect and reconnect before the tool works. A default
+    that silently invalidates live connections would be the wrong default.
+    It also requires the Photos Picker API to be enabled in Google Cloud
+    Console, which no code here can do.
+
+    Note what the capability IS: the user picks, the agent receives. Library
+    search was removed by Google in March 2025 and cannot be restored."""
+
     session_cookie_name: str = "af_session"
     session_idle_timeout_seconds: int = 60 * 30
     """How long a session survives WITHOUT use. Refreshed on each

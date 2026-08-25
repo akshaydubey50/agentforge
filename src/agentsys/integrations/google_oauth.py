@@ -64,6 +64,20 @@ DEFAULT_SCOPES = [
 ]
 
 
+def default_scopes() -> list[str]:
+    """The scopes to request. Photos is appended only when the feature is on,
+    because asking for a scope you do not use is exactly the over-collection
+    the narrow default above exists to avoid -- and because adding it forces
+    every connected account to re-consent."""
+    from agentsys.config import settings
+
+    if settings.enable_google_photos:
+        from agentsys.integrations.google_photos import PICKER_SCOPE
+
+        return [*DEFAULT_SCOPES, PICKER_SCOPE]
+    return list(DEFAULT_SCOPES)
+
+
 class GoogleOAuthError(Exception):
     def __init__(self, detail: str, status_code: int = 400) -> None:
         self.detail = detail
@@ -97,7 +111,7 @@ def build_auth_url() -> str:
         "client_id": settings.google_client_id,
         "redirect_uri": settings.google_oauth_redirect_uri,
         "response_type": "code",
-        "scope": " ".join(DEFAULT_SCOPES),
+        "scope": " ".join(default_scopes()),
         "access_type": "offline",
         "prompt": "consent",
         "include_granted_scopes": "true",
@@ -181,7 +195,7 @@ def login_or_connect(code: str, state: str) -> tuple[User, GoogleConnection]:
         # loses its ability to refresh.
         if payload.get("refresh_token"):
             conn.refresh_token = payload["refresh_token"]
-        conn.scopes = payload.get("scope", " ".join(DEFAULT_SCOPES))
+        conn.scopes = payload.get("scope", " ".join(default_scopes()))
         conn.token_expiry = expiry
         conn.google_email = userinfo["email"]
         conn.updated_at = now
