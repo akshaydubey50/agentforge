@@ -29,7 +29,7 @@ seed:           ## seed sample_metric with demo data (needed by some battery cas
 # Three tiers, never mixed. See src/agentsys/eval/gate.py.
 
 unit:           ## tier 1 only: pure functions, no API key, no network
-	$(API) python -m pytest -q tests/test_eval_battery.py tests/test_eval_grounding.py tests/test_graph_routing.py tests/test_pricing.py tests/test_spill_loop.py tests/test_synthesis_redaction.py tests/test_llm_resilience.py tests/test_rag_ask_auth.py tests/test_tool_contracts.py tests/test_policy.py tests/test_execution_safety.py tests/test_verification.py tests/test_gmail_draft.py tests/test_phase6b_memory_pure.py tests/test_phase6d_context_pure.py tests/test_phase7c_evaluation.py
+	$(API) python -m pytest -q tests/test_eval_battery.py tests/test_eval_grounding.py tests/test_graph_routing.py tests/test_pricing.py tests/test_spill_loop.py tests/test_synthesis_redaction.py tests/test_llm_resilience.py tests/test_rag_ask_auth.py tests/test_tool_contracts.py tests/test_policy.py tests/test_execution_safety.py tests/test_verification.py tests/test_gmail_draft.py tests/test_phase6b_memory_pure.py tests/test_phase6d_context_pure.py tests/test_phase7c_evaluation.py tests/test_phase7d_security.py
 
 battery:        ## tier 2 only: real runs, scored 0/1 by a pure function (needs a key)
 	$(API) python -c "import sys; sys.path.insert(0,'src'); \

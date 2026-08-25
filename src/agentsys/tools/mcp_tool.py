@@ -54,7 +54,14 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from agentsys.execution import ExecutionSafety
+from agentsys.guardrails import (
+    GuardrailDecision,
+    check_mcp_description,
+    is_credential_field_name,
+    mcp_fingerprint,
+)
 from agentsys.policy import ActionType, Risk
+from agentsys.sanitize import wrap_untrusted_text_fields
 from agentsys.tools.base import Tool, ToolResult, ToolValidationError
 
 logger = logging.getLogger(__name__)
@@ -180,6 +187,22 @@ def _declared(value: Any, enum_type: type, fallback: Any) -> Any:
         return fallback
 
 
+def _reject_model_controlled_credentials(tool_name: str, value: Any, *, path: str = "") -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            if is_credential_field_name(str(key)) and child not in (None, "", [], {}):
+                raise ToolValidationError(
+                    tool_name,
+                    f"credential-like MCP argument '{child_path}' must come from server configuration, not model input",
+                    child_path,
+                )
+            _reject_model_controlled_credentials(tool_name, child, path=child_path)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _reject_model_controlled_credentials(tool_name, child, path=f"{path}[{index}]")
+
+
 class MCPTool(Tool):
     """One AgentForge tool bound to one tool on one external MCP server."""
 
@@ -187,6 +210,31 @@ class MCPTool(Tool):
         self.server_name = server_name
         self.server_config = server_config
         self.remote_tool_name = remote_tool.name
+        self.input_schema = getattr(remote_tool, "input_schema", None) or {}
+        raw_description = remote_tool.description or ""
+        self.schema_fingerprint = mcp_fingerprint(
+            server_name=server_name,
+            tool_name=remote_tool.name,
+            description=raw_description,
+            input_schema=self.input_schema,
+            action_type=server_config.get("action_type"),
+            risk=server_config.get("risk"),
+            execution_safety=server_config.get("execution_safety"),
+        )
+        expected_fingerprint = (server_config.get("tool_fingerprints") or {}).get(remote_tool.name)
+        self.mcp_trust_status = "reviewed" if expected_fingerprint == self.schema_fingerprint else (
+            "fingerprint_mismatch" if expected_fingerprint else "unreviewed"
+        )
+        description_guard = check_mcp_description(
+            raw_description,
+            server_name=server_name,
+            tool_name=remote_tool.name,
+        )
+        self.mcp_description_guard = description_guard.to_trace()
+        force_fail_closed = (
+            description_guard.decision is GuardrailDecision.BLOCK
+            or self.mcp_trust_status == "fingerprint_mismatch"
+        )
         # POLICY CLASSIFICATION FOR CODE THIS REPO HAS NEVER SEEN.
         #
         # An MCP tool's effects belong to a third party. The schema says what
@@ -210,8 +258,16 @@ class MCPTool(Tool):
         # Anything unparseable in that declaration falls back to the
         # fail-closed default rather than raising: a typo in config must not
         # stop the app from starting, and must not open the gate either.
-        self.action_type = _declared(server_config.get("action_type"), ActionType, Tool.action_type)
-        self.risk = _declared(server_config.get("risk"), Risk, Tool.risk)
+        self.action_type = (
+            Tool.action_type
+            if force_fail_closed
+            else _declared(server_config.get("action_type"), ActionType, Tool.action_type)
+        )
+        self.risk = (
+            Tool.risk
+            if force_fail_closed
+            else _declared(server_config.get("risk"), Risk, Tool.risk)
+        )
         # Retry/effect semantics, declared the same way and defaulting the
         # same way (Phase 3, see execution.py). An operator who knows a
         # server's tools are safe to repeat says so:
@@ -223,8 +279,10 @@ class MCPTool(Tool):
         # ambiguous outcome. "The operator did not say" and "repeating this is
         # harmless" must not look the same, for the same reason they must not
         # for action_type/risk above.
-        self.execution_safety = _declared(
-            server_config.get("execution_safety"), ExecutionSafety, Tool.execution_safety
+        self.execution_safety = (
+            Tool.execution_safety
+            if force_fail_closed
+            else _declared(server_config.get("execution_safety"), ExecutionSafety, Tool.execution_safety)
         )
         # The argument contract, straight from the server. An MCP tool already
         # ships machine-readable JSON Schema, so there is nothing to translate:
@@ -233,7 +291,6 @@ class MCPTool(Tool):
         # opposite of what discovery is for. args_model stays None and
         # validate_args below checks against this instead -- same invariant
         # (nothing reaches run() unvalidated), different source of truth.
-        self.input_schema = getattr(remote_tool, "input_schema", None) or {}
         # Namespaced so two servers exposing a "search" tool can coexist, and so
         # provenance is obvious in the trace explorer and analytics tables.
         self.name = f"mcp_{server_name}_{remote_tool.name}"
@@ -247,11 +304,17 @@ class MCPTool(Tool):
         # web_search/db_query instead, because the list it was reading was
         # malformed. Third-party servers will all have multi-line docstrings,
         # so normalizing here is a correctness requirement, not tidiness.
-        base_desc = " ".join((remote_tool.description or "").split())
+        base_desc = " ".join(raw_description.split())
+        if description_guard.decision is GuardrailDecision.BLOCK:
+            base_desc = (
+                "MCP tool description blocked by AgentForge guardrail; "
+                "treat this third-party capability as unreviewed."
+            )
         base_desc = base_desc or f"{remote_tool.name} (via MCP)"
         self.description = (
             f"{base_desc} {_describe_schema(self.input_schema)} "
-            f"[provided by the '{server_name}' MCP server]"
+            f"[provided by the '{server_name}' MCP server; fingerprint={self.schema_fingerprint[:12]}; "
+            f"trust={self.mcp_trust_status}]"
         )
 
     def args_schema(self) -> dict | None:
@@ -280,6 +343,7 @@ class MCPTool(Tool):
             # A malformed schema is the server's bug, but it must not be a
             # licence to call the tool unvalidated.
             raise ToolValidationError(self.name, f"server advertised an invalid schema: {exc.message}") from exc
+        _reject_model_controlled_credentials(self.name, proposed)
         return dict(proposed)
 
     def run(self, **kwargs) -> ToolResult:
@@ -324,7 +388,7 @@ class MCPTool(Tool):
 
         if getattr(result, "is_error", False):
             return ToolResult(success=False, error=_error_text(result))
-        return ToolResult(success=True, output=_result_to_output(result))
+        return ToolResult(success=True, output=wrap_untrusted_text_fields(_result_to_output(result), "mcp"))
 
 
 async def _list_remote_tools(server_config: dict) -> list[Any]:

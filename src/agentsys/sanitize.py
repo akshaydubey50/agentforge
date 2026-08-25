@@ -13,6 +13,8 @@ boundary (source) and again at the DB-write sinks (defense in depth).
 
 from typing import Any
 
+from agentsys.guardrails import GuardrailDecision, check_retrieved_content
+
 
 def scrub_nul(obj: Any) -> Any:
     """Recursively strip NUL bytes from strings inside strings/dicts/lists;
@@ -47,6 +49,13 @@ comfortably past that and nowhere near far enough to reach attacker-supplied
 body text. See wrap_untrusted for why the bias runs this way."""
 
 
+def _check_retrieved_safely(text: str, source: str):
+    try:
+        return check_retrieved_content(text, source=source)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def wrap_untrusted(text: str, source: str) -> str:
     """Fences fetched external content (an email body, a Drive file, a web
     search snippet, a file read from the workspace) so the LLM reading it in
@@ -79,4 +88,60 @@ def wrap_untrusted(text: str, source: str) -> str:
     # escaping a spill round trip adds. Anything else gets wrapped.
     if _UNTRUSTED_MARKER in text[:_MARKER_WINDOW]:
         return text
+    guard = _check_retrieved_safely(text, source)
+    if guard is not None and guard.decision is GuardrailDecision.BLOCK:
+        text = (
+            "[content blocked by AgentForge guardrail: "
+            f"{guard.risk_type.value}/{guard.reason}]"
+        )
     return f"{_UNTRUSTED_OPEN.format(source=source)}\n{_UNTRUSTED_PREAMBLE}\n---\n{text}\n---\n{_UNTRUSTED_CLOSE}"
+
+
+_TEXT_FIELD_NAMES = {
+    "answer",
+    "body",
+    "content",
+    "description",
+    "error",
+    "message",
+    "output",
+    "prompt",
+    "raw",
+    "result",
+    "snippet",
+    "summary",
+    "text",
+}
+
+
+def wrap_untrusted_text_fields(obj: Any, source: str) -> Any:
+    """Frame untrusted prose fields without corrupting structured scalars.
+
+    Third-party MCP output can contain both ordinary structured values
+    (`city`, `iso`, `total`) and free text that may carry prompt injection.
+    Text-like fields are always framed; other strings are framed only if the
+    guardrail detects a high-risk content pattern.
+    """
+    if isinstance(obj, dict):
+        guarded: dict[Any, Any] = {}
+        for key, value in obj.items():
+            key_text = str(key).lower()
+            if isinstance(value, str):
+                result = _check_retrieved_safely(value, source)
+                if (
+                    key_text in _TEXT_FIELD_NAMES
+                    or result is None
+                    or result.decision is not GuardrailDecision.ALLOW
+                ):
+                    guarded[key] = wrap_untrusted(value, source)
+                else:
+                    guarded[key] = value
+            else:
+                guarded[key] = wrap_untrusted_text_fields(value, source)
+        return guarded
+    if isinstance(obj, list):
+        return [wrap_untrusted_text_fields(value, source) for value in obj]
+    if isinstance(obj, str):
+        result = _check_retrieved_safely(obj, source)
+        return wrap_untrusted(obj, source) if result is None or result.decision is not GuardrailDecision.ALLOW else obj
+    return obj

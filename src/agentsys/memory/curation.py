@@ -13,6 +13,7 @@ from agentsys.config import settings
 from agentsys.db.models import MemoryEntry, Subtask, Task
 from agentsys.db.session import get_session
 from agentsys.graph.schemas import MemoryCandidate
+from agentsys.guardrails import GuardrailDecision, check_retrieved_content
 from agentsys.memory import long_term
 
 SUPPORTED_KINDS = {"semantic", "episodic", "pinned_decision", "preference", "artifact_reference", "fact"}
@@ -121,6 +122,11 @@ def _validate_candidate(candidate: MemoryCandidate, *, task: Task, known_subtask
         return None, "oversized_content"
     if candidate.confidence < settings.memory_candidate_min_confidence:
         return None, "low_confidence"
+    guard = check_retrieved_content(content, source="memory", metadata={"candidate_kind": kind})
+    if guard.decision is GuardrailDecision.BLOCK:
+        return None, f"guardrail_blocked_{guard.risk_type.value}"
+    if guard.decision is GuardrailDecision.FLAG:
+        return None, f"guardrail_flagged_{guard.risk_type.value}"
 
     source = dict(candidate.source or {})
     source["source_task_id"] = task.id

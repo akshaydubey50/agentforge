@@ -96,6 +96,10 @@ UNIT_SUITES = [
     # expected-tool/args checks, DeepEval skip/failure handling, and focused
     # Phase 6/7B/action-safety regressions. DeepEval itself is mocked or absent.
     "tests/test_phase7c_evaluation.py",
+    # Phase 7D. Pure guardrail seam checks, red-team dataset validation, MCP
+    # description/output security, memory poisoning rejection, telemetry
+    # metadata, and policy/approval invariants. No external guardrail service.
+    "tests/test_phase7d_security.py",
 ]
 
 JUDGE_THRESHOLD = 0.7

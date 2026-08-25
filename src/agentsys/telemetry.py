@@ -8,21 +8,13 @@ provider exception text.
 
 from __future__ import annotations
 
-import re
 from typing import Any
+
+from agentsys.guardrails import redact_secrets
 
 REDACTED = "[REDACTED_FOR_TELEMETRY]"
 SCHEMA_VERSION = "phase7b.v1"
 MAX_STRING = 512
-
-_SECRET_VALUE_PATTERNS = [
-    re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}"),
-    re.compile(r"(?i)\bsk-[a-z0-9_-]{12,}"),
-    re.compile(r"(?i)\bya29\.[a-z0-9._-]+"),
-    re.compile(r"(?i)\bgithub_pat_[a-z0-9_]{12,}"),
-    re.compile(r"(?i)\bgh[pousr]_[a-z0-9_]{12,}"),
-    re.compile(r"(?i)\bxox[baprs]-[a-z0-9-]{12,}"),
-]
 
 _SENSITIVE_KEY_FRAGMENTS = {
     "api_key",
@@ -124,6 +116,16 @@ _VERIFICATION_FIELDS = {
     "verified": "agentsys.verification.verified",
 }
 
+_GUARDRAIL_FIELDS = {
+    "stage": "agentsys.guardrail.stage",
+    "decision": "agentsys.guardrail.decision",
+    "risk_type": "agentsys.guardrail.risk_type",
+    "detector": "agentsys.guardrail.detector",
+    "confidence": "agentsys.guardrail.confidence",
+    "blocked": "agentsys.guardrail.blocked",
+    "latency_ms": "agentsys.guardrail.latency_ms",
+}
+
 
 def is_sensitive_key(key: str) -> bool:
     normalized = key.lower().replace("-", "_").replace(".", "_")
@@ -133,9 +135,7 @@ def is_sensitive_key(key: str) -> bool:
 
 
 def sanitize_text(value: Any, *, max_length: int = MAX_STRING) -> str:
-    text = str(value)
-    for pattern in _SECRET_VALUE_PATTERNS:
-        text = pattern.sub(REDACTED, text)
+    text = redact_secrets(str(value), replacement=REDACTED)
     if len(text) > max_length:
         text = f"{text[:max_length]}...[truncated]"
     return text
@@ -230,6 +230,17 @@ def _output_summary(output: Any, attrs: dict[str, str | int | float | bool]) -> 
 
     _safe_dict_values(output, _MEMORY_CURATION_METRICS, attrs)
     _safe_dict_values(output, _VERIFICATION_FIELDS, attrs)
+
+    guardrail = output.get("guardrail")
+    if isinstance(guardrail, dict):
+        _safe_dict_values(guardrail, _GUARDRAIL_FIELDS, attrs)
+    guardrails = output.get("guardrails")
+    if isinstance(guardrails, list) and guardrails:
+        safe_items = [item for item in guardrails if isinstance(item, dict)]
+        if safe_items:
+            attrs["agentsys.guardrail.count"] = len(safe_items)
+            if any(bool(item.get("blocked")) for item in safe_items):
+                attrs["agentsys.guardrail.blocked"] = True
 
     if "error" in output:
         attrs.update(safe_error_attributes(output.get("error")))

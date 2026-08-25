@@ -342,6 +342,11 @@ class Settings(BaseSettings):
     getting 429'd. Web backends rate-limit to protect capacity; this one is
     protecting the LLM bill, which doesn't refill for free."""
 
+    enable_guardrails: bool = True
+    """Phase 7D model/content guardrails. Disabling this only bypasses
+    content-risk classification; it does not disable Pydantic validation,
+    AgentForge policy, human approval, execution safety, or verification."""
+
     idempotency_ttl_seconds: int = 60 * 60 * 24
     """How long a client-supplied Idempotency-Key maps to its original task
     (see idempotency.py). 24h matches the usual convention -- long enough to

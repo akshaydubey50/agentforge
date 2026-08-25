@@ -24,6 +24,14 @@ from agentsys.db.models import (
     TraceSpan,
 )
 from agentsys.db.session import get_session
+from agentsys.guardrails import (
+    GuardrailDecision,
+    GuardrailResult,
+    GuardrailRiskType,
+    GuardrailStage,
+    check_input,
+    check_output,
+)
 from agentsys.graph.prompts import (
     AGENT_STEP_PROMPT,
     CONVERSATION_SUMMARY_PROMPT,
@@ -159,6 +167,15 @@ def _set_task_status(session, task: Task, status: TaskStatus) -> None:
 
 UNPRODUCTIVE_FIELD = "unproductive_streak"
 
+_INPUT_BLOCKED_MESSAGE = (
+    "I can't proceed with that request because it attempts to bypass AgentForge "
+    "safety controls or expose sensitive information."
+)
+_OUTPUT_BLOCKED_MESSAGE = (
+    "I can't provide that response because it appears to contain credentials or "
+    "sensitive private data."
+)
+
 
 def _task_cost_usd(task_id: str, since: datetime | None = None) -> float:
     """Spend on this task, summed from the LlmCall rows cost.record_llm_call
@@ -188,6 +205,60 @@ def _record_step_productivity(task_id: str, *, productive: bool) -> None:
     reset with it."""
     streak = 0 if productive else _unproductive_streak(task_id) + 1
     short_term.set_value(task_id, UNPRODUCTIVE_FIELD, streak)
+
+
+def _record_guardrail_result(
+    task_id: str,
+    name: str,
+    result: GuardrailResult,
+    *,
+    subtask_id: str | None = None,
+) -> None:
+    with span(
+        task_id,
+        "guardrail",
+        name,
+        subtask_id=subtask_id,
+        input={"stage": result.stage.value},
+    ) as s:
+        s["output"] = {"guardrail": result.to_trace()}
+        s["status"] = "error" if result.blocked else "ok"
+
+
+def _guard_current_turn(task_id: str, turn: str) -> bool:
+    try:
+        result = check_input(turn, metadata={"source": "user_input"})
+    except Exception as exc:  # noqa: BLE001 -- guard failure must not crash action safety
+        logger.warning("input guard failed for task %s; continuing with deterministic safety: %s", task_id, exc)
+        return True
+    _record_guardrail_result(task_id, "input_guard", result)
+    if result.decision is not GuardrailDecision.BLOCK:
+        return True
+    with get_session() as session:
+        task = session.get(Task, task_id)
+        if task.status != TaskStatus.CANCELLED:
+            task.final_output = _INPUT_BLOCKED_MESSAGE
+        _set_task_status(session, task, TaskStatus.COMPLETED)
+        session.commit()
+    return False
+
+
+def _guard_final_output(task_id: str, text: str, *, name: str) -> str:
+    try:
+        result = check_output(text, metadata={"sink": "user"})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("output guard failed for task %s; blocking user-visible output: %s", task_id, exc)
+        result = GuardrailResult(
+            decision=GuardrailDecision.BLOCK,
+            risk_type=GuardrailRiskType.SECRET,
+            reason="guardrail_exception",
+            confidence=1.0,
+            stage=GuardrailStage.OUTPUT,
+        )
+    _record_guardrail_result(task_id, name, result)
+    if result.decision is GuardrailDecision.BLOCK:
+        return _OUTPUT_BLOCKED_MESSAGE
+    return text
 
 
 def _task_owner_id(task_id: str) -> str | None:
@@ -653,6 +724,8 @@ def sketch_node(state: AgentState) -> AgentState:
         task = session.get(Task, task_id)
         request_text = task.request_text
         owner_id = task.owner_id
+    if not _guard_current_turn(task_id, _turn_text(task_id, task)):
+        return {"task_id": task_id, "route": "end"}
 
     memory_error: str | None = None
     try:
@@ -1456,6 +1529,8 @@ def agent_step_node(state: AgentState) -> AgentState:
         existing = session.exec(
             select(Subtask).where(Subtask.task_id == task_id).order_by(Subtask.position)
         ).all()
+    if not _guard_current_turn(task_id, _turn_text(task_id, task)):
+        return {"task_id": task_id, "route": "end"}
 
     steps_taken = len(existing)
     # All three budgets below are measured over the SAME window, so a human
@@ -1687,6 +1762,8 @@ def triage_node(state: AgentState) -> AgentState:
 
     conversation = _gather_conversation_history(task_id, task)
     turn = _turn_text(task_id, task)
+    if not _guard_current_turn(task_id, turn):
+        return {"task_id": task_id, "route": "end"}
 
     with span(task_id, "triage", "triage_turn", input={"turn": turn}) as s:
         decision, completion = _classify_turn(turn, conversation)
@@ -1713,6 +1790,8 @@ def quick_reply_node(state: AgentState) -> AgentState:
         task = session.get(Task, task_id)
     turn = _turn_text(task_id, task)
     conversation = _gather_conversation_history(task_id, task)
+    if not _guard_current_turn(task_id, turn):
+        return {"task_id": task_id, "route": "end"}
 
     with span(task_id, "quick_reply", "quick_reply", input={"turn": turn}) as s:
         try:
@@ -1730,11 +1809,12 @@ def quick_reply_node(state: AgentState) -> AgentState:
             return {"task_id": task_id, "route": "sketch"}
         # Keyed "final_answer" so _gather_conversation_history reads a quick
         # turn exactly like a synthesized one.
+        reply = _guard_final_output(task_id, scrub_nul(reply), name="quick_reply_output_guard")
         s["output"] = {"final_answer": reply}
 
     with get_session() as session:
         task = session.get(Task, task_id)
-        task.final_output = scrub_nul(reply)
+        task.final_output = reply
         _set_task_status(session, task, TaskStatus.COMPLETED)
         session.commit()
 
@@ -1849,6 +1929,7 @@ def synthesize_node(state: AgentState) -> AgentState:
     with span(task_id, "synthesize", "supervisor_synthesize", input={"request": request_text}) as s:
         prompt = SYNTHESIS_PROMPT.format(request=request_text, conversation=conversation, subtask_outputs=outputs)
         final_answer, completion = complete(prompt)
+        final_answer = _guard_final_output(task_id, scrub_nul(final_answer), name="synthesis_output_guard")
         s["output"] = {"final_answer": final_answer}
     cost.record_llm_call(task_id, None, "synthesize", completion)
 

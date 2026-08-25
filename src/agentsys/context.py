@@ -10,6 +10,7 @@ from agentsys import pricing
 from agentsys.config import settings
 from agentsys.memory import long_term
 from agentsys.memory.long_term import RetrievedMemory
+from agentsys.sanitize import wrap_untrusted
 
 _TOKEN_ENCODING = None
 
@@ -413,9 +414,10 @@ def _rank_key(memory: RetrievedMemory) -> tuple:
 
 
 def _format_memory(memory: RetrievedMemory) -> str:
+    framed_content = " ".join(wrap_untrusted(memory.content, "memory").splitlines())
     return (
         f"- [{memory.kind}; importance={memory.importance}; "
-        f"relevance={memory.weighted_score:.3f}] {memory.content}"
+        f"relevance={memory.weighted_score:.3f}] {framed_content}"
     )
 
 

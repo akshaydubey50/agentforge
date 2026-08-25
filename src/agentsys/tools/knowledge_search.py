@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentsys.config import settings
 from agentsys.execution import ExecutionSafety
 from agentsys.policy import ActionType, Risk
+from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.base import Tool, ToolResult
 
 
@@ -94,7 +95,7 @@ class KnowledgeSearchTool(Tool):
 
         data = response.json()
         output = {
-            "answer": data["answer"],
+            "answer": wrap_untrusted(data["answer"], "knowledge_search"),
             "sources": [s["title"] for s in data.get("sources", [])],
             "confidence": data.get("confidence", {}).get("overall"),
         }
