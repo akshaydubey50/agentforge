@@ -261,7 +261,21 @@ class LlmCall(SQLModel, table=True):
     model: str
     prompt_tokens: int
     completion_tokens: int
+    cached_tokens: int | None = None
+    """How many of prompt_tokens were served from the provider's prompt cache
+    and billed at the discounted rate (OpenAI reports this as
+    usage.prompt_tokens_details.cached_tokens; it is half price).
+
+    NULL means "not recorded", not "none were cached" -- rows written before
+    this column existed genuinely cannot say, and pricing.py treats the two
+    differently rather than silently charging full rate for a cached call.
+    Without this, deriving cost from prompt_tokens alone overstates spend on
+    exactly the long-prompt agent_step calls that cache best (measured ~3%
+    high across this project's own history)."""
     cost_usd: float
+    """A CACHE of what pricing.py said at write time, not the source of
+    truth. Never SUM this column -- see cost.spend_from_rows, which re-derives
+    from tokens so a corrected rate fixes history."""
     created_at: datetime = Field(default_factory=_now)
 
 

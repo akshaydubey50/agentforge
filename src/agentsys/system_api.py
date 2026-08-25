@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import case, func
 from sqlmodel import select
 
+from agentsys import cost
 from agentsys.auth import get_current_user
 from agentsys.config import settings
 from agentsys.db.models import (
@@ -301,14 +302,9 @@ def summary(user: User = Depends(get_current_user)) -> dict:
             select(func.count()).select_from(MemoryEntry).where(MemoryEntry.owner_id == user.id)
         ).one()
 
-        spend, llm_calls, tokens_in, tokens_out = session.exec(
-            select(
-                func.coalesce(func.sum(LlmCall.cost_usd), 0.0),
-                func.count(LlmCall.id),
-                func.coalesce(func.sum(LlmCall.prompt_tokens), 0),
-                func.coalesce(func.sum(LlmCall.completion_tokens), 0),
-            ).where(LlmCall.task_id.in_(owned))
-        ).one()
+        # Rows, not a SUM(cost_usd): spend is derived from tokens at read
+        # time so a corrected rate fixes history (see cost.py / pricing.py).
+        llm_rows = session.exec(select(LlmCall).where(LlmCall.task_id.in_(owned))).all()
 
         steps = session.exec(
             select(func.count()).select_from(Subtask).where(Subtask.task_id.in_(owned))
@@ -345,6 +341,11 @@ def summary(user: User = Depends(get_current_user)) -> dict:
             .group_by(TraceSpan.span_type)
         ).all()
 
+    spend = cost.spend_from_rows(llm_rows)
+    # by_model/by_purpose are a report-page concern; the nav badge and tiles
+    # want one number, so the polled payload stays small.
+    spend = {k: spend[k] for k in ("usd", "llm_calls", "tokens_in", "tokens_out", "estimated")}
+
     active = by_status.get(TaskStatus.RUNNING.value, 0) + by_status.get(TaskStatus.PENDING.value, 0)
 
     return {
@@ -359,12 +360,7 @@ def summary(user: User = Depends(get_current_user)) -> dict:
         "tools_registered": len(get_registry().names()),
         "steps_run": int(steps or 0),
         "tool_calls": {"total": int(tool_calls or 0), "failed": int(tool_failures or 0)},
-        "spend": {
-            "usd": round(float(spend or 0.0), 6),
-            "llm_calls": int(llm_calls or 0),
-            "tokens_in": int(tokens_in or 0),
-            "tokens_out": int(tokens_out or 0),
-        },
+        "spend": spend,
         "trace_spans_24h": int(spans_24h or 0),
         "activity_24h": {
             span_type: {"runs": int(runs or 0), "errors": int(errors or 0)}

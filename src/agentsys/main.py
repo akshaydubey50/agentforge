@@ -10,7 +10,7 @@ from sqlmodel import select
 from agentsys.config import settings as agent_settings
 
 import agentsys.db.models  # noqa: F401  registers tables on SQLModel.metadata before init_db()
-from agentsys import audit, cancellation, idempotency
+from agentsys import audit, cancellation, cost, idempotency
 from agentsys.auth import get_current_user
 from agentsys.ratelimit import enforce_task_rate_limit
 from agentsys.security_headers import SecurityHeadersMiddleware
@@ -578,9 +578,10 @@ def analytics(user: User = Depends(get_current_user)) -> dict:
     for e in escalations:
         escalations_by_status[e.status.value] = escalations_by_status.get(e.status.value, 0) + 1
 
-    cost_by_purpose: dict[str, float] = {}
-    for lc in llm_calls:
-        cost_by_purpose[lc.purpose] = round(cost_by_purpose.get(lc.purpose, 0.0) + lc.cost_usd, 6)
+    # Priced NOW from stored tokens, not summed off the cached cost_usd
+    # column -- see cost.py. Correcting a rate then fixes this page's history
+    # instead of leaving a wrong number baked into old rows.
+    spend = cost.spend_from_rows(llm_calls)
 
     return {
         "tasks_by_status": by_status,
@@ -588,8 +589,10 @@ def analytics(user: User = Depends(get_current_user)) -> dict:
         "escalations_by_status": escalations_by_status,
         "total_tasks": len(tasks),
         "total_tool_calls": len(tool_calls),
-        "total_cost_usd": round(sum(lc.cost_usd for lc in llm_calls), 6),
-        "cost_by_purpose": cost_by_purpose,
+        "total_cost_usd": spend["usd"],
+        "cost_by_purpose": spend["by_purpose"],
+        "cost_by_model": spend["by_model"],
+        "cost_is_estimated": spend["estimated"],
     }
 
 

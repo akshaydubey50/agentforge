@@ -104,7 +104,7 @@ export default function SystemPage() {
         <Kpi
           label="Spend"
           value={spend ? `$${spend.usd.toFixed(4)}` : "—"}
-          sub={spend ? `${spend.llm_calls} LLM calls` : undefined}
+          sub={spend ? `${spend.llm_calls} LLM calls${spend.estimated ? " · est" : ""}` : undefined}
           tone="text-status-completed"
           href="/usage"
         />

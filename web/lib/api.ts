@@ -126,6 +126,11 @@ export interface AnalyticsOut {
   total_tool_calls: number;
   total_cost_usd: number;
   cost_by_purpose: Record<string, number>;
+  cost_by_model: Record<
+    string,
+    { calls: number; usd: number; tokens_in: number; tokens_out: number; estimated: boolean }
+  >;
+  cost_is_estimated: boolean;
 }
 
 // --- System view (mirrors src/agentsys/system_api.py) -----------------------
@@ -198,7 +203,16 @@ export interface SystemSummary {
   tools_registered: number;
   steps_run: number;
   tool_calls: { total: number; failed: number };
-  spend: { usd: number; llm_calls: number; tokens_in: number; tokens_out: number };
+  spend: {
+    usd: number;
+    llm_calls: number;
+    tokens_in: number;
+    tokens_out: number;
+    /** True when any call fell back to a family rate, or predates
+     *  cached_tokens being recorded, so the figure may read slightly high.
+     *  Shown as "est" rather than presenting a guess as exact. */
+    estimated: boolean;
+  };
   trace_spans_24h: number;
   /** Keyed by TraceSpan.span_type -- join to a node via its `span_type`. */
   activity_24h: Record<string, { runs: number; errors: number }>;
