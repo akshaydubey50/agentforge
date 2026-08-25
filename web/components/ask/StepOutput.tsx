@@ -1,3 +1,4 @@
+import { Collapsible } from "@/components/ui/Collapsible";
 import { Markdown } from "@/components/ui/Markdown";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
@@ -34,6 +35,41 @@ export function StepOutput({ output }: { output: string }) {
   }
 
   const obj = data as Record<string, unknown>;
+
+  // A spilled oversized result (artifacts.spill): {_truncated, total_chars,
+  // summary, preview, full_output_path, hint}. Without this branch it fell
+  // through to GenericObject and dumped the plumbing -- including `hint`,
+  // which is an instruction written for the MODEL and reads as nonsense to a
+  // person ("read it with file_io using..."). The digest is the content here;
+  // everything else is machinery and belongs behind a disclosure.
+  if (obj._truncated === true) {
+    const summary = typeof obj.summary === "string" ? obj.summary.trim() : "";
+    const preview = typeof obj.preview === "string" ? obj.preview : "";
+    const total = typeof obj.total_chars === "number" ? obj.total_chars : null;
+    return (
+      <div className="space-y-2">
+        {summary ? (
+          <Markdown>{summary}</Markdown>
+        ) : (
+          <pre className="mono overflow-x-auto rounded-[var(--rs)] border border-border bg-surface-2 p-2.5 text-[12.5px] whitespace-pre-wrap text-text">
+            {preview}
+          </pre>
+        )}
+        <p className="text-[11.5px] text-text-faint">
+          {summary ? "Summarized from " : "First 1,200 characters of "}
+          {total ? `a ${total.toLocaleString()}-character result` : "a long result"}
+          {" — the full text is kept in this task's files."}
+        </p>
+        {summary && preview && (
+          <Collapsible label="Show the raw opening">
+            <pre className="mono overflow-x-auto rounded-[var(--rs)] border border-border bg-surface-2 p-2.5 text-[12px] whitespace-pre-wrap text-text-muted">
+              {preview}
+            </pre>
+          </Collapsible>
+        )}
+      </div>
+    );
+  }
 
   // code_execution: {stdout, stderr, exit_code}
   if ("stdout" in obj || "stderr" in obj) {
