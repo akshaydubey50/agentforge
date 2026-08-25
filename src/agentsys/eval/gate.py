@@ -88,6 +88,10 @@ UNIT_SUITES = [
     # Phase 6B. Pure memory normalization/dedupe helpers only. DB-backed
     # curation and rolling-summary seam tests run separately.
     "tests/test_phase6b_memory_pure.py",
+    # Phase 6D. Pure model-window and representative context benchmark
+    # assertions; lifecycle and retrieval reinforcement need Postgres and run
+    # in the focused Phase 6D suite instead.
+    "tests/test_phase6d_context_pure.py",
 ]
 
 JUDGE_THRESHOLD = 0.7

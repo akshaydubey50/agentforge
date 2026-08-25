@@ -645,7 +645,13 @@ def sketch_node(state: AgentState) -> AgentState:
         request_text = task.request_text
         owner_id = task.owner_id
 
-    memories = long_term.retrieve_relevant(request_text, owner_id=owner_id, k=3)
+    memory_error: str | None = None
+    try:
+        memories = long_term.retrieve_relevant(request_text, owner_id=owner_id, k=3)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sketch memory retrieval failed for task %s (continuing): %s", task_id, exc)
+        memories = []
+        memory_error = type(exc).__name__
     memory_context = (
         "\n".join(f"- [{m.kind}] {m.content}" for m in memories)
         if memories
@@ -656,7 +662,10 @@ def sketch_node(state: AgentState) -> AgentState:
         tool_descriptions=_tool_descriptions(), memory_context=memory_context, request=request_text
     )
 
-    with span(task_id, "sketch", "supervisor_sketch", input={"request": request_text}) as s:
+    sketch_input = {"request": request_text}
+    if memory_error:
+        sketch_input["memory_error"] = memory_error
+    with span(task_id, "sketch", "supervisor_sketch", input=sketch_input) as s:
         sketch, completion = structured_complete(prompt, SketchOutput, model=settings.llm_model)
         s["output"] = sketch.model_dump()
     cost.record_llm_call(task_id, None, "sketch", completion)
@@ -1499,6 +1508,28 @@ def agent_step_node(state: AgentState) -> AgentState:
         steps_remaining=settings.max_task_steps - steps_taken_this_turn,
     )
 
+    if step_context.capacity_error:
+        with span(
+            task_id,
+            "agent_step",
+            f"decide_step_{steps_taken + 1}",
+            input={"steps_taken": steps_taken, "steps_taken_this_turn": steps_taken_this_turn},
+        ) as s:
+            s["status"] = "error"
+            s["output"] = {
+                "error": "context_capacity_exceeded",
+                "reason": step_context.capacity_error,
+                "context": step_context.metrics,
+            }
+        _create_escalation(
+            task_id,
+            None,
+            "Context required for the next agent step exceeds the model input budget after "
+            "optional memory was removed and eligible context was compressed.",
+            kind=BUDGET_ESCALATION_KIND,
+        )
+        return {"task_id": task_id, "route": "escalate"}
+
     with span(
         task_id, "agent_step", f"decide_step_{steps_taken + 1}",
         input={"steps_taken": steps_taken, "steps_taken_this_turn": steps_taken_this_turn},
@@ -1871,9 +1902,9 @@ def _reflect_and_save_memory(task_id: str, request_text: str, subtasks, final_an
             if result.index_failed_count:
                 s["status"] = "error"
         if result.stored_count or result.merged_count:
-            # Bounded growth -- nothing else calls this, so a memory that's
-            # never pruned is a memory that grows forever.
-            long_term.prune_low_value_memories(owner_id)
+            # Bounded retrieval growth without hard deletion: Phase 6D archives
+            # stale low-value rows so Postgres remains recoverable truth.
+            long_term.archive_low_value_memories(owner_id)
     except Exception as exc:  # noqa: BLE001 -- memory is best-effort, never fail the task
         logger.warning("memory curation failed for task %s (continuing): %s", task_id, exc)
 

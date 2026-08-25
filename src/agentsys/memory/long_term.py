@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlmodel import select
 
@@ -114,13 +114,24 @@ def add_memory(
     return memory_id
 
 
-def _is_active(entry: MemoryEntry) -> bool:
+def _status(entry: MemoryEntry) -> str:
     status = (entry.meta or {}).get("status")
-    return status in (None, "", "active")
+    return str(status or "active")
+
+
+def _is_active(entry: MemoryEntry) -> bool:
+    return _status(entry) in ("", "active")
 
 
 def retrieve_relevant(
-    query: str, *, owner_id: str, k: int = 3, kind: str | None = None, similarity_floor: float = 0.3
+    query: str,
+    *,
+    owner_id: str,
+    k: int = 3,
+    kind: str | None = None,
+    similarity_floor: float = 0.3,
+    include_archived: bool = False,
+    mark_accessed: bool = False,
 ) -> list[RetrievedMemory]:
     """Retrieval ranks by a blend of semantic similarity and importance, not
     similarity alone — a highly important preference should surface even when
@@ -163,7 +174,7 @@ def retrieve_relevant(
         entry = by_id.get(mid)
         if not entry:
             continue
-        if not _is_active(entry):
+        if not include_archived and not _is_active(entry):
             continue
         if kind and entry.kind != kind:
             continue
@@ -186,7 +197,7 @@ def retrieve_relevant(
     retrieved.sort(key=lambda m: m.weighted_score, reverse=True)
     top = retrieved[:k]
 
-    if top:
+    if top and mark_accessed:
         with get_session() as session:
             for m in top:
                 entry = session.get(MemoryEntry, m.id)
@@ -196,6 +207,102 @@ def retrieve_relevant(
             session.commit()
 
     return top
+
+
+def reinforce_memory_use(memory_ids: list[str], *, owner_id: str) -> int:
+    """Mark memories as used only after they are selected into model context.
+
+    Raw Chroma candidates are deliberately not counted as usage; Phase 6D uses
+    this function from the context builder after final selection.
+    """
+    if not memory_ids:
+        return 0
+    now = _now()
+    with get_session() as session:
+        entries = session.exec(
+            select(MemoryEntry).where(
+                MemoryEntry.owner_id == owner_id,
+                MemoryEntry.id.in_(memory_ids),
+            )
+        ).all()
+        updated = 0
+        for entry in entries:
+            if not _is_active(entry):
+                continue
+            meta = dict(entry.meta or {})
+            usage_count = int(meta.get("usage_count") or meta.get("retrieval_count") or 0) + 1
+            meta["usage_count"] = usage_count
+            meta["retrieval_count"] = usage_count
+            meta["last_used_at"] = now.isoformat()
+            entry.meta = meta
+            entry.last_accessed_at = now
+            entry.updated_at = now
+            session.add(entry)
+            updated += 1
+        session.commit()
+        return updated
+
+
+def _used_recently(meta: dict, *, now: datetime, stale_after: timedelta) -> bool:
+    raw = meta.get("last_used_at")
+    if not raw:
+        return False
+    try:
+        last_used = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return False
+    if last_used.tzinfo is None:
+        last_used = last_used.replace(tzinfo=timezone.utc)
+    return now - last_used < stale_after
+
+
+def archive_low_value_memories(
+    owner_id: str,
+    *,
+    min_age_days: int = 90,
+    stale_after_days: int = 30,
+    importance_threshold: int = 2,
+    now: datetime | None = None,
+) -> int:
+    """Archive, do not delete, stale low-value memories.
+
+    Pinned decisions are never auto-archived merely due to age. The embedding
+    and Postgres row remain recoverable; default retrieval excludes archived
+    rows because Postgres remains the source of truth.
+    """
+    now = now or _now()
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    old_enough = now - timedelta(days=min_age_days)
+    stale_after = timedelta(days=stale_after_days)
+    archived = 0
+    with get_session() as session:
+        entries = session.exec(select(MemoryEntry).where(MemoryEntry.owner_id == owner_id)).all()
+        for entry in entries:
+            if entry.kind == "pinned_decision":
+                continue
+            if not _is_active(entry):
+                continue
+            if entry.importance > importance_threshold:
+                continue
+            created_at = entry.created_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if created_at > old_enough:
+                continue
+            meta = dict(entry.meta or {})
+            usage_count = int(meta.get("usage_count") or meta.get("retrieval_count") or 0)
+            if usage_count > 0 and _used_recently(meta, now=now, stale_after=stale_after):
+                continue
+            meta["status"] = "archived"
+            meta["archived_at"] = now.isoformat()
+            meta["archive_reason"] = "low_value_stale_unused"
+            entry.meta = meta
+            entry.updated_at = now
+            session.add(entry)
+            archived += 1
+        session.commit()
+    return archived
 
 
 def prune_low_value_memories(owner_id: str, keep_top_n: int = 500) -> int:
