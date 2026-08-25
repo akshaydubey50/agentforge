@@ -85,6 +85,9 @@ UNIT_SUITES = [
     # retry semantics with fake HTTP only. The approval/ledger flow tests are
     # DB-backed and therefore intentionally stay out of tier 1.
     "tests/test_gmail_draft.py",
+    # Phase 6B. Pure memory normalization/dedupe helpers only. DB-backed
+    # curation and rolling-summary seam tests run separately.
+    "tests/test_phase6b_memory_pure.py",
 ]
 
 JUDGE_THRESHOLD = 0.7

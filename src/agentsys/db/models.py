@@ -143,6 +143,16 @@ class Task(SQLModel, table=True):
     default so golden-set runs don't pollute the dashboard."""
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
+    rolling_summary: dict | None = Field(default=None, sa_column=Column(JSONB))
+    """Current lossy summary of older turns in this task conversation.
+
+    Original TaskMessage and TraceSpan rows remain the source of truth; this
+    field is only the prompt-facing compact view used once history crosses the
+    Phase 6B token threshold.
+    """
+    rolling_summary_version: int = Field(default=0)
+    rolling_summary_updated_at: datetime | None = None
+    rolling_summary_until: datetime | None = None
 
 
 class Subtask(SQLModel, table=True):
@@ -382,11 +392,19 @@ class MemoryEntry(SQLModel, table=True):
     same role Task.owner_id plays for everything under a task."""
     task_id: str | None = Field(default=None, foreign_key="task.id")
     kind: str
-    """One of: episodic (task summary), fact, preference."""
+    """One of: semantic, episodic, pinned_decision, preference,
+    artifact_reference. Existing fact rows remain readable as a
+    backward-compatible semantic alias."""
     content: str
     importance: int = Field(default=3)
     created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
     last_accessed_at: datetime = Field(default_factory=_now)
+    meta: dict = Field(default_factory=dict, sa_column=Column(JSONB))
+    """Phase 6B provenance and merge data: scope, confidence, normalized hash,
+    source task/message/artifact references, reinforcement count, and Chroma
+    indexing status. Kept in one JSONB field instead of adding per-memory-type
+    tables or speculative columns."""
 
 
 class AuditEvent(SQLModel, table=True):

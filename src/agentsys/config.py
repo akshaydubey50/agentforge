@@ -253,6 +253,25 @@ class Settings(BaseSettings):
     are truncated -- recency is the cheapest useful relevance heuristic
     here, and the full text is always still in Postgres."""
     context_older_step_chars: int = 300
+    conversation_summary_trigger_tokens: int = 3_000
+    """When reconstructed follow-up conversation history crosses this
+    approximate token count, older turns are folded into Task.rolling_summary
+    and only recent turns stay verbatim. Originals remain in Postgres."""
+    conversation_recent_turns: int = 4
+    """Number of most recent reconstructed conversation turns kept verbatim
+    after rolling-summary compaction."""
+    conversation_summary_max_tokens: int = 900
+    """Target ceiling for the structured rolling summary. The model prompt
+    asks for compact output; deterministic code rejects empty/corrupt
+    summaries and preserves the previous one."""
+    memory_candidate_max_chars: int = 900
+    """Hard content-size ceiling for one long-term memory candidate. Artifact
+    bodies and transcripts belong in artifacts/TaskMessage rows, not memory."""
+    memory_candidate_min_confidence: float = 0.55
+    """Below this, a proposed memory is too uncertain to persist."""
+    memory_semantic_merge_similarity: float = 0.9
+    """High-confidence near-duplicate threshold. False merges are worse than
+    duplicate memories, so this stays conservative."""
 
     enable_triage: bool = True
     """The front door (graph/nodes.py's triage_node). Every turn used to pay

@@ -3,35 +3,57 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-class MemoryReflection(BaseModel):
-    """The 'should this be remembered' decision made after a task completes.
-    Replaces the old unconditional 'save a summary of every task' behavior:
-    most tasks produce nothing worth recalling later, so long-term memory
-    should hold curated, generalized lessons, not a log of everything."""
+class MemoryCandidate(BaseModel):
+    """One proposed durable memory. The LLM proposes this shape; deterministic
+    code still validates source ownership, supported kind/scope, size,
+    confidence, dedupe, and merge before anything is persisted."""
 
-    worth_saving: bool = Field(
-        description="True ONLY if this task produced a durable, generalizable lesson a FUTURE, "
-        "DIFFERENT task would genuinely benefit from. Routine/trivial/one-off tasks (greetings, "
-        "tests, a single lookup with no reusable pattern) and anything specific to only this exact "
-        "request are worth_saving=false.",
+    kind: Literal["semantic", "episodic", "pinned_decision", "preference", "artifact_reference", "fact"] = Field(
+        description="semantic = reusable generalized knowledge; episodic = compact lesson/reference from this task; "
+        "pinned_decision = explicit durable decision/constraint; preference = user/org preference; "
+        "artifact_reference = metadata-only pointer to an artifact; fact is accepted as a legacy alias for semantic.",
     )
-    kind: Literal["episodic", "fact", "preference"] = Field(
-        default="episodic",
-        description="episodic = a reusable approach to a CLASS of task; fact = a durable objective "
-        "fact learned about the tools or data; preference = how the user/org likes work done.",
+    scope: Literal["task", "conversation", "user"] = Field(
+        default="user",
+        description="Smallest scope where this memory is useful. Do not choose user for one-off task-local details.",
     )
     content: str = Field(
         default="",
-        description="The distilled lesson in one or two sentences, written GENERALIZED to help a "
-        "future task -- NOT a log of this one. Good: 'Revenue-growth comparisons: query both "
-        "quarters in one db_query, they're in the same sample_metric table.' Bad: 'Task X "
-        "completed, used db_query.' Empty when worth_saving is false.",
+        description="One or two dense sentences. No secrets, no full artifact bodies, no full transcript.",
     )
-    importance: int = Field(
-        default=3, ge=1, le=5,
-        description="1 = marginal, 5 = highly reusable across many future tasks. Drives retrieval "
-        "ranking, so be honest -- not everything is a 5.",
+    importance: int = Field(default=3, ge=1, le=5)
+    confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+    source: dict = Field(
+        default_factory=dict,
+        description="Optional evidence hints such as subtask ids or artifact refs. The server validates ownership.",
     )
+
+
+class MemoryCandidateBatch(BaseModel):
+    candidates: list[MemoryCandidate] = Field(default_factory=list)
+
+
+class RollingConversationSummary(BaseModel):
+    current_goal: str = ""
+    important_decisions: list[str] = Field(default_factory=list)
+    completed_work: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    unresolved_failures: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)
+    artifact_refs: list[str] = Field(default_factory=list)
+
+    def has_content(self) -> bool:
+        return bool(
+            self.current_goal.strip()
+            or self.important_decisions
+            or self.completed_work
+            or self.open_questions
+            or self.unresolved_failures
+            or self.constraints
+            or self.references
+            or self.artifact_refs
+        )
 
 
 class SketchOutput(BaseModel):

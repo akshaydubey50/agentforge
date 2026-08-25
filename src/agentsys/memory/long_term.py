@@ -20,25 +20,77 @@ class RetrievedMemory:
     weighted_score: float
 
 
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _chroma_metadata(entry: MemoryEntry) -> dict:
+    meta = entry.meta or {}
+    return {
+        "kind": entry.kind,
+        "task_id": entry.task_id or "",
+        "owner_id": entry.owner_id,
+        "importance": entry.importance,
+        "scope": str(meta.get("scope") or "user"),
+        "normalized_hash": str(meta.get("normalized_hash") or ""),
+    }
+
+
+def _mark_index_status(memory_id: str, *, indexed: bool, error: str | None = None) -> None:
+    with get_session() as session:
+        entry = session.get(MemoryEntry, memory_id)
+        if not entry:
+            return
+        meta = dict(entry.meta or {})
+        meta["chroma_indexed"] = indexed
+        if error:
+            meta["chroma_error"] = error[:300]
+        else:
+            meta.pop("chroma_error", None)
+        entry.meta = meta
+        entry.updated_at = _now()
+        session.add(entry)
+        session.commit()
+
+
+def index_memory(memory_id: str) -> None:
+    """Index an already-durable memory row in Chroma.
+
+    Postgres is the source of truth. A Chroma failure updates metadata for
+    observability and then re-raises so callers/tests can see the indexing
+    failure without losing the durable row.
+    """
+    with get_session() as session:
+        entry = session.get(MemoryEntry, memory_id)
+        if not entry:
+            raise ValueError(f"memory {memory_id} not found")
+        content = entry.content
+        metadata = _chroma_metadata(entry)
+
+    try:
+        vector = embed_texts([content])[0]
+        get_memory_collection().upsert(
+            ids=[memory_id],
+            embeddings=[vector],
+            documents=[content],
+            metadatas=[metadata],
+        )
+    except Exception as exc:  # noqa: BLE001
+        _mark_index_status(memory_id, indexed=False, error=f"{type(exc).__name__}: {exc}")
+        raise
+    _mark_index_status(memory_id, indexed=True)
+
+
 def add_memory(
-    content: str, *, kind: str, owner_id: str, task_id: str | None = None, importance: int = 3
+    content: str,
+    *,
+    kind: str,
+    owner_id: str,
+    task_id: str | None = None,
+    importance: int = 3,
+    meta: dict | None = None,
 ) -> str:
     memory_id = str(uuid.uuid4())
-    vector = embed_texts([content])[0]
-
-    collection = get_memory_collection()
-    collection.add(
-        ids=[memory_id],
-        embeddings=[vector],
-        documents=[content],
-        # owner_id in Chroma metadata (not just the Postgres row) is what
-        # makes retrieve_relevant's per-user filter possible -- semantic
-        # retrieval goes through Chroma, not Postgres, so isolation has to
-        # be enforced at this layer too or one user's sketch_node could
-        # surface another user's private facts/preferences.
-        metadatas=[{"kind": kind, "task_id": task_id or "", "owner_id": owner_id, "importance": importance}],
-    )
-
     with get_session() as session:
         entry = MemoryEntry(
             id=memory_id,
@@ -47,9 +99,17 @@ def add_memory(
             kind=kind,
             content=content,
             importance=importance,
+            meta={**(meta or {}), "chroma_indexed": False},
         )
         session.add(entry)
         session.commit()
+
+    try:
+        index_memory(memory_id)
+    except Exception:
+        # Durable memory has already been written. Callers that need to assert
+        # the indexing failure can inspect MemoryEntry.meta["chroma_indexed"].
+        pass
 
     return memory_id
 
@@ -78,6 +138,16 @@ def retrieve_relevant(
         include=["documents", "metadatas", "distances"],
     )
 
+    ids = results["ids"][0]
+    if not ids:
+        return []
+
+    with get_session() as session:
+        entries = session.exec(
+            select(MemoryEntry).where(MemoryEntry.owner_id == owner_id, MemoryEntry.id.in_(ids))
+        ).all()
+        by_id = {entry.id: entry for entry in entries}
+
     retrieved: list[RetrievedMemory] = []
     ids = results["ids"][0]
     documents = results["documents"][0]
@@ -85,16 +155,21 @@ def retrieve_relevant(
     distances = results["distances"][0]
 
     for mid, doc, meta, distance in zip(ids, documents, metadatas, distances):
+        entry = by_id.get(mid)
+        if not entry:
+            continue
+        if kind and entry.kind != kind:
+            continue
         similarity = 1.0 - distance
         if similarity < similarity_floor:
             continue
-        importance = int(meta.get("importance", 3))
+        importance = int(entry.importance)
         weighted = 0.7 * similarity + 0.3 * (importance / 5)
         retrieved.append(
             RetrievedMemory(
                 id=mid,
-                content=doc,
-                kind=meta.get("kind", ""),
+                content=entry.content or doc,
+                kind=entry.kind,
                 importance=importance,
                 similarity=round(similarity, 3),
                 weighted_score=round(weighted, 3),
@@ -125,10 +200,13 @@ def prune_low_value_memories(owner_id: str, keep_top_n: int = 500) -> int:
         all_entries = session.exec(select(MemoryEntry).where(MemoryEntry.owner_id == owner_id)).all()
         if len(all_entries) <= keep_top_n:
             return 0
+        pinned = [entry for entry in all_entries if entry.kind == "pinned_decision"]
+        candidates = [entry for entry in all_entries if entry.kind != "pinned_decision"]
+        candidate_keep = max(0, keep_top_n - len(pinned))
         ranked = sorted(
-            all_entries, key=lambda e: (e.importance, e.last_accessed_at), reverse=True
+            candidates, key=lambda e: (e.importance, e.last_accessed_at), reverse=True
         )
-        to_drop = ranked[keep_top_n:]
+        to_drop = ranked[candidate_keep:]
         drop_ids = [e.id for e in to_drop]
         for entry in to_drop:
             session.delete(entry)

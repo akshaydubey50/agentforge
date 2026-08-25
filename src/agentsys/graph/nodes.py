@@ -2,6 +2,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
+import tiktoken
 from sqlalchemy import func
 from sqlmodel import select
 
@@ -24,9 +25,10 @@ from agentsys.db.models import (
 from agentsys.db.session import get_session
 from agentsys.graph.prompts import (
     AGENT_STEP_PROMPT,
+    CONVERSATION_SUMMARY_PROMPT,
     GOAL_VERIFICATION_PROMPT,
+    MEMORY_CANDIDATE_PROMPT,
     QUICK_REPLY_PROMPT,
-    MEMORY_REFLECTION_PROMPT,
     REASONING_ONLY_PROMPT,
     REVIEW_PROMPT,
     SKETCH_PROMPT,
@@ -36,9 +38,10 @@ from agentsys.graph.prompts import (
 )
 from agentsys.graph.schemas import (
     GoalVerificationOutput,
-    MemoryReflection,
+    MemoryCandidateBatch,
     NextStepDecision,
     ReviewOutput,
+    RollingConversationSummary,
     SketchOutput,
     ToolChoice,
     TriageDecision,
@@ -46,7 +49,7 @@ from agentsys.graph.schemas import (
 from agentsys.graph.state import AgentState
 from agentsys.graph.tracing import span
 from agentsys.llm import complete, structured_complete
-from agentsys.memory import long_term, short_term
+from agentsys.memory import curation, long_term, short_term
 from agentsys.policy import ActionType, PolicyDecision, PolicyDecisionType
 from agentsys.sanitize import scrub_nul
 from agentsys.tools.base import ToolValidationError, validated_kwargs
@@ -405,19 +408,190 @@ def _budget_window_start(task_id: str, task: Task) -> datetime:
     return max(turn_start, resume_at) if resume_at else turn_start
 
 
-def _gather_conversation_history(task_id: str, task: Task) -> str:
-    """Reconstructs the full back-and-forth for a continued task: the
-    original request, each turn's final answer (one 'synthesize' TraceSpan
-    per completed turn), and each user follow-up (TaskMessage), interleaved
-    in the order they actually happened. Empty string on a task's first
-    turn -- {request} alone already covers that case, so the prompt stays
-    identical to before this feature existed."""
+def _conversation_header() -> str:
+    return (
+        "This is a continued conversation -- here is the relevant prior context "
+        "(the original request may be repeated for context):\n"
+    )
+
+
+_TOKEN_ENCODING = None
+
+
+def _estimate_tokens(text: str) -> int:
+    global _TOKEN_ENCODING
+    if _TOKEN_ENCODING is None:
+        model_name = settings.llm_model.split("/", 1)[-1]
+        try:
+            _TOKEN_ENCODING = tiktoken.encoding_for_model(model_name)
+        except Exception:  # noqa: BLE001
+            _TOKEN_ENCODING = tiktoken.get_encoding("cl100k_base")
+    return len(_TOKEN_ENCODING.encode(text or ""))
+
+
+def _full_conversation_block(turns: list[tuple[datetime, str]]) -> str:
+    return _conversation_header() + "\n".join(text for _, text in turns) + "\n"
+
+
+def _summary_payload(summary: RollingConversationSummary) -> dict:
+    return {key: value for key, value in summary.model_dump().items() if value}
+
+
+def _summary_to_text(summary: dict | None) -> str:
+    if not summary:
+        return ""
+    lines = ["Rolling summary of older conversation:"]
+    labels = {
+        "current_goal": "Current goal",
+        "important_decisions": "Important decisions",
+        "completed_work": "Completed work",
+        "open_questions": "Open questions",
+        "unresolved_failures": "Unresolved failures",
+        "constraints": "Constraints",
+        "references": "References",
+        "artifact_refs": "Artifact references",
+    }
+    for key, label in labels.items():
+        value = summary.get(key)
+        if not value:
+            continue
+        if isinstance(value, list):
+            lines.append(f"{label}:")
+            lines.extend(f"- {item}" for item in value if str(item).strip())
+        else:
+            lines.append(f"{label}: {value}")
+    return "\n".join(lines)
+
+
+def _summary_plus_recent_block(summary: dict | None, recent: list[tuple[datetime, str]]) -> str:
+    parts = [_conversation_header()]
+    summary_text = _summary_to_text(summary)
+    if summary_text:
+        parts.append(summary_text)
+    if recent:
+        parts.append("Recent turns kept verbatim:")
+        parts.extend(text for _, text in recent)
+    return "\n".join(parts) + "\n"
+
+
+def _bounded_conversation_fallback(turns: list[tuple[datetime, str]]) -> str:
+    recent_count = max(1, settings.conversation_recent_turns)
+    older = turns[:-recent_count]
+    recent = turns[-recent_count:]
+    max_chars = max(4_000, settings.conversation_summary_trigger_tokens * 4)
+    older_text = "\n".join(text for _, text in older)
+    if len(older_text) > max_chars:
+        older_text = older_text[:max_chars] + "\n[older conversation truncated because rolling summary failed]"
+    pieces = [_conversation_header()]
+    if older_text:
+        pieces.append(older_text)
+    pieces.append("Recent turns kept verbatim:")
+    pieces.extend(text for _, text in recent)
+    return "\n".join(pieces) + "\n"
+
+
+def _rolling_conversation_block(task_id: str, task: Task, turns: list[tuple[datetime, str]]) -> str:
+    raw = _full_conversation_block(turns)
+    tokens_before = _estimate_tokens(raw)
+    if tokens_before <= settings.conversation_summary_trigger_tokens:
+        return raw
+
+    recent_count = max(1, settings.conversation_recent_turns)
+    if len(turns) <= recent_count:
+        return raw
+    aged = turns[:-recent_count]
+    recent = turns[-recent_count:]
+    previous_summary = task.rolling_summary or {}
+    summary_until = task.rolling_summary_until
+    newly_aged = [
+        (when, text)
+        for when, text in aged
+        if summary_until is None or _naive(when) > _naive(summary_until)
+    ]
+
+    if not newly_aged and previous_summary:
+        compact = _summary_plus_recent_block(previous_summary, recent)
+        with span(
+            task_id,
+            "memory",
+            "summary.triggered",
+            input={"tokens_before": tokens_before, "new_turns": 0, "recent_turns": len(recent)},
+        ) as s:
+            s["output"] = {
+                "event": "summary.updated",
+                "used_existing_summary": True,
+                "tokens_after": _estimate_tokens(compact),
+            }
+        return compact
+    if not newly_aged:
+        return raw
+
+    with span(
+        task_id,
+        "memory",
+        "summary.triggered",
+        input={
+            "tokens_before": tokens_before,
+            "new_turns": len(newly_aged),
+            "recent_turns": len(recent),
+            "previous_summary": bool(previous_summary),
+        },
+    ) as s:
+        try:
+            summary, completion = structured_complete(
+                CONVERSATION_SUMMARY_PROMPT.format(
+                    previous_summary=json.dumps(previous_summary, ensure_ascii=True),
+                    new_turns="\n".join(text for _, text in newly_aged),
+                    max_tokens=settings.conversation_summary_max_tokens,
+                ),
+                RollingConversationSummary,
+                model=settings.llm_model,
+            )
+            cost.record_llm_call(task_id, None, "conversation_summary", completion)
+            if not summary.has_content():
+                raise ValueError("empty rolling summary")
+            payload = _summary_payload(summary)
+            with get_session() as session:
+                db_task = session.get(Task, task_id)
+                if not db_task or db_task.owner_id != task.owner_id:
+                    raise ValueError("task owner changed or task missing")
+                db_task.rolling_summary = payload
+                db_task.rolling_summary_version = (db_task.rolling_summary_version or 0) + 1
+                db_task.rolling_summary_updated_at = datetime.now(timezone.utc)
+                db_task.rolling_summary_until = aged[-1][0]
+                session.add(db_task)
+                session.commit()
+            compact = _summary_plus_recent_block(payload, recent)
+            s["output"] = {
+                "event": "summary.updated",
+                "tokens_before": tokens_before,
+                "tokens_after": _estimate_tokens(compact),
+                "summary_version": (task.rolling_summary_version or 0) + 1,
+            }
+            return compact
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("rolling summary failed for task %s (continuing): %s", task_id, exc)
+            s["status"] = "error"
+            s["output"] = {
+                "event": "summary.failed",
+                "error": type(exc).__name__,
+                "preserved_previous_summary": bool(previous_summary),
+            }
+            if previous_summary:
+                return _summary_plus_recent_block(previous_summary, recent)
+            return _bounded_conversation_fallback(turns)
+
+
+def _conversation_turns(task_id: str, task: Task) -> list[tuple[datetime, str]]:
     with get_session() as session:
+        db_task = session.get(Task, task_id)
+        if not db_task or db_task.owner_id != task.owner_id:
+            return []
         messages = session.exec(
             select(TaskMessage).where(TaskMessage.task_id == task_id).order_by(TaskMessage.created_at)
         ).all()
         if not messages:
-            return ""
+            return []
         # quick_reply answers count as answers. Without them here, a turn
         # answered on the fast path would vanish from the next turn's history
         # and the agent would re-answer a question it had already answered.
@@ -438,13 +612,17 @@ def _gather_conversation_history(task_id: str, task: Task) -> str:
     for m in messages:
         turns.append((m.created_at, f"User (follow-up): {m.content}"))
     turns.sort(key=lambda t: t[0])
+    return turns
 
-    return (
-        "This is a continued conversation -- here is everything said so far, in order "
-        "(the original request above is repeated as the first line for context):\n"
-        + "\n".join(text for _, text in turns)
-        + "\n"
-    )
+
+def _gather_conversation_history(task_id: str, task: Task) -> str:
+    """Reconstructs continued-task history. Under token pressure it returns
+    the rolling summary of older turns plus recent turns verbatim; original
+    TaskMessage and TraceSpan rows are never deleted."""
+    turns = _conversation_turns(task_id, task)
+    if not turns:
+        return ""
+    return _rolling_conversation_block(task_id, task, turns)
 
 
 # ---------------------------------------------------------------------------
@@ -1632,46 +1810,57 @@ def synthesize_node(state: AgentState) -> AgentState:
 
 
 def _reflect_and_save_memory(task_id: str, request_text: str, subtasks, final_answer: str) -> None:
-    """Curated long-term memory, not a firehose. The old behavior saved an
-    episodic summary of EVERY completed task at a flat importance -- so the
-    store filled with 'Task test completed', 'Task hello completed' noise that
-    then polluted the retrieval sketch_node relies on. Instead: one reflection
-    call decides whether this task produced a durable, generalizable lesson
-    worth recalling on a future task, and only THAT gets saved -- with a real,
-    model-assigned kind (episodic/fact/preference) and importance -- followed
-    by a prune so the store can't grow unbounded. This mirrors how production
-    agent memory (e.g. LangGraph's store + reflection patterns) curates rather
-    than logs. Best-effort: a memory hiccup must never fail an
-    already-completed task, so everything here is guarded."""
+    """Best-effort automatic memory curation. The model proposes bounded
+    candidates; memory.curation validates owner/source/kind/size/confidence,
+    dedupes/merges, and persists only what survives."""
     tools_used = sorted({s.assigned_tool for s in subtasks if s.assigned_tool})
+    subtask_evidence = "\n".join(
+        f"- [{s.status.value}] {s.description} | tool={s.assigned_tool or 'none'} | "
+        f"output_preview={(artifacts.for_synthesis(s.output) or '')[:300]}"
+        for s in subtasks
+    ) or "(no subtasks)"
     try:
         with get_session() as session:
-            owner_id = session.get(Task, task_id).owner_id
+            task = session.get(Task, task_id)
+            if not task or not task.owner_id or task.is_eval:
+                return
+            owner_id = task.owner_id
 
-        with span(task_id, "memory", "memory_reflection", input={"request": request_text}) as s:
-            reflection, completion = structured_complete(
-                MEMORY_REFLECTION_PROMPT.format(
-                    request=request_text, tools_used=tools_used, outcome=final_answer[:500]
+        with span(
+            task_id,
+            "memory",
+            "memory.candidates",
+            input={"tools_used": tools_used, "evidence_chars": len(subtask_evidence)},
+        ) as s:
+            batch, completion = structured_complete(
+                MEMORY_CANDIDATE_PROMPT.format(
+                    request=request_text,
+                    tools_used=tools_used,
+                    subtask_evidence=subtask_evidence[:4_000],
+                    outcome=final_answer[:500],
                 ),
-                MemoryReflection,
+                MemoryCandidateBatch,
                 model=settings.llm_model,
             )
-            s["output"] = reflection.model_dump()
-        cost.record_llm_call(task_id, None, "reflection", completion)
+            s["output"] = {"candidate_count": len(batch.candidates)}
+        cost.record_llm_call(task_id, None, "memory_curation", completion)
 
-        if reflection.worth_saving and reflection.content.strip():
-            long_term.add_memory(
-                reflection.content,
-                kind=reflection.kind,
-                owner_id=owner_id,
-                task_id=task_id,
-                importance=reflection.importance,
-            )
+        result = curation.curate_task_memory(task_id, batch.candidates)
+        with span(
+            task_id,
+            "memory",
+            "memory.curation",
+            input={"candidate_count": result.candidate_count, "owner_id": owner_id},
+        ) as s:
+            s["output"] = result.to_trace()
+            if result.index_failed_count:
+                s["status"] = "error"
+        if result.stored_count or result.merged_count:
             # Bounded growth -- nothing else calls this, so a memory that's
             # never pruned is a memory that grows forever.
             long_term.prune_low_value_memories(owner_id)
     except Exception as exc:  # noqa: BLE001 -- memory is best-effort, never fail the task
-        logger.warning("memory reflection/save failed for task %s (continuing): %s", task_id, exc)
+        logger.warning("memory curation failed for task %s (continuing): %s", task_id, exc)
 
 
 # ---------------------------------------------------------------------------

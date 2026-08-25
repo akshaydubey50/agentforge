@@ -233,28 +233,46 @@ Completed/recorded subtask outputs:
 {subtask_outputs}"""
 
 
-MEMORY_REFLECTION_PROMPT = """You are the agent's long-term memory keeper. A task just finished. \
-Decide whether it produced anything genuinely worth remembering for FUTURE, DIFFERENT tasks -- and \
-if so, distill it into one short, generalized lesson.
+MEMORY_CANDIDATE_PROMPT = """You are the agent's long-term memory keeper. A task just finished. \
+Propose zero or more durable memory candidates. You only propose candidates; deterministic code \
+will validate, dedupe, merge, store, or ignore them.
 
-Most tasks are NOT worth saving. Save something ONLY if a future task would really benefit from \
-recalling it: a reusable approach to a whole class of problem, a durable fact about the tools or \
-the data, or a preference for how work should be done. Do NOT save greetings, tests, trivial \
-one-off lookups, anything specific to only this exact request, or a mere restatement of what \
-happened. When in doubt, don't save -- a memory store full of noise makes retrieval worse, not \
-better.
+Allowed kinds:
+- semantic: reusable generalized knowledge for future tasks
+- pinned_decision: explicit durable user/project/architecture decision or constraint
+- episodic: compact "what happened last time" lesson/reference from this task
+- preference: durable user or organization preference
+- artifact_reference: metadata-only reference to an artifact, not artifact content
 
-Write any lesson GENERALIZED, not as a log:
-- Bad (a log): "Task 'Cedar Q1 vs Q2' completed, used db_query and code_execution."
-- Good (a lesson): "Revenue-growth comparisons: query both quarters together in one db_query -- \
-  they live in the same sample_metric table -- then compute the delta in code_execution."
+Do NOT save greetings, tests, routine one-off lookups, secrets, full transcripts, full tool \
+outputs, or artifact bodies. Do NOT invent decisions. A pinned_decision must be narrow and \
+explicit. An artifact_reference must contain only compact metadata and a path/reference in source.
+
+Prefer fewer, higher-signal candidates. If nothing here is worth remembering, return an empty \
+candidate list.
 
 Request that was handled: {request}
 Tools used: {tools_used}
-Final outcome: {outcome}
+Subtask evidence:
+{subtask_evidence}
+Final outcome preview: {outcome}
+"""
 
-If nothing here is worth remembering for a future task, set worth_saving to false and leave \
-content empty."""
+
+CONVERSATION_SUMMARY_PROMPT = """Update the rolling summary for an ongoing task conversation.
+
+Preserve only user-visible facts, decisions, outcomes, unresolved failures, constraints, open \
+questions, and useful artifact/reference pointers. Do not include hidden chain-of-thought. Do not \
+invent facts. Keep the summary compact, targeting no more than {max_tokens} tokens.
+
+Previous rolling summary, if any:
+{previous_summary}
+
+New older conversation turns to fold into the summary:
+{new_turns}
+
+Return the updated structured summary. Leave sections empty when there is nothing useful for them.
+"""
 
 
 TRIAGE_PROMPT = """You are the front door of an agent system. Decide whether this turn needs \
