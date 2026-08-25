@@ -29,3 +29,10 @@ web/playwright-report/
 # agentsys: eval harness run output (scripts/run_agent_eval.py); the golden
 # task set alongside it IS committed -- it's the input, this is the result
 data/eval/agent_results/
+# Gate output: eval_report.json is the latest verdict and eval_runs.jsonl the
+# append-only history. Both are RUN OUTPUT, not source -- committing them
+# means every gate run shows up as a diff, and two people running the gate
+# conflict on a file neither edited. The battery cases themselves
+# (agent_battery.jsonl) are source and stay tracked.
+data/eval/eval_report.json
+data/eval/eval_runs.jsonl
