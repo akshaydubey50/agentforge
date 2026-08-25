@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
 from sqlmodel import select
@@ -10,7 +10,7 @@ from sqlmodel import select
 from agentsys.config import settings as agent_settings
 
 import agentsys.db.models  # noqa: F401  registers tables on SQLModel.metadata before init_db()
-from agentsys import audit, cancellation, cost, idempotency
+from agentsys import audit, cancellation, cost, idempotency, runtime
 from agentsys.auth import get_current_user
 from agentsys.ratelimit import enforce_task_rate_limit
 from agentsys.security_headers import SecurityHeadersMiddleware
@@ -56,8 +56,12 @@ async def lifespan(app: FastAPI):
     """Replaces the older @app.on_event("startup") hook, which FastAPI
     deprecates -- the deprecation became a startup warning once the MCP
     dependency forced fastapi/starlette forward (see requirements.txt)."""
+    runtime.clear_shutdown()
     init_db()
-    yield
+    try:
+        yield
+    finally:
+        runtime.request_shutdown()
 
 
 app = FastAPI(title="Agent Orchestration System", version="0.1.0", lifespan=lifespan)
@@ -109,8 +113,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/health/deep")
-def health_deep() -> dict[str, str]:
+def _dependency_checks() -> dict[str, str]:
     """Readiness: are the dependencies reachable? Deliberately READ-ONLY and
     bounded.
 
@@ -153,6 +156,23 @@ def health_deep() -> dict[str, str]:
         checks["celery"] = f"failed: {type(exc).__name__}"
 
     checks["status"] = "ok" if all(v == "ok" for k, v in checks.items() if k != "status") else "degraded"
+    return checks
+
+
+@app.get("/health/deep")
+def health_deep() -> dict[str, str]:
+    return _dependency_checks()
+
+
+@app.get("/ready")
+def readiness(response: Response) -> dict[str, str]:
+    checks = _dependency_checks()
+    if checks.get("status") != "ok" or runtime.is_shutting_down():
+        response.status_code = 503
+        if runtime.is_shutting_down():
+            checks["shutdown"] = "requested"
+    else:
+        checks["shutdown"] = "clear"
     return checks
 
 
@@ -203,6 +223,7 @@ def create_task(
             existing = session.get(Task, existing_id)
             if existing:
                 return _task_out(existing)
+    runtime.enforce_accepting_work(user.id)
 
     with get_session() as session:
         task = Task(request_text=body.request_text, owner_id=user.id)
@@ -240,6 +261,7 @@ def create_task_with_files(
             existing = session.get(Task, existing_id)
             if existing:
                 return _task_out(existing)
+    runtime.enforce_accepting_work(user.id)
 
     for f in files:
         suffix = Path(f.filename or "").suffix.lower()
@@ -379,6 +401,7 @@ def send_task_message(
     the follow-up up."""
     from agentsys.worker import run_agent_task
 
+    runtime.enforce_accepting_work(user.id)
     content = body.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="message content cannot be empty")

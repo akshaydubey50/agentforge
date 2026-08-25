@@ -42,11 +42,13 @@ docs/PHASE3_EXECUTION_NOTE.md §10.
 
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import or_
 from sqlmodel import select
 
 from agentsys.config import settings
 from agentsys.db.models import Subtask, SubtaskStatus, Task, TaskStatus
 from agentsys.db.session import get_session
+from agentsys.task_claims import recovery_claim
 
 # Subtask states that only ever exist *during* a step's execution. Persisting
 # across a fresh graph invocation means the run that set them died.
@@ -90,20 +92,75 @@ def reconcile_orphaned_subtasks(task_id: str) -> int:
 
 
 def recover_stranded_tasks() -> list[str]:
-    """Re-enqueue Tasks left in RUNNING by a dead worker whose message was not
-    redelivered. Returns the ids re-enqueued. Import of run_agent_task is
-    local to avoid a circular import (worker imports this module)."""
+    """Re-enqueue stale tasks whose worker message is probably missing.
+
+    Handles RUNNING rows left by dead workers and old PENDING rows from the
+    commit-before-enqueue crash window. The sweep itself is advisory-locked
+    and bounded; selected rows have `updated_at` bumped before enqueueing so a
+    second process does not amplify the same stale batch.
+    """
     from agentsys.worker import run_agent_task
 
     # Task.updated_at is stored naive-UTC (TIMESTAMP WITHOUT TIME ZONE), so
     # compare against a naive-UTC cutoff to avoid an aware/naive mismatch.
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=settings.stranded_task_grace_seconds)
-    with get_session() as session:
-        stranded = session.exec(
-            select(Task).where(Task.status == TaskStatus.RUNNING, Task.updated_at < cutoff)
-        ).all()
-        stranded_ids = [t.id for t in stranded]
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    running_cutoff = now - timedelta(seconds=settings.stranded_task_grace_seconds)
+    pending_cutoff = now - timedelta(seconds=settings.stale_pending_task_grace_seconds)
+
+    with recovery_claim() as claimed:
+        if not claimed:
+            return []
+        with get_session() as session:
+            stranded = session.exec(
+                select(Task)
+                .where(
+                    or_(
+                        (Task.status == TaskStatus.RUNNING) & (Task.updated_at < running_cutoff),
+                        (Task.status == TaskStatus.PENDING) & (Task.updated_at < pending_cutoff),
+                    )
+                )
+                .order_by(Task.updated_at)
+                .limit(settings.recovery_batch_size)
+            ).all()
+            stranded_ids = [t.id for t in stranded]
+            for task in stranded:
+                task.updated_at = now
+                session.add(task)
+            if stranded:
+                session.commit()
 
     for task_id in stranded_ids:
         run_agent_task.delay(task_id)
     return stranded_ids
+
+
+def find_stuck_tasks(*, limit: int = 50) -> list[dict[str, str]]:
+    """Return operational evidence for tasks that appear stuck.
+
+    This is diagnostic only: it does not mutate state or enqueue work.
+    """
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    running_cutoff = now - timedelta(seconds=settings.stranded_task_grace_seconds)
+    pending_cutoff = now - timedelta(seconds=settings.stale_pending_task_grace_seconds)
+    approval_cutoff = now - timedelta(seconds=settings.approval_expiry_seconds)
+    findings: list[dict[str, str]] = []
+    with get_session() as session:
+        tasks = session.exec(
+            select(Task)
+            .where(
+                or_(
+                    (Task.status == TaskStatus.RUNNING) & (Task.updated_at < running_cutoff),
+                    (Task.status == TaskStatus.PENDING) & (Task.updated_at < pending_cutoff),
+                    (Task.status == TaskStatus.AWAITING_APPROVAL) & (Task.updated_at < approval_cutoff),
+                )
+            )
+            .order_by(Task.updated_at)
+            .limit(limit)
+        ).all()
+        for task in tasks:
+            reason = "stale_running" if task.status == TaskStatus.RUNNING else (
+                "stale_pending" if task.status == TaskStatus.PENDING else "awaiting_approval_too_long"
+            )
+            findings.append({"task_id": task.id, "status": task.status.value, "reason": reason})
+
+    return findings

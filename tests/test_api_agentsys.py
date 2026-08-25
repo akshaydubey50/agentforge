@@ -86,6 +86,19 @@ def test_same_idempotency_key_returns_the_same_task(client: TestClient):
     assert first.json()["id"] == second.json()["id"]
 
 
+def test_idempotency_replay_wins_over_active_task_capacity(client: TestClient, monkeypatch):
+    key = f"key-{uuid.uuid4()}"
+    headers = {"Idempotency-Key": key}
+    first = client.post("/v1/tasks", json={"request_text": "do the thing"}, headers=headers)
+    assert first.status_code == 200
+
+    monkeypatch.setattr(settings, "max_active_tasks", 0)
+    replay = client.post("/v1/tasks", json={"request_text": "do the thing"}, headers=headers)
+
+    assert replay.status_code == 200
+    assert replay.json()["id"] == first.json()["id"]
+
+
 def test_different_idempotency_keys_create_different_tasks(client: TestClient):
     a = client.post(
         "/v1/tasks", json={"request_text": "x"}, headers={"Idempotency-Key": f"k-{uuid.uuid4()}"}

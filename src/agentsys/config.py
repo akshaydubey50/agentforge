@@ -423,6 +423,18 @@ class Settings(BaseSettings):
     racing Celery's own acks_late redelivery of a task that ONLY just crashed
     -- a fresh crash gets redelivered on its own; only genuinely stale rows,
     whose message was actually lost, need the sweep."""
+    stale_pending_task_grace_seconds: int = 120
+    """How old a PENDING task must be before startup recovery treats it as a
+    likely lost enqueue. This covers the narrow API window after the Task row
+    is committed but before Redis accepts the Celery message."""
+    recovery_batch_size: int = 50
+    """Maximum stale tasks a single recovery sweep re-enqueues. Recovery is a
+    backstop, not an unbounded boot-time queue storm."""
+    max_active_tasks: int = 1000
+    max_active_tasks_per_user: int = 5
+    """API-side overload guard for submitted work. Celery concurrency remains
+    the worker execution bound; this prevents the API from accepting unlimited
+    pending/running task rows during an outage or client loop."""
 
     max_delegation_depth: int = 1
     """A sub-agent at this depth cannot itself call delegate_subagent --

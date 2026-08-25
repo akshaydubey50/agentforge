@@ -2,7 +2,7 @@ import logging
 
 from celery import Celery
 from celery.exceptions import SoftTimeLimitExceeded
-from celery.signals import worker_ready
+from celery.signals import worker_ready, worker_shutting_down
 from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy.exc import OperationalError
 
@@ -62,6 +62,13 @@ def _recover_stranded_on_boot(**_kwargs) -> None:
             logger.warning("recovered %d stranded task(s) on boot: %s", len(recovered), recovered)
     except Exception as exc:  # noqa: BLE001 -- boot recovery must not crash the worker
         logger.warning("stranded-task recovery on boot failed (continuing anyway): %s", exc)
+
+
+@worker_shutting_down.connect
+def _mark_worker_shutdown(**_kwargs) -> None:
+    from agentsys import runtime
+
+    runtime.request_shutdown()
 
 
 # ping_task was removed here. It existed only for /health/deep, and it
