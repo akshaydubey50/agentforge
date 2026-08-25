@@ -92,9 +92,14 @@ UNIT_SUITES = [
     # assertions; lifecycle and retrieval reinforcement need Postgres and run
     # in the focused Phase 6D suite instead.
     "tests/test_phase6d_context_pure.py",
+    # Phase 7C. Pure dataset parsing, runtime-record adapter, deterministic
+    # expected-tool/args checks, DeepEval skip/failure handling, and focused
+    # Phase 6/7B/action-safety regressions. DeepEval itself is mocked or absent.
+    "tests/test_phase7c_evaluation.py",
 ]
 
 JUDGE_THRESHOLD = 0.7
+QUALITY_THRESHOLD = 0.7
 
 
 @dataclass
@@ -236,6 +241,56 @@ def run_judge_tier(owner_id: str) -> TierResult:
     )
 
 
+def run_deepeval_quality_tier(owner_id: str) -> TierResult:
+    """Optional Phase 7C quality tier. It is deliberately outside Tier 1 and
+    disabled by default: DeepEval is eval tooling, not runtime infrastructure,
+    and stochastic quality scoring must never be needed for deterministic
+    safety checks."""
+    from agentsys.eval.deepeval_runner import deepeval_available
+    from agentsys.eval.quality_dataset import load_quality_dataset
+
+    if not deepeval_available():
+        return TierResult(
+            name="deepeval_quality",
+            status="skipped",
+            detail="deepeval is not installed; install requirements-eval.txt",
+        )
+
+    cases = load_quality_dataset()
+    if settings.deepeval_dataset_subset:
+        cases = [
+            case for case in cases if case.category.startswith(settings.deepeval_dataset_subset)
+        ]
+    max_cases = settings.deepeval_sample_count or None
+    if not cases:
+        return TierResult(name="deepeval_quality", status="skipped", detail="no quality cases")
+
+    from agentsys.eval.quality_runner import run_quality_cases
+
+    report = run_quality_cases(
+        cases,
+        owner_id=owner_id,
+        with_deepeval=True,
+        judge_model=settings.deepeval_judge_model or settings.reviewer_llm_model,
+        max_cases=max_cases,
+    )
+    score = report.aggregates.get("deepeval_avg_score")
+    if report.status == "pass" and score is not None and score < QUALITY_THRESHOLD:
+        status = "fail"
+        detail = f"DeepEval average {score:.3f} (floor {QUALITY_THRESHOLD})"
+    else:
+        status = report.status
+        detail = report.detail
+
+    return TierResult(
+        name="deepeval_quality",
+        status=status,
+        score=score,
+        detail=detail,
+        cases=report.to_dict()["cases"],
+    )
+
+
 def record(tiers: list[TierResult], verdict: str) -> Path:
     """Latest verdict plus append-only history, both under data/eval/."""
     out_dir = PROJECT_ROOT / "data" / "eval"
@@ -297,11 +352,19 @@ def main() -> int:
     tiers.append(judge)
 
     verdict = "open" if judge.status != "fail" else "closed"
+    if verdict == "open" and settings.deepeval_enabled:
+        print("\n=== tier 3b: deepeval quality (optional, scored) ===")
+        quality = run_deepeval_quality_tier(owner_id)
+        tiers.append(quality)
+        if quality.status == "fail":
+            verdict = "closed"
+
     path = record(tiers, verdict)
     print(f"\n{judge.detail}")
     print(f"Report: {path}")
     if verdict == "closed":
-        print("\nGATE CLOSED — judge score below floor.")
+        reason = "judge score below floor" if judge.status == "fail" else "quality tier failed"
+        print(f"\nGATE CLOSED — {reason}.")
         return 1
     print("\nGATE OPEN — safe to release.")
     return 0

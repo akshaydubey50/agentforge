@@ -197,6 +197,20 @@ class Settings(BaseSettings):
     is used deliberately so the usual tooling picks it up unchanged."""
     otel_service_name: str = "agentsys"
 
+    deepeval_enabled: bool = False
+    """Opt-in Phase 7C quality tier. False by default so normal AgentForge
+    startup, local dev, and deterministic Tier 1 do not require DeepEval or a
+    judge key. When true, eval/gate.py may run the optional quality tier after
+    cheaper deterministic tiers have passed."""
+    deepeval_judge_model: str = ""
+    """Optional judge model override for Phase 7C DeepEval metrics. Empty means
+    use reviewer_llm_model."""
+    deepeval_sample_count: int = 0
+    """Optional cap on Phase 7C quality cases. 0 means run the selected suite."""
+    deepeval_dataset_subset: str = ""
+    """Optional category prefix for Phase 7C quality cases, e.g. normal or
+    failure. Empty means all quality cases."""
+
     cors_allowed_origins: str = "http://localhost:3000"
     """Comma-separated, not a JSON list -- a human typing this into a
     deployment platform's env-var UI (Railway, etc.) shouldn't have to get
