@@ -151,10 +151,21 @@ services:
     env_file:
       - .env
     environment:
+      # rag/auth.py validates the session cookie by reading the SAME Redis
+      # that agentsys's Google sign-in wrote it to, so this must point at the
+      # in-network hostname exactly like api/worker do. Without it the
+      # container inherits .env's local-dev redis://localhost:6379 -- where
+      # "localhost" is the container itself, so every authenticated endpoint
+      # 500s with "Error 111 connecting to localhost:6379" while /health and
+      # /docs stay green, and the dashboard reports rag-api as simply "not
+      # responding". Exactly the mismatch .env.example warns about.
+      REDIS_URL: "redis://redis:6379/0"
       CHROMA_PERSIST_DIR: "/app/data/chroma"
     volumes:
       - ./data:/app/data
     depends_on:
+      redis:
+        condition: service_healthy
       rag-seed:
         condition: service_completed_successfully
     command: ["uvicorn", "rag.main:app", "--host", "0.0.0.0", "--port", "8000"]

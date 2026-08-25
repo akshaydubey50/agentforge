@@ -1,3 +1,4 @@
+import { humanizeValue } from "@/lib/formatValue";
 import type { GraphNodeData } from "@/lib/agentGraph";
 import type { TaskDetailOut } from "@/lib/api";
 import { ROLE_META } from "@/lib/agentRoles";
@@ -130,7 +131,10 @@ export function GraphInspector({ node, task }: { node: GraphNodeData | null; tas
             <div className="text-[12px] leading-relaxed text-text-muted">
               {span.span_type === "tool_call" && (
                 <>
-                  <b className="text-text">{span.name}</b> · input: {JSON.stringify(span.input)}
+                  <b className="text-text">{span.name}</b>
+                  {/* humanizeValue, not JSON.stringify -- this panel is read
+                      by a person inspecting a run, not by a debugger. */}
+                  <span className="mt-0.5 block whitespace-pre-wrap">{humanizeValue(span.input)}</span>
                 </>
               )}
               {span.span_type === "reasoning" && <>{(span.output as { text?: string })?.text}</>}

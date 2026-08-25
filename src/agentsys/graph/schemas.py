@@ -103,3 +103,22 @@ class SubAgentStep(BaseModel):
         default=None, description="Required when next_action is 'finish'."
     )
     rationale: str
+
+
+class TriageDecision(BaseModel):
+    """The front-door decision: does this turn need the machine, or just an
+    answer? Deliberately only two routes -- a classifier with more options is
+    a classifier with more ways to be wrong, and everything that isn't
+    obviously conversational belongs on the full path anyway."""
+
+    route: Literal["quick", "full"] = Field(
+        default="full",
+        description=(
+            "quick = the turn needs NO tool, NO lookup and NO new work: a greeting, a thanks, an "
+            "acknowledgement, or a question answerable purely from what has already been said in "
+            "this conversation. full = anything else. When in doubt, choose full."
+        ),
+    )
+    reason: str = Field(
+        default="", description="Five words or fewer explaining the choice, shown on the trace."
+    )

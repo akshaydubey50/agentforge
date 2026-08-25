@@ -178,7 +178,11 @@ function AskPageContent() {
         }
       />
       <div className="flex-1 overflow-y-auto px-5 py-6">
-        <div className="mx-auto max-w-[560px]">
+        {/* 560px was a prose reading measure, but steps now render tables,
+            file lists and long summaries that were being squeezed into a
+            third of a wide screen. Widens with the viewport instead of
+            pinning one narrow column. */}
+        <div className="mx-auto w-full max-w-[760px] xl:max-w-[920px] 2xl:max-w-[1040px]">
           {!taskId && (
             <>
               <div className="font-serif-display mt-2 text-[25px] font-semibold tracking-tight text-text">

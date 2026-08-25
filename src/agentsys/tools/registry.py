@@ -79,6 +79,16 @@ def _build_registry() -> ToolRegistry:
             registry.register(GoogleDriveReadTool())
             registry.register(GmailSearchTool())
             registry.register(GmailReadTool())
+
+            # Photos is behind its own flag on top of OAuth being configured:
+            # it needs an extra scope and a Cloud Console API enablement, so
+            # advertising it before those exist would put a tool in every
+            # prompt that can only fail. Same honesty rule as the rest of
+            # this file.
+            if settings.enable_google_photos:
+                from agentsys.tools.google_photos import GooglePhotosPickTool
+
+                registry.register(GooglePhotosPickTool())
         except ImportError:
             logger.warning("google tools not available")
     else:

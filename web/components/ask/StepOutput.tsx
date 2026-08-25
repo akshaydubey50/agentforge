@@ -1,3 +1,5 @@
+import { Collapsible } from "@/components/ui/Collapsible";
+import { humanizeValue } from "@/lib/formatValue";
 import { Markdown } from "@/components/ui/Markdown";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
@@ -34,6 +36,41 @@ export function StepOutput({ output }: { output: string }) {
   }
 
   const obj = data as Record<string, unknown>;
+
+  // A spilled oversized result (artifacts.spill): {_truncated, total_chars,
+  // summary, preview, full_output_path, hint}. Without this branch it fell
+  // through to GenericObject and dumped the plumbing -- including `hint`,
+  // which is an instruction written for the MODEL and reads as nonsense to a
+  // person ("read it with file_io using..."). The digest is the content here;
+  // everything else is machinery and belongs behind a disclosure.
+  if (obj._truncated === true) {
+    const summary = typeof obj.summary === "string" ? obj.summary.trim() : "";
+    const preview = typeof obj.preview === "string" ? obj.preview : "";
+    const total = typeof obj.total_chars === "number" ? obj.total_chars : null;
+    return (
+      <div className="space-y-2">
+        {summary ? (
+          <Markdown>{summary}</Markdown>
+        ) : (
+          <pre className="mono overflow-x-auto rounded-[var(--rs)] border border-border bg-surface-2 p-2.5 text-[12.5px] whitespace-pre-wrap text-text">
+            {asReadableText(preview)}
+          </pre>
+        )}
+        <p className="text-[11.5px] text-text-faint">
+          {summary ? "Summarized from " : "First 1,200 characters of "}
+          {total ? `a ${total.toLocaleString()}-character result` : "a long result"}
+          {" — the full text is kept in this task's files."}
+        </p>
+        {summary && preview && (
+          <Collapsible label="Show the raw opening">
+            <pre className="mono overflow-x-auto rounded-[var(--rs)] border border-border bg-surface-2 p-2.5 text-[12px] whitespace-pre-wrap text-text-muted">
+              {asReadableText(preview)}
+            </pre>
+          </Collapsible>
+        )}
+      </div>
+    );
+  }
 
   // code_execution: {stdout, stderr, exit_code}
   if ("stdout" in obj || "stderr" in obj) {
@@ -107,6 +144,51 @@ export function StepOutput({ output }: { output: string }) {
     );
   }
 
+  // google_drive_search: {files: [{name, id, mime_type, modified_time}]}, and
+  // file_io list: {files: ["a.txt", ...]}. A Drive id and a raw MIME string
+  // are addressing details the harness needs and a person does not -- what
+  // they want is which file, what kind, and how recent.
+  if (Array.isArray(obj.files)) {
+    const files = obj.files as unknown[];
+    if (files.length === 0) return <p className="text-[13px] text-text-faint">No files found.</p>;
+    return (
+      <ul className="space-y-1.5">
+        {files.map((f, i) => {
+          if (typeof f === "string") {
+            return (
+              <li key={i} className="mono text-[12.5px] text-text">
+                {f}
+              </li>
+            );
+          }
+          const file = f as Record<string, unknown>;
+          const kind = friendlyKind(String(file.mime_type ?? ""));
+          const when = relativeTime(String(file.modified_time ?? ""));
+          return (
+            <li key={i} className="flex items-baseline gap-2 text-[13px]">
+              {typeof file.link === "string" && file.link ? (
+                <a
+                  href={file.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-w-0 flex-1 truncate font-medium text-brand underline underline-offset-2"
+                >
+                  {String(file.name ?? "(untitled)")}
+                </a>
+              ) : (
+                <span className="min-w-0 flex-1 truncate font-medium text-text">
+                  {String(file.name ?? "(untitled)")}
+                </span>
+              )}
+              {kind && <span className="flex-none text-[11.5px] text-text-faint">{kind}</span>}
+              {when && <span className="flex-none text-[11.5px] text-text-faint">· {when}</span>}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
   // web_search: {results: [{title, url, snippet}]}
   if (Array.isArray(obj.results)) {
     const results = obj.results as Array<Record<string, unknown>>;
@@ -131,11 +213,12 @@ export function StepOutput({ output }: { output: string }) {
     );
   }
 
-  // file_io read: {content}
+  // file_io read: {content}. Reading back a spilled artifact returns the
+  // harness's own JSON, so it is decoded rather than shown as braces.
   if (typeof obj.content === "string") {
     return (
       <pre className="mono overflow-x-auto rounded-[var(--rs)] border border-border bg-surface-2 p-2.5 text-[12.5px] whitespace-pre-wrap text-text">
-        {obj.content}
+        {asReadableText(obj.content)}
       </pre>
     );
   }
@@ -172,9 +255,77 @@ function GenericList({ items }: { items: unknown[] }) {
   );
 }
 
+const MIME_LABELS: Record<string, string> = {
+  "application/vnd.google-apps.document": "Google Doc",
+  "application/vnd.google-apps.spreadsheet": "Google Sheet",
+  "application/vnd.google-apps.presentation": "Google Slides",
+  "application/vnd.google-apps.folder": "Folder",
+  "application/pdf": "PDF",
+  "text/plain": "Text",
+  "text/csv": "CSV",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
+};
+
+/** "application/vnd.google-apps.document" -> "Google Doc". An unknown type
+ *  falls back to its subtype rather than the full string: "x-yaml" is still
+ *  more use to a reader than the whole MIME triple. */
+function friendlyKind(mime: string): string {
+  if (!mime) return "";
+  if (MIME_LABELS[mime]) return MIME_LABELS[mime];
+  const subtype = mime.split("/").pop() ?? "";
+  return subtype.replace(/^vnd\.[^.]*\.?/, "").replace(/[-_]/g, " ") || "";
+}
+
+/** An ISO timestamp as "3 days ago". Absolute timestamps are precision a
+ *  reader did not ask for; recency is what they are judging. */
+function relativeTime(iso: string): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const seconds = Math.round((Date.now() - then) / 1000);
+  if (seconds < 0) return "just now";
+  const units: [number, Intl.RelativeTimeFormatUnit][] = [
+    [60, "second"],
+    [3600, "minute"],
+    [86400, "hour"],
+    [2592000, "day"],
+    [31536000, "month"],
+    [Infinity, "year"],
+  ];
+  const divisors = [1, 60, 3600, 86400, 2592000, 31536000];
+  for (let i = 0; i < units.length; i++) {
+    if (seconds < units[i][0]) {
+      const value = Math.round(seconds / divisors[i]);
+      return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(-value, units[i][1]);
+    }
+  }
+  return "";
+}
+
 function formatScalar(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (Array.isArray(value)) return value.map(formatScalar).join(", ");
-  if (typeof value === "object") return JSON.stringify(value);
+  // humanizeValue rather than JSON.stringify: this is the fallback for tool
+  // shapes we don't have a branch for (MCP servers contribute arbitrary
+  // ones), so it is exactly where a raw dump would otherwise leak through.
+  if (typeof value === "object") return humanizeValue(value);
   return String(value);
+}
+
+/** A string that is itself serialized JSON, rendered as text.
+ *
+ * Some payloads arrive double-encoded: a tool returns a dict, the harness
+ * json.dumps it, and that string becomes the `preview` or a file's contents.
+ * Showing it raw puts braces and escaped quotes on screen for no reason, so
+ * it is parsed back and humanized. Anything that isn't JSON is returned
+ * untouched -- ordinary prose must not be mangled by this. */
+function asReadableText(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return raw;
+  try {
+    return humanizeValue(JSON.parse(trimmed));
+  } catch {
+    return raw;
+  }
 }

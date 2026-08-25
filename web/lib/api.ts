@@ -58,7 +58,12 @@ export interface EscalationOut {
   id: string;
   task_id: string;
   subtask_id: string | null;
+  /** plan | review | budget | tool_approval | photo_pick | human_action */
+  kind: string;
   reason: string;
+  /** What the person needs to see to act — a proposed tool call, or a link
+   *  they have to open before approving. */
+  context: Record<string, unknown>;
   status: "pending" | "approved" | "rejected" | "took_over";
   decision_note: string | null;
   decided_by: string | null;
@@ -126,6 +131,121 @@ export interface AnalyticsOut {
   total_tool_calls: number;
   total_cost_usd: number;
   cost_by_purpose: Record<string, number>;
+  cost_by_model: Record<
+    string,
+    { calls: number; usd: number; tokens_in: number; tokens_out: number; estimated: boolean }
+  >;
+  cost_is_estimated: boolean;
+}
+
+// --- System view (mirrors src/agentsys/system_api.py) -----------------------
+// The node/edge lists come from the COMPILED LangGraph, not a hand-kept list,
+// so anything drawn from them stays true as the graph changes. See that
+// module's docstring for the honesty rule this depends on.
+
+export type AgentRoleName = "supervisor" | "specialist" | "reviewer" | "human";
+
+export interface TopologyNode {
+  id: string;
+  label: string;
+  role: AgentRoleName;
+  kind: string;
+  summary: string;
+  href: string | null;
+  /** Which TraceSpan.span_type this node writes, for looking up live
+   *  activity in SystemSummary.activity_24h. Null for the terminals. */
+  span_type: string | null;
+  terminal: boolean;
+}
+
+export interface TopologyEdge {
+  source: string;
+  target: string;
+  /** A router decision (route_entry / route_after) rather than an
+   *  unconditional hand-off -- drawn dashed. */
+  conditional: boolean;
+}
+
+export interface SubsystemFact {
+  label: string;
+  value: string;
+  note?: string;
+}
+
+export interface Subsystem {
+  id: string;
+  label: string;
+  summary: string;
+  /** Null for subsystems with no page to send you to — deployment config
+   *  read from .env at startup, which the System page already shows in full. */
+  href: string | null;
+  facts: SubsystemFact[];
+}
+
+export interface SystemTool {
+  name: string;
+  summary: string;
+  requires_approval: boolean;
+  /** The MCP server this tool came from, or null for a first-party tool. */
+  server: string | null;
+}
+
+export interface SystemTopology {
+  graph: { nodes: TopologyNode[]; edges: TopologyEdge[] };
+  tools: SystemTool[];
+  subsystems: Subsystem[];
+}
+
+export interface SystemSummary {
+  tasks: {
+    by_status: Record<string, number>;
+    total: number;
+    active: number;
+    awaiting_approval: number;
+  };
+  approvals_pending: number;
+  memory_entries: number;
+  tools_registered: number;
+  steps_run: number;
+  tool_calls: { total: number; failed: number };
+  spend: {
+    usd: number;
+    llm_calls: number;
+    tokens_in: number;
+    tokens_out: number;
+    /** True when any call fell back to a family rate, or predates
+     *  cached_tokens being recorded, so the figure may read slightly high.
+     *  Shown as "est" rather than presenting a guess as exact. */
+    estimated: boolean;
+  };
+  trace_spans_24h: number;
+  /** Keyed by TraceSpan.span_type -- join to a node via its `span_type`. */
+  activity_24h: Record<string, { runs: number; errors: number }>;
+}
+
+// --- Task artifacts (mirrors src/agentsys/artifacts_api.py) ----------------
+
+export interface TaskArtifact {
+  path: string;
+  bytes: number;
+  modified_at: string;
+  /** "deliverable" = the agent chose to write it via file_io; "spillover" =
+   *  the harness parked an oversized tool result under _artifacts/. */
+  kind: "deliverable" | "spillover";
+}
+
+export interface TaskArtifactList {
+  task_id: string;
+  files: TaskArtifact[];
+  total_bytes: number;
+}
+
+export interface TaskArtifactContent {
+  path: string;
+  bytes: number;
+  binary: boolean;
+  content: string | null;
+  truncated: boolean;
 }
 
 // A 401 here means the session cookie is missing/expired -- every caller
@@ -195,6 +315,13 @@ export const api = {
 
   getTrace: (taskId: string) => request<TraceSpanOut[]>(`/v1/tasks/${taskId}/trace`),
 
+  listArtifacts: (taskId: string) => request<TaskArtifactList>(`/v1/tasks/${taskId}/artifacts`),
+
+  readArtifact: (taskId: string, path: string) =>
+    request<TaskArtifactContent>(
+      `/v1/tasks/${taskId}/artifacts/content?path=${encodeURIComponent(path)}`
+    ),
+
   listEscalations: (status: "pending" | "all" = "pending", limit = 25, offset = 0, taskId?: string) =>
     request<Page<EscalationOut>>(
       `/v1/escalations?status=${status}&limit=${limit}&offset=${offset}${taskId ? `&task_id=${taskId}` : ""}`
@@ -219,6 +346,12 @@ export const api = {
     }),
 
   listTools: () => request<{ tools: ToolInfo[] }>("/v1/tools").then((r) => r.tools),
+
+  // Describes code and config, not this user's data, so it's safe to cache
+  // hard -- the System page revalidates only /summary on a timer.
+  getSystemTopology: () => request<SystemTopology>("/v1/system/topology"),
+
+  getSystemSummary: () => request<SystemSummary>("/v1/system/summary"),
 
   getAnalytics: () => request<AnalyticsOut>("/v1/analytics"),
 

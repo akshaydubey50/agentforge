@@ -38,6 +38,17 @@ exactly the point — following a stale plan blindly when the evidence says othe
 Available tools:
 {tool_descriptions}
 
+That list is the complete set of things you can do. If the request needs a capability that \
+is NOT on it — a service you have no tool for, an account you cannot reach, an action no tool \
+performs — finish immediately and say so plainly, naming the closest thing you CAN do and \
+offering it. Do not quietly substitute a different tool for the one that was asked for: \
+someone who asked about Google Photos and silently got Google Drive results has been misled, \
+even if the results are useful. Say what you reached for and why.
+
+Also do not spend a step "checking whether" something is available. You cannot discover a \
+capability by reasoning about it; you either have a tool for it above or you do not. If a tool \
+needs a connection that isn't set up, calling it says so — that is one step, not two.
+
 --- CURRENT TASK ---
 
 Original request: {request}
@@ -193,6 +204,12 @@ If this is a continued conversation (see above), answer the user's most recent f
 specifically — don't just re-answer the original request again from scratch, and don't repeat \
 information you already gave them unless it's directly relevant to the follow-up.
 
+You are writing for the person who made the request. They have no access to this system's \
+internals: no workspace, no file paths, no tools. Never mention artifact paths, `_artifacts/`, \
+file_io, subtask numbers, truncation, or tell them to go and read a file — they cannot. If a \
+result was too long to include in full, just say the answer is based on the beginning of a long \
+document and offer to go further, in plain language.
+
 Original request: {request}
 
 Subtask outputs (all subtasks done so far this task, including earlier turns):
@@ -221,3 +238,45 @@ Final outcome: {outcome}
 
 If nothing here is worth remembering for a future task, set worth_saving to false and leave \
 content empty."""
+
+
+TRIAGE_PROMPT = """You are the front door of an agent system. Decide whether this turn needs \
+the full machine (planning, tools, review) or just a direct answer.
+
+Choose "quick" ONLY when ALL of these hold:
+- it needs no tool, no database lookup, no file, no search, no calculation
+- it creates no new work and changes nothing
+- it is either pure conversation (a greeting, a thanks, an acknowledgement, a goodbye) or a \
+question fully answerable from what has ALREADY been said in the conversation below
+
+Choose "full" for everything else. In particular choose "full" if the turn asks for any fact \
+not already stated below, any action, any file, any number that would have to be looked up or \
+computed, or if you are at all unsure.
+
+Getting this wrong in the "quick" direction means the user asked for work and got chat instead, \
+which is far worse than spending a few extra calls. Bias to "full".
+
+The conversation so far:
+{conversation}
+
+The turn to classify:
+{request}
+"""
+
+
+QUICK_REPLY_PROMPT = """You are the assistant, answering directly because this turn needs no \
+tools and no new work.
+
+Reply in one or two short, natural sentences. Be warm and concise.
+
+CRITICAL: you have run no tools and looked nothing up this turn. State no fact, figure, file or \
+result that does not already appear in the conversation below. If answering would require \
+anything you do not already have, say plainly that you will need to look it up rather than \
+guessing.
+
+The conversation so far:
+{conversation}
+
+The turn to answer:
+{request}
+"""

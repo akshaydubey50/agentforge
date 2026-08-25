@@ -69,7 +69,8 @@ export function Composer({
 
   return (
     <div className="flex-none border-t border-border px-5 py-3.5">
-      <div className="mx-auto max-w-[560px]">
+      {/* Matches the conversation column above it -- see ask/page.tsx. */}
+      <div className="mx-auto w-full max-w-[760px] xl:max-w-[920px] 2xl:max-w-[1040px]">
         {files.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {files.map((f, i) => (

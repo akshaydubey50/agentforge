@@ -78,3 +78,37 @@ def describe(task_id: str) -> str:
         "you propose them again -- they are dead ends, not retry candidates. Choose a different "
         f"tool, different arguments, or a different approach:\n{listed}\n"
     )
+
+
+# --- repeats of SUCCESSFUL calls -------------------------------------------
+# A separate ledger, deliberately. The failure ledger above BLOCKS, because a
+# call that already failed will fail again. This one only COUNTS, because the
+# reasoning in this module's docstring still holds: re-searching after a
+# write, or polling a status, is legitimately repeatable and must not be
+# blocked.
+#
+# What was missing is that "unproductive" was defined as "errored". A step
+# whose tool call SUCCEEDS but returns what the agent already has is just as
+# unproductive and was invisible to every guard: one real task made 13
+# successful, near-identical file_io reads and only max_task_steps stopped
+# it. This makes a repeat count toward max_unproductive_steps, so the
+# existing stop condition fires on a loop that never errors.
+
+_SUCCESS_FIELD = "successful_calls"
+
+
+def record_success(task_id: str, tool_name: str, kwargs: dict) -> bool:
+    """Record a successful call. Returns True if this exact call had already
+    succeeded earlier in the task -- i.e. the step made no new progress."""
+    signature = _signature(tool_name, kwargs)
+    try:
+        seen = short_term.get_list(task_id, _SUCCESS_FIELD)
+    except Exception:  # noqa: BLE001 -- a Redis blip must not break the loop
+        return False
+    if signature in seen:
+        return True
+    try:
+        short_term.append_value(task_id, _SUCCESS_FIELD, signature)
+    except Exception:  # noqa: BLE001
+        pass
+    return False

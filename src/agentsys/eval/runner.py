@@ -3,9 +3,10 @@ from dataclasses import asdict, dataclass
 
 from sqlmodel import select
 
-from agentsys.db.models import Escalation, Subtask, Task
+from agentsys.db.models import Escalation, Subtask, Task, ToolCall
 from agentsys.db.session import get_session
 from agentsys.eval.golden_dataset import GoldenTask
+from agentsys.eval.grounding import check_grounding
 from agentsys.eval.metrics import escalation_correctness, judge_outcome, step_efficiency, tool_call_precision
 from agentsys.graph.runner import run_task
 
@@ -16,7 +17,9 @@ class EvalCaseResult:
     category: str
     request_text: str
     outcome_correctness: float
+    outcome: str
     outcome_reasoning: str
+    ungrounded_figures: list[str]
     tool_call_precision: float | None
     escalation_correct: bool
     did_escalate: bool
@@ -61,17 +64,28 @@ def _evaluate_case(case: GoldenTask, owner_id: str) -> EvalCaseResult:
             final_output = task.final_output
             subtasks = session.exec(select(Subtask).where(Subtask.task_id == task_id)).all()
             escalations = session.exec(select(Escalation).where(Escalation.task_id == task_id)).all()
+            tool_calls = session.exec(
+                select(ToolCall).where(ToolCall.subtask_id.in_([s.id for s in subtasks]))
+            ).all() if subtasks else []
 
         tool_names = [s.assigned_tool for s in subtasks if s.assigned_tool]
         did_escalate = final_status == "awaiting_approval" or len(escalations) > 0
-        judgment = judge_outcome(case, final_status, final_output)
+        # Deterministic first, judge second: the grounding check costs nothing
+        # and gives the judge evidence rather than asking it to notice a
+        # fabrication unaided.
+        grounding = check_grounding(
+            final_output, [c.output for c in tool_calls], [c.tool_name for c in tool_calls]
+        )
+        judgment = judge_outcome(case, final_status, final_output, grounding)
 
         return EvalCaseResult(
             case_id=case.id,
             category=case.category,
             request_text=case.request_text,
             outcome_correctness=judgment.correctness,
+            outcome=judgment.outcome,
             outcome_reasoning=judgment.reasoning,
+            ungrounded_figures=grounding.ungrounded if grounding.looks_fabricated else [],
             tool_call_precision=tool_call_precision(case, tool_names),
             escalation_correct=escalation_correctness(case, did_escalate),
             did_escalate=did_escalate,
@@ -86,7 +100,9 @@ def _evaluate_case(case: GoldenTask, owner_id: str) -> EvalCaseResult:
             category=case.category,
             request_text=case.request_text,
             outcome_correctness=0.0,
+            outcome="miss",
             outcome_reasoning="",
+            ungrounded_figures=[],
             tool_call_precision=None,
             escalation_correct=False,
             did_escalate=False,
@@ -107,9 +123,17 @@ def _aggregate(results: list[EvalCaseResult]) -> dict:
         subset = [r.outcome_correctness for r in results if r.category == category]
         by_category[category] = round(_mean(subset), 3)
 
+    outcomes = {key: sum(1 for r in results if r.outcome == key)
+                for key in ("pass", "stale", "invented", "miss")}
+
     return {
         "n_cases": len(results),
         "errors": sum(1 for r in results if r.error),
+        "outcomes": outcomes,
+        # The headline number. A run can hold correctness steady while
+        # trading honest failures for confident fabrications, and a single
+        # average would show that as no change at all.
+        "invented_rate": round(outcomes["invented"] / len(results), 3) if results else 0.0,
         "overall_outcome_correctness": round(_mean([r.outcome_correctness for r in results]), 3),
         "outcome_correctness_by_category": by_category,
         "tool_call_precision": round(_mean(precision_vals), 3) if precision_vals else None,

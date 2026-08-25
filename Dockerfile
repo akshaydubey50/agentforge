@@ -10,6 +10,11 @@ COPY src/ src/
 COPY scripts/ scripts/
 COPY alembic.ini .
 COPY alembic/ alembic/
+# The release gate runs pytest from inside this image (see
+# src/agentsys/eval/gate.py and the Makefile's `gate` target), so the tests
+# have to be in it. Without this, `make gate` fails at tier 1 on a clean
+# build -- which is exactly how it was found.
+COPY tests/ tests/
 
 RUN pip install --no-cache-dir -e .
 

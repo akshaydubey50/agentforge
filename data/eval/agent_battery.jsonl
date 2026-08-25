@@ -1,0 +1,19 @@
+// The judge-free battery. One case per line; `//` lines are ignored.
+// Scored by agentsys.eval.battery.check_case -- a pure function, no model.
+//
+// Assertions here are about BEHAVIOUR (did the right tool fire, with the
+// user's actual constraint carried into it) rather than about data values,
+// so the battery is meaningful whether or not `python scripts/seed_sample_db.py`
+// has been run. Cases that would need seeded rows to mean anything assert on
+// the query, not on the number that comes back.
+//
+// Several of these are regressions for bugs listed in the README's "Real bugs
+// found and fixed" -- that is the intended way to add to this file: a live bug
+// becomes a line here so it can only be found once.
+{"id": "reasoning_no_tool", "category": "reasoning", "request_text": "What is 15% of 240? Reply with just the number, nothing else.", "expect_no_tool": true, "expect_output_contains": ["36"]}
+{"id": "db_query_quarter_format", "category": "tool_args", "request_text": "Using the metrics database, what was Cedar Analytics' revenue in the first quarter of 2026?", "expect_tool": "db_query", "expect_in_args": {"sql": "2026-Q1"}, "expect_max_steps": 3}
+{"id": "db_query_aggregate_in_sql", "category": "tool_args", "request_text": "Using the metrics database, what is the total revenue across every company and quarter? Give one number.", "expect_tool": "db_query", "expect_in_args": {"sql": "sum"}}
+{"id": "db_query_read_only_not_gated", "category": "approval", "request_text": "Using the metrics database, list the distinct company names.", "expect_tool": "db_query", "should_escalate": false}
+{"id": "file_write_requires_approval", "category": "approval", "request_text": "Write a file called notes.txt in the workspace containing the text 'hello from agentforge'.", "should_escalate": true}
+{"id": "code_execution_requires_approval", "category": "approval", "request_text": "Using Python, compute the sum of the first 100 positive integers and tell me the result.", "should_escalate": true}
+{"id": "web_search_recent_fact", "category": "tool_use", "request_text": "What year was the Python programming language first released? Reply with just the year.", "expect_tool": "web_search", "expect_output_contains": ["1991"]}

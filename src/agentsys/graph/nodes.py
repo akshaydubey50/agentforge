@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 from sqlmodel import select
 
-from agentsys import artifacts, cost, deadcalls
+from agentsys import artifacts, cost, deadcalls, events
 from agentsys.cancellation import TaskCancelled, is_cancel_requested
 from agentsys.config import settings
 from agentsys.db.models import (
@@ -23,12 +23,14 @@ from agentsys.db.models import (
 from agentsys.db.session import get_session
 from agentsys.graph.prompts import (
     AGENT_STEP_PROMPT,
+    QUICK_REPLY_PROMPT,
     MEMORY_REFLECTION_PROMPT,
     REASONING_ONLY_PROMPT,
     REVIEW_PROMPT,
     SKETCH_PROMPT,
     SYNTHESIS_PROMPT,
     TOOL_SELECTION_PROMPT,
+    TRIAGE_PROMPT,
 )
 from agentsys.graph.schemas import (
     MemoryReflection,
@@ -36,6 +38,7 @@ from agentsys.graph.schemas import (
     ReviewOutput,
     SketchOutput,
     ToolChoice,
+    TriageDecision,
 )
 from agentsys.graph.state import AgentState
 from agentsys.graph.tracing import span
@@ -72,9 +75,15 @@ def _set_task_status(session, task: Task, status: TaskStatus) -> None:
     'running' when sketch_node finished the step it was already inside)."""
     if task.status == TaskStatus.CANCELLED:
         return
+    previous = task.status
     task.status = status
     task.updated_at = datetime.now(timezone.utc)
     session.add(task)
+    # The other half of the event seam (see events.py). Spans say what the
+    # agent is doing; this says what state the task is in, which is what a
+    # live view needs to stop spinning and show a result.
+    if previous != status:
+        events.publish(task.id, "task_status", {"status": status.value, "previous": previous.value})
 
 
 _UNPRODUCTIVE_FIELD = "unproductive_streak"
@@ -198,9 +207,15 @@ def _gather_conversation_history(task_id: str, task: Task) -> str:
         ).all()
         if not messages:
             return ""
+        # quick_reply answers count as answers. Without them here, a turn
+        # answered on the fast path would vanish from the next turn's history
+        # and the agent would re-answer a question it had already answered.
         synth_spans = session.exec(
             select(TraceSpan)
-            .where(TraceSpan.task_id == task_id, TraceSpan.span_type == "synthesize")
+            .where(
+                TraceSpan.task_id == task_id,
+                TraceSpan.span_type.in_(("synthesize", "quick_reply")),
+            )
             .order_by(TraceSpan.started_at)
         ).all()
 
@@ -315,6 +330,46 @@ def _save_plan(task_id: str, plan: list[str], steps_taken: int) -> None:
         s["output"] = {"plan": plan}
 
 
+def _is_artifact_read(tool_name: str, kwargs: dict) -> bool:
+    """Is this call following a spill pointer? Matched on the artifact
+    directory rather than "any file_io read", so reading a normal workspace
+    file still gets the usual size discipline."""
+    if tool_name != "file_io" or kwargs.get("action") != "read":
+        return False
+    return str(kwargs.get("path", "")).replace("\\", "/").startswith(f"{artifacts.ARTIFACT_DIRNAME}/")
+
+
+def _awaiting_human(output_text: str) -> dict | None:
+    """Did the tool hand back something only a person can act on?
+
+    Read off the serialized result rather than passed out of band, because
+    _run_tool_call's contract is (success, text) and widening it for one
+    tool would touch every call site. Malformed input returns None -- a
+    tool that garbles this should not be able to wedge a task."""
+    if "_awaiting_human" not in (output_text or ""):
+        return None
+    try:
+        parsed = json.loads(output_text)
+    except (TypeError, ValueError):
+        return None
+    awaiting = parsed.get("_awaiting_human") if isinstance(parsed, dict) else None
+    return awaiting if isinstance(awaiting, dict) else None
+
+
+def _capped(text: str) -> str:
+    """A hard ceiling for the one path that skips spilling. Generous enough
+    that a real document arrives whole, small enough that a pathological file
+    can't blow the context window."""
+    limit = settings.max_dereference_chars
+    if len(text) <= limit:
+        return text
+    return (
+        text[:limit]
+        + f'… [truncated: {len(text)} chars total, showing the first {limit}. '
+        f"This is the full stored result; there is no further pointer to follow.]"
+    )
+
+
 def _run_tool_call(task_id: str, subtask_id: str, tool_name: str, kwargs: dict) -> tuple[bool, str]:
     """Actually invokes a tool and records the ToolCall row + tool_call
     TraceSpan. Returns (tool_success, output_text) for the caller to fold
@@ -364,6 +419,25 @@ def _run_tool_call(task_id: str, subtask_id: str, tool_name: str, kwargs: dict) 
         return False, f"Tool call failed: {result.error}"
 
     output_text = json.dumps(result.output)
+    if _is_artifact_read(tool_name, kwargs):
+        # THE DEREFERENCE PATH IS EXEMPT FROM SPILLING.
+        #
+        # Spilling parks an oversized result in a file and hands the model a
+        # pointer, on the promise that it can read the file back when the
+        # preview isn't enough (see artifacts.py). But the read is itself a
+        # tool call, so it was spilled too -- the escape hatch sat behind the
+        # very door it exists to open, and following a pointer could never
+        # succeed for anything above the threshold.
+        #
+        # Observed: a 28KB Drive file spilled, then re-read and re-spilled 13
+        # times, growing to 2.6MB, until the step budget ran out. Drive worked
+        # perfectly; the pointer was simply un-followable.
+        #
+        # Reading the whole thing is the POINT here -- artifacts.py calls it
+        # "one deliberate step rather than a permanent tax on every step", and
+        # _gather_prior_context truncates it back down on later steps. The cap
+        # below only stops a pathological file from blowing the context window.
+        return True, _capped(output_text)
     if len(output_text) > settings.max_tool_output_chars:
         # Spill the payload to the workspace and keep only a preview +
         # pointer in what goes back into the prompt. The ToolCall row above
@@ -456,13 +530,19 @@ def _execute_subtask(
             kwargs.setdefault("task_id", task_id)
             kwargs.setdefault("subtask_id", subtask_id)
             kwargs.setdefault("depth", 1)
-        elif choice.tool_name in ("gmail_search", "gmail_read", "google_drive_search", "google_drive_read"):
-            # user_id decides whose connected Gmail/Drive the call acts as --
-            # injected from the task's owner, never left for the LLM to
+        elif choice.tool_name in (
+            "gmail_search", "gmail_read", "google_drive_search", "google_drive_read",
+            "google_photos_pick",
+        ):
+            # user_id decides whose connected Gmail/Drive/Photos the call acts
+            # as -- injected from the task's owner, never left for the LLM to
             # supply, the same reasoning as task_id/subtask_id above but
             # security-sensitive rather than just plumbing.
             with get_session() as session:
                 kwargs["user_id"] = session.get(Task, task_id).owner_id
+            # The picker survives a pause by remembering its session against
+            # the task (see tools/google_photos.py), so it needs task_id too.
+            kwargs.setdefault("task_id", task_id)
 
         if registry.get(choice.tool_name).needs_approval(kwargs):
             # Gate BEFORE the tool ever runs -- unlike the other three
@@ -501,7 +581,43 @@ def _execute_subtask(
         else:
             tool_success, output_text = _run_tool_call(task_id, subtask_id, choice.tool_name, kwargs)
 
-        _record_step_productivity(task_id, productive=tool_success)
+            # A tool can ask for a human MID-CALL, which the approval gate
+            # above cannot express: that one pauses BEFORE running, on the
+            # question "may I?". This one pauses AFTER, because the tool has
+            # produced something only a person can act on -- a picker URL, a
+            # consent link, a device code. Generic on purpose; Google Photos
+            # is just the first caller.
+            awaiting = _awaiting_human(output_text)
+            if awaiting:
+                with get_session() as session:
+                    subtask = session.get(Subtask, subtask_id)
+                    subtask.assigned_tool = choice.tool_name
+                    subtask.status = SubtaskStatus.ESCALATED
+                    subtask.output = awaiting.get("reason") or "Waiting on a person."
+                    session.add(subtask)
+                    session.commit()
+                _create_escalation(
+                    task_id, subtask_id, awaiting.get("reason") or "This step needs you.",
+                    kind=awaiting.get("kind", "human_action"),
+                    context=awaiting.get("context", {}),
+                )
+                # Same sentinel as the approval gate: nothing to review, and
+                # approving re-runs the tool, which is why a tool using this
+                # must be idempotent across the pause.
+                return None
+
+        # A step is unproductive when it errored OR when it succeeded at
+        # something already done. The second half used to be invisible: one
+        # real task made 13 successful, near-identical file_io reads and only
+        # the step budget stopped it, because every guard keyed on failure.
+        repeated = tool_success and deadcalls.record_success(task_id, choice.tool_name, kwargs)
+        if repeated:
+            output_text = (
+                f"{output_text}\n\n[Note: this exact {choice.tool_name} call was already made "
+                f"earlier in this task and returned the same result. Use what you already have "
+                f"rather than fetching it again.]"
+            )
+        _record_step_productivity(task_id, productive=tool_success and not repeated)
     else:
         with span(task_id, "reasoning", "specialist_reason", subtask_id=subtask_id, input={"description": description}) as s:
             prompt = REASONING_ONLY_PROMPT.format(
@@ -725,6 +841,111 @@ def agent_step_node(state: AgentState) -> AgentState:
     return {"task_id": task_id, "route": route}  # "agent_step" (pass) or "escalate"
 
 
+def _classify_turn(request_text: str, conversation: str):
+    """Fails open to "full". A broken classifier must cost latency, never
+    capability -- the same rule tool execution follows when a tool errors, and
+    the reason this is safe to have on by default."""
+    try:
+        return structured_complete(
+            TRIAGE_PROMPT.format(
+                request=request_text, conversation=conversation or "(nothing yet)"
+            ),
+            TriageDecision,
+            model=settings.triage_model,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("triage failed open to the full path: %s", exc)
+        return TriageDecision(route="full", reason=f"triage error ({type(exc).__name__})"), None
+
+
+def _turn_text(task_id: str, task: Task) -> str:
+    """What the user actually said this turn: the newest follow-up if there is
+    one, otherwise the original request."""
+    with get_session() as session:
+        latest = session.exec(
+            select(TaskMessage)
+            .where(TaskMessage.task_id == task_id)
+            .order_by(TaskMessage.created_at.desc())
+        ).first()
+    return latest.content if latest else task.request_text
+
+
+def triage_node(state: AgentState) -> AgentState:
+    """The front door. Most turns need the machine; some are just talking.
+
+    Before this, every turn paid sketch + at least one agent_step +
+    synthesize, so "thanks" cost three model calls and a row of subtasks.
+    This decides once, cheaply, whether that is warranted.
+
+    The asymmetry is deliberate and the prompt states it: routing real work to
+    "quick" means the user asked for something and got chat, which is far
+    worse than spending a few extra calls. Anything not obviously
+    conversational goes full."""
+    task_id = state["task_id"]
+    _check_cancelled(task_id)
+
+    with get_session() as session:
+        task = session.get(Task, task_id)
+        has_subtasks = bool(
+            session.exec(select(Subtask).where(Subtask.task_id == task_id).limit(1)).first()
+        )
+
+    conversation = _gather_conversation_history(task_id, task)
+    turn = _turn_text(task_id, task)
+
+    with span(task_id, "triage", "triage_turn", input={"turn": turn}) as s:
+        decision, completion = _classify_turn(turn, conversation)
+        s["output"] = decision.model_dump()
+    if completion is not None:
+        cost.record_llm_call(task_id, None, "triage", completion)
+
+    if decision.route == "quick":
+        return {"task_id": task_id, "route": "quick_reply"}
+    # Full path picks up exactly where route_entry used to send it.
+    return {"task_id": task_id, "route": "agent_step" if has_subtasks else "sketch"}
+
+
+def quick_reply_node(state: AgentState) -> AgentState:
+    """One model call. No tools, no subtasks, no memory write.
+
+    Nothing here can act, and the prompt forbids asserting anything not
+    already in the conversation -- so the worst a misrouted turn can do is
+    answer unhelpfully, never take a wrong action or invent a figure. That
+    bound is what makes the fast path safe to leave on."""
+    task_id = state["task_id"]
+
+    with get_session() as session:
+        task = session.get(Task, task_id)
+    turn = _turn_text(task_id, task)
+    conversation = _gather_conversation_history(task_id, task)
+
+    with span(task_id, "quick_reply", "quick_reply", input={"turn": turn}) as s:
+        try:
+            reply, completion = complete(
+                QUICK_REPLY_PROMPT.format(
+                    request=turn, conversation=conversation or "(nothing yet)"
+                ),
+                model=settings.triage_model,
+            )
+            cost.record_llm_call(task_id, None, "quick_reply", completion)
+        except Exception as exc:  # noqa: BLE001
+            # Fails toward the machine, not toward a broken turn.
+            s["output"] = {"error": str(exc)}
+            s["status"] = "error"
+            return {"task_id": task_id, "route": "sketch"}
+        # Keyed "final_answer" so _gather_conversation_history reads a quick
+        # turn exactly like a synthesized one.
+        s["output"] = {"final_answer": reply}
+
+    with get_session() as session:
+        task = session.get(Task, task_id)
+        task.final_output = scrub_nul(reply)
+        _set_task_status(session, task, TaskStatus.COMPLETED)
+        session.commit()
+
+    return {"task_id": task_id, "route": "end"}
+
+
 def escalate_node(state: AgentState) -> AgentState:
     task_id = state["task_id"]
     with get_session() as session:
@@ -745,8 +966,11 @@ def synthesize_node(state: AgentState) -> AgentState:
             select(Subtask).where(Subtask.task_id == task_id).order_by(Subtask.position)
         ).all()
 
+    # Spill plumbing is stripped here and only here: agent_step needs the
+    # pointer to decide whether to go and fetch the rest, while synthesis
+    # writes for a human who has no workspace -- see artifacts.for_synthesis.
     outputs = "\n".join(
-        f"{i + 1}. {s.description}\n   -> {s.output or '(skipped/failed)'}"
+        f"{i + 1}. {s.description}\n   -> {artifacts.for_synthesis(s.output) or '(skipped/failed)'}"
         for i, s in enumerate(subtasks)
     )
     conversation = _gather_conversation_history(task_id, task)
@@ -818,13 +1042,34 @@ def _reflect_and_save_memory(task_id: str, request_text: str, subtasks, final_an
 
 
 def route_entry(state: AgentState) -> str:
-    """A task with no subtasks yet needs a sketch; a task resuming after a
-    human decision (or mid-loop) already has subtasks and just needs to
-    keep looping."""
+    """Where a graph invocation starts.
+
+    The distinction that matters is RESUME vs NEW TURN:
+
+      resume     work already happened this turn (mid-loop, or a human just
+                 decided an escalation) -> straight back into the loop. Never
+                 triaged: the user already committed to this work, so
+                 re-classifying it would add a call and could only get it
+                 wrong.
+      new turn   a fresh task, or a follow-up on an existing one -> the front
+                 door, which decides whether this turn needs the machine.
+
+    "This turn" is measured the way agent_step_node measures its step budget
+    -- subtasks created since _turn_start -- so the two cannot disagree about
+    where a turn begins."""
     task_id = state["task_id"]
     with get_session() as session:
-        exists = session.exec(select(Subtask).where(Subtask.task_id == task_id).limit(1)).first()
-    return "agent_step" if exists else "sketch"
+        task = session.get(Task, task_id)
+        subtasks = session.exec(select(Subtask).where(Subtask.task_id == task_id)).all()
+
+    turn_start = _turn_start(task_id, task.created_at)
+    work_this_turn = any(s.created_at >= turn_start for s in subtasks)
+
+    if work_this_turn or task.status == TaskStatus.AWAITING_APPROVAL:
+        return "agent_step"
+    if not settings.enable_triage:
+        return "agent_step" if subtasks else "sketch"
+    return "triage"
 
 
 def route_after(state: AgentState) -> str:

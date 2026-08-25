@@ -62,6 +62,19 @@ class Settings(BaseSettings):
     are the same OAuth grant (see google_oauth.login_or_connect), so there is
     only one callback."""
 
+    enable_google_photos: bool = False
+    """The Google Photos picker tool (tools/google_photos.py).
+
+    OFF by default, and it is not a preference -- turning it on adds an OAuth
+    scope, and Google records granted scopes, so every already-connected
+    account must disconnect and reconnect before the tool works. A default
+    that silently invalidates live connections would be the wrong default.
+    It also requires the Photos Picker API to be enabled in Google Cloud
+    Console, which no code here can do.
+
+    Note what the capability IS: the user picks, the agent receives. Library
+    search was removed by Google in March 2025 and cannot be restored."""
+
     session_cookie_name: str = "af_session"
     session_idle_timeout_seconds: int = 60 * 30
     """How long a session survives WITHOUT use. Refreshed on each
@@ -122,6 +135,15 @@ class Settings(BaseSettings):
     binds every present and future subdomain. Turn on only for a domain
     whose HTTPS posture is settled."""
 
+    otel_exporter_otlp_endpoint: str = ""
+    """Turns on OpenTelemetry export (see otel.py). Empty means off, and off
+    means the SDK is never imported -- a deployment that doesn't want this
+    pays nothing for it. Set to a collector's gRPC endpoint
+    (e.g. http://localhost:4317) to get the same runs as a span tree in
+    Phoenix / Langfuse / Datadog / Jaeger. The standard OTEL_ variable name
+    is used deliberately so the usual tooling picks it up unchanged."""
+    otel_service_name: str = "agentsys"
+
     cors_allowed_origins: str = "http://localhost:3000"
     """Comma-separated, not a JSON list -- a human typing this into a
     deployment platform's env-var UI (Railway, etc.) shouldn't have to get
@@ -142,21 +164,59 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
 
     # --- context engineering (see artifacts.py and nodes._gather_prior_context) ---
-    max_tool_output_chars: int = 2_000
+    max_tool_output_chars: int = 12_000
     """Above this, a successful tool result is written to the task workspace
-    and only a preview + pointer goes into the prompt (artifacts.spill).
-    Measured motivation: one 28,783-char Drive read was re-sent in full on
-    every subsequent step of a task, ~43k tokens of pure re-transmission
-    from a single tool call."""
+    and a digest + pointer goes into the prompt instead (artifacts.spill).
+
+    Originally 2,000, set when the measured problem was one 28,783-char Drive
+    read being re-sent in full on every subsequent step -- ~43k tokens of pure
+    re-transmission from a single tool call. But that is the RETRANSMISSION
+    problem, and context_recent_steps_full below now solves it independently
+    by truncating older steps. 2,000 chars is ~500 tokens against a 128k
+    window: it spilled essentially every real document, so the agent almost
+    never held the thing it was asked about. 12,000 (~3k tokens) keeps a
+    normal document whole and still catches the genuinely oversized."""
+    summarize_spilled_output: bool = True
+    """When a result is too large to keep, summarize the WHOLE of it rather
+    than keeping only its opening (artifacts._digest). One cheap call, and it
+    is the difference between the agent knowing what a document contains and
+    knowing what its title page says. Fails open to the preview."""
+    max_digest_input_chars: int = 60_000
+    """Bound on what the summarizer reads, so one pathological result cannot
+    turn into one pathological bill."""
     tool_output_preview_chars: int = 1_200
     """How much of a spilled result stays inline. Enough for the model to
     tell whether it needs the rest (and to answer outright when the head of
     a document is all that was needed) without carrying the whole payload."""
+    max_dereference_chars: int = 60_000
+    """Ceiling on a read that FOLLOWS a spill pointer (see nodes._capped).
+    That one path skips spilling on purpose -- otherwise the escape hatch
+    sits behind the door it exists to open, and a pointer can never be
+    followed for anything above max_tool_output_chars. Generous enough for a
+    real document to arrive whole; small enough that a pathological file
+    can't blow the context window."""
     context_recent_steps_full: int = 3
     """Recent steps whose output stays in the prompt verbatim. Older steps
     are truncated -- recency is the cheapest useful relevance heuristic
     here, and the full text is always still in Postgres."""
     context_older_step_chars: int = 300
+
+    enable_triage: bool = True
+    """The front door (graph/nodes.py's triage_node). Every turn used to pay
+    sketch + at least one agent_step + synthesize, so "thanks" cost three
+    model calls and a row of subtasks.
+
+    On by default because the failure is bounded in the safe direction: the
+    fast path has no tools, writes no subtasks, and its prompt forbids
+    asserting anything not already in the conversation, so a misrouted turn
+    answers unhelpfully rather than acting wrongly. Every error inside triage
+    falls open to the full path. Set false to restore the previous
+    always-full behaviour exactly."""
+    triage_model: str = "openai/gpt-4o-mini"
+    """The classifier and the fast-path reply. A separate setting from
+    llm_model so the cheap front door stays cheap if the main model is ever
+    pointed at something expensive -- the whole point is that a greeting
+    doesn't wake the big one."""
 
     # --- loop engineering (see deadcalls.py and nodes.agent_step_node) ---
     max_unproductive_steps: int = 3
