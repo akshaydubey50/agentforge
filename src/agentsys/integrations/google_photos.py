@@ -78,13 +78,21 @@ def _request(method: str, path: str, user_id: str, **kwargs) -> dict:
     except httpx.HTTPStatusError as e:
         status = e.response.status_code
         if status in (401, 403):
-            # By far the most common failure, and the least self-explanatory:
-            # the account was connected before Photos was ever asked for, so
-            # the stored token simply does not carry this scope. Say the fix.
+            # Two distinct causes, and "reconnect" only fixes one of them.
+            # Observed live: the consent request carried all six scopes and
+            # Google returned five, because a scope that is not declared on
+            # the OAuth consent screen is dropped SILENTLY -- no error, no
+            # warning, just a token missing the permission. Enabling the API
+            # and declaring the scope are separate steps in Cloud Console and
+            # it is easy to do only the first.
             raise PhotosError(
-                "Google Photos access has not been granted. Disconnect and reconnect the "
-                "Google account from Settings so the Photos permission is included -- an "
-                "account connected before Photos was enabled does not carry it."
+                "Google Photos access has not been granted. Two things are needed, and the "
+                "second is the one usually missing: (1) the account must be reconnected from "
+                "Settings AFTER Photos was enabled, and (2) the scope "
+                "'photospicker.mediaitems.readonly' must be added to the OAuth consent screen "
+                "in Google Cloud Console (APIs & Services > OAuth consent screen > Data "
+                "access). Google drops an undeclared scope silently, so the consent screen "
+                "simply never asks for it and the token comes back without it."
             ) from e
         raise PhotosError(f"Google Photos request failed ({status}): {e.response.text[:200]}") from e
     except httpx.HTTPError as e:
