@@ -51,7 +51,7 @@ export function ApprovalCard({
           </Link>
           <div className="mono mt-0.5 text-[11px] text-text-faint">
             task_{escalation.task_id.slice(0, 8)}
-            {subtask ? ` · subtask #${subtask.position} · ${subtask.assigned_tool ?? "reasoning"}` : " · plan-level"}
+            {subtask ? ` - subtask #${subtask.position} - ${subtask.assigned_tool ?? "model output"}` : " - plan-level"}
           </div>
         </div>
         <div className="mono flex-none text-[11.5px] text-text-muted">{ageLabel(escalation.created_at)}</div>

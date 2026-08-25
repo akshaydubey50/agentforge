@@ -10,6 +10,8 @@ export function taskStatusPill(status: TaskStatus): { kind: "ok" | "run" | "wn" 
       return { kind: "wn", label: "Needs you" };
     case "failed":
       return { kind: "bad", label: "Failed" };
+    case "cancelled":
+      return { kind: "off", label: "Cancelled" };
     default:
       return { kind: "off", label: "Queued" };
   }

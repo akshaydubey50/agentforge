@@ -75,7 +75,7 @@ export function TaskContextPanel({ task, spans }: { task: TaskDetailOut; spans: 
             <div key={s.id} className="mb-1.5 flex items-center gap-2 text-[12px] last:mb-0">
               <span className={cn("h-2 w-2 flex-none rounded-sm", sMeta.dot)} />
               <span className="mono truncate text-text">
-                #{s.position} {s.assigned_tool ?? "reasoning"}
+                #{s.position} {s.assigned_tool ?? "model output"}
               </span>
               <span className="ml-auto flex-none text-[11px] text-text-faint">{sMeta.label}</span>
             </div>

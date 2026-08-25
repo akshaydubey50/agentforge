@@ -24,6 +24,29 @@ export interface IngestResponse {
   results: IngestResultOut[];
 }
 
+export interface AskSourceOut {
+  index: number;
+  filename: string;
+  title: string;
+  text: string;
+  score: number;
+  cited: boolean;
+}
+
+export interface AskResponse {
+  question: string;
+  answer: string;
+  cited_indices: number[];
+  sources: AskSourceOut[];
+  confidence: {
+    retrieval_confidence: number;
+    citation_coverage: number;
+    completeness: number;
+    overall: number;
+  };
+  unsupported_claims: { claim: string; cited_source_numbers: number[]; reasoning: string }[];
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${RAG_API_BASE_URL}${path}`, { ...init, credentials: "include" });
   if (res.status === 401) {
@@ -58,5 +81,12 @@ export const ragApi = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ strategy }),
+    }),
+
+  ask: (question: string) =>
+    request<AskResponse>("/v1/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, strategy: "semantic", top_k: 5, use_reranker: true, sparse_weight: 1.0 }),
     }),
 };

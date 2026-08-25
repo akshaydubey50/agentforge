@@ -4,7 +4,7 @@ export const PURPOSE_LABEL: Record<string, string> = {
   plan: "Planning",
   tool_selection: "Choosing tools",
   review: "Checking answers",
-  reasoning: "Reasoning",
+  reasoning: "Model output",
   synthesize: "Writing the answer",
   subagent_step: "Helper agent steps",
 };

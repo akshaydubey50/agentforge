@@ -178,7 +178,7 @@ export function buildGraph(
         kind: "execute",
         lane: `subtask #${s.position}`,
         title: s.description.length > 42 ? s.description.slice(0, 42) + "…" : s.description,
-        subtitle: s.assigned_tool ?? "reasoning",
+        subtitle: s.assigned_tool ?? "model output",
         role: "specialist",
         statusLabel:
           tone === "done"

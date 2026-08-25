@@ -37,7 +37,7 @@ function IntegrationsContent() {
       <div className="mx-auto max-w-[820px]">
         <h1 className="mb-1.5 text-[17px] font-semibold text-text">Integrations</h1>
         <p className="mb-5.5 text-[12.5px] text-text-faint">
-          Connect external accounts so the agent&apos;s tools can use them. Access is read-only.
+          Connected services and granted scopes. Gmail supports search/read and draft creation where scopes are granted; this UI does not show or imply send email capability.
         </p>
 
         {banner && (
@@ -73,7 +73,7 @@ function IntegrationsContent() {
                   )}
                 </div>
                 <div className="mt-0.5 text-[12px] text-text-muted">
-                  Drive &amp; Gmail search/read for the agent. Google&apos;s consent screen opens in this window.
+                  Drive search/read, Gmail search/read, and Gmail draft creation when the corresponding scopes are present. Google&apos;s consent screen opens in this window.
                 </div>
 
                 {data.connected && data.google_email && (

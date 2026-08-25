@@ -9,7 +9,8 @@ export type TaskStatus =
   | "running"
   | "awaiting_approval"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export type SubtaskStatus =
   | "pending"
@@ -52,6 +53,10 @@ export interface TaskMessageOut {
 export interface TaskDetailOut extends TaskOut {
   subtasks: SubtaskOut[];
   messages: TaskMessageOut[];
+  rolling_summary?: Record<string, unknown> | null;
+  rolling_summary_version?: number;
+  rolling_summary_updated_at?: string | null;
+  rolling_summary_until?: string | null;
 }
 
 export interface EscalationOut {

@@ -131,7 +131,7 @@ export function PipelineGraph({ subtasks }: { subtasks: SubtaskOut[] }) {
                 >
                   <div className="line-clamp-2 font-medium text-text">{s.description}</div>
                   <div className="mt-1.5 flex items-center justify-between text-[10.5px]">
-                    <span className="text-text-faint">{tool ? tool.label : "reasoning"}</span>
+                    <span className="text-text-faint">{tool ? tool.label : "model output"}</span>
                     <span
                       className={cn(
                         "font-bold",

@@ -16,6 +16,7 @@ const STATUS_OPTIONS: { value: TaskStatus | "all"; label: string }[] = [
   { value: "awaiting_approval", label: "Needs you" },
   { value: "completed", label: "Done" },
   { value: "failed", label: "Failed" },
+  { value: "cancelled", label: "Cancelled" },
 ];
 
 export default function RunsPage() {
@@ -35,7 +36,7 @@ export default function RunsPage() {
     <>
       <TopBar
         title="Runs"
-        subtitle="everything the assistant has done"
+        subtitle="execution history and debugging entry point"
         actions={
           <select
             className="rounded-[var(--rs)] border border-border-strong bg-background px-2.5 py-1.5 text-[12.5px] text-text"

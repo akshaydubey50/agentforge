@@ -10,6 +10,7 @@ export const TASK_STATUS_META: Record<TaskStatus, { label: string; dot: string; 
   awaiting_approval: { label: "awaiting_approval", dot: "bg-status-awaiting", text: "text-status-awaiting" },
   completed: { label: "completed", dot: "bg-status-completed", text: "text-status-completed" },
   failed: { label: "failed", dot: "bg-status-failed", text: "text-status-failed" },
+  cancelled: { label: "cancelled", dot: "bg-status-pending", text: "text-status-pending" },
 };
 
 export const SUBTASK_STATUS_META: Record<SubtaskStatus, { label: string; dot: string; text: string; border: string }> = {

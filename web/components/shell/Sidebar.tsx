@@ -1,24 +1,28 @@
 "use client";
 
-// The nav is grouped by what you are trying to do, not by feature list:
-//
-//   WORK    submit and steer tasks          (the operator's surface)
-//   SYSTEM  understand what it did and why  (the builder's surface)
-//   SETUP   connect and configure it
-//
-// Counts live in the nav itself, so system state is readable before clicking
-// anything. They come from one shared /v1/system/summary poll -- the System
-// page uses the same SWR key, so the two surfaces cost a single request
-// between them rather than one each.
-//
-// Collapsing falls back to the original 60px icon rail, so the compact
-// layout is still there for anyone who preferred it; it is now a state
-// rather than the only option.
-
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import useSWR from "swr";
+import {
+  Activity,
+  BarChart3,
+  BookOpen,
+  Brain,
+  Database,
+  FileCheck2,
+  GitBranch,
+  Home,
+  KeyRound,
+  Link2,
+  MemoryStick,
+  Plug,
+  SearchCheck,
+  Settings,
+  Shield,
+  SlidersHorizontal,
+  Wrench,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -30,64 +34,31 @@ type Tone = "default" | "attention";
 
 interface NavItem {
   href: string;
-  glyph: string;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   badge?: string | number | null;
   tone?: Tone;
-  /** Match nested routes (/tasks/abc) as well as the exact path. */
   match?: (pathname: string) => boolean;
 }
 
 function NavRow({ item, collapsed, active }: { item: NavItem; collapsed: boolean; active: boolean }) {
+  const Icon = item.icon;
   const badge =
     item.badge !== null && item.badge !== undefined && item.badge !== 0 && item.badge !== "" ? item.badge : null;
 
-  if (collapsed) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Link
-            href={item.href}
-            className={cn(
-              "relative flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[9px] text-[16px] text-text-faint transition-colors",
-              "hover:bg-surface-3 hover:text-text",
-              active && "bg-surface-3 text-role-supervisor hover:text-role-supervisor"
-            )}
-          >
-            {item.glyph}
-            {badge !== null && (
-              <span
-                className={cn(
-                  "absolute right-[5px] top-[5px] h-[7px] w-[7px] rounded-full",
-                  item.tone === "attention" ? "bg-role-human" : "bg-text-faint"
-                )}
-              />
-            )}
-          </Link>
-        </TooltipTrigger>
-        <TooltipContent side="right">
-          {item.label}
-          {badge !== null && ` — ${badge}`}
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  return (
+  const content = (
     <Link
       href={item.href}
       className={cn(
-        "flex items-center gap-2.5 rounded-[8px] px-2.5 py-[7px] text-[13px] transition-colors",
-        active
-          ? "bg-surface-3 text-text"
-          : "text-text-muted hover:bg-surface-3/60 hover:text-text"
+        "flex items-center gap-2.5 rounded-[8px] text-[13px] transition-colors",
+        collapsed ? "h-[38px] w-[38px] justify-center px-0 py-0" : "px-2.5 py-[7px]",
+        active ? "bg-surface-3 text-text" : "text-text-muted hover:bg-surface-3/60 hover:text-text"
       )}
+      aria-label={item.label}
     >
-      <span className={cn("w-[15px] flex-none text-[13px]", active ? "text-role-supervisor" : "text-text-faint")}>
-        {item.glyph}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{item.label}</span>
-      {badge !== null && (
+      <Icon className={cn("h-4 w-4 flex-none", active ? "text-role-supervisor" : "text-text-faint")} />
+      {!collapsed && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+      {!collapsed && badge !== null && (
         <span
           className={cn(
             "flex-none rounded-full px-1.5 py-0.5 text-[10.5px] font-medium tabular-nums",
@@ -97,7 +68,27 @@ function NavRow({ item, collapsed, active }: { item: NavItem; collapsed: boolean
           {badge}
         </span>
       )}
+      {collapsed && badge !== null && (
+        <span
+          className={cn(
+            "absolute right-[5px] top-[5px] h-[7px] w-[7px] rounded-full",
+            item.tone === "attention" ? "bg-role-human" : "bg-text-faint"
+          )}
+        />
+      )}
     </Link>
+  );
+
+  if (!collapsed) return content;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{content}</TooltipTrigger>
+      <TooltipContent side="right">
+        {item.label}
+        {badge !== null && ` - ${badge}`}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -120,8 +111,7 @@ function UserRailIcon({ collapsed }: { collapsed: boolean }) {
   const avatar = (
     <span className="flex h-[28px] w-[28px] flex-none items-center justify-center overflow-hidden rounded-full bg-surface-3 text-[12px] font-semibold text-text-muted">
       {user.picture_url ? (
-        // eslint-disable-next-line @next/next/no-img-element -- an external
-        // Google-hosted avatar, not a local/optimizable asset.
+        // eslint-disable-next-line @next/next/no-img-element -- Google-hosted avatar.
         <img src={user.picture_url} alt="" className="h-full w-full object-cover" />
       ) : (
         initial
@@ -133,11 +123,11 @@ function UserRailIcon({ collapsed }: { collapsed: boolean }) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <button onClick={logout} disabled={loggingOut} className="transition-opacity hover:opacity-80">
+          <button onClick={logout} disabled={loggingOut} className="transition-opacity hover:opacity-80" aria-label="Sign out">
             {avatar}
           </button>
         </TooltipTrigger>
-        <TooltipContent side="right">{user.name || user.email} — sign out</TooltipContent>
+        <TooltipContent side="right">{user.name || user.email} - sign out</TooltipContent>
       </Tooltip>
     );
   }
@@ -160,12 +150,11 @@ function UserRailIcon({ collapsed }: { collapsed: boolean }) {
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [lastTaskId, setLastTaskId] = useState<string | null>(null);
 
   const { data: summary } = useSWR("system-summary", () => api.getSystemSummary(), {
     refreshInterval: 5000,
   });
-  // Static per deployment -- fetched here only for the model chip under the
-  // wordmark, which answers "which brain is this?" without a trip to Settings.
   const { data: topology } = useSWR("system-topology", () => api.getSystemTopology(), {
     revalidateOnFocus: false,
   });
@@ -174,9 +163,17 @@ export function Sidebar() {
     try {
       setCollapsed(localStorage.getItem(COLLAPSED_STORAGE_KEY) === "1");
     } catch {
-      // localStorage unavailable -- stay expanded
+      // localStorage unavailable; stay expanded.
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      setLastTaskId(localStorage.getItem(LAST_TASK_STORAGE_KEY));
+    } catch {
+      // Workspace just opens without a selected run.
+    }
+  }, [pathname]);
 
   const toggle = () => {
     setCollapsed((value) => {
@@ -190,95 +187,60 @@ export function Sidebar() {
     });
   };
 
-  // The Agent graph needs a task to point at when the user isn't already
-  // looking at one -- task detail pages write their id here on mount, so the
-  // nav can jump back into whichever task was last open instead of
-  // dead-ending at nothing.
-  const [lastTaskId, setLastTaskId] = useState<string | null>(null);
-  useEffect(() => {
-    try {
-      setLastTaskId(localStorage.getItem(LAST_TASK_STORAGE_KEY));
-    } catch {
-      // localStorage unavailable -- Graph just falls back to the task list
-    }
-  }, [pathname]);
-
-  const taskMatch = pathname.match(/^\/tasks\/([^/]+)/);
-  const currentTaskId = taskMatch ? taskMatch[1] : null;
-  const isGraphRoute = pathname.endsWith("/graph");
-  const graphHref = currentTaskId
-    ? `/tasks/${currentTaskId}/graph`
-    : lastTaskId
-      ? `/tasks/${lastTaskId}/graph`
-      : "/tasks";
-
+  const workspaceHref = lastTaskId ? `/workspace?run=${lastTaskId}` : "/workspace";
   const model = topology?.subsystems.find((s) => s.id === "models")?.facts[0]?.value;
 
   const groups: { title: string; items: NavItem[] }[] = [
     {
       title: "Work",
       items: [
-        { href: "/ask", glyph: "✎", label: "Ask" },
-        {
-          href: "/tasks",
-          glyph: "▤",
-          label: "Tasks",
-          badge: summary?.tasks.active,
-          match: (p) => p.startsWith("/tasks") && !p.endsWith("/graph"),
-        },
-        {
-          href: "/approvals",
-          glyph: "!",
-          label: "Approvals",
-          badge: summary?.approvals_pending,
-          tone: "attention",
-        },
-        { href: "/knowledge", glyph: "◫", label: "Knowledge" },
+        { href: "/mission", icon: Home, label: "Mission Control", match: (p) => p === "/" || p.startsWith("/mission") },
+        { href: workspaceHref, icon: GitBranch, label: "Workspace", badge: summary?.tasks.active, match: (p) => p.startsWith("/workspace") },
+        { href: "/runs", icon: SearchCheck, label: "Runs", match: (p) => p.startsWith("/runs") },
+        { href: "/approvals", icon: FileCheck2, label: "Approvals", badge: summary?.approvals_pending, tone: "attention" },
+      ],
+    },
+    {
+      title: "Capabilities",
+      items: [
+        { href: "/knowledge", icon: BookOpen, label: "Knowledge" },
+        { href: "/memory", icon: MemoryStick, label: "Memory", badge: summary?.memory_entries },
+        { href: "/tools", icon: Wrench, label: "Tools", badge: summary?.tools_registered },
+        { href: "/mcp", icon: Plug, label: "MCP" },
+        { href: "/integrations", icon: Link2, label: "Integrations" },
+      ],
+    },
+    {
+      title: "Quality",
+      items: [
+        { href: "/observability", icon: Activity, label: "Observability" },
+        { href: "/evals", icon: BarChart3, label: "Evals" },
+      ],
+    },
+    {
+      title: "Govern",
+      items: [
+        { href: "/policies", icon: SlidersHorizontal, label: "Policies" },
+        { href: "/security", icon: Shield, label: "Security" },
       ],
     },
     {
       title: "System",
-      items: [
-        { href: "/system", glyph: "◉", label: "Overview" },
-        { href: "/runs", glyph: "≡", label: "Runs" },
-        {
-          href: graphHref,
-          glyph: "◈",
-          label: "Agent graph",
-          match: (p) => p.startsWith("/tasks") && p.endsWith("/graph"),
-        },
-        { href: "/memory", glyph: "⬡", label: "Memory", badge: summary?.memory_entries },
-        { href: "/tools", glyph: "⚒", label: "Tools", badge: summary?.tools_registered },
-        { href: "/analytics", glyph: "▨", label: "Analytics" },
-        {
-          href: "/usage",
-          glyph: "$",
-          label: "Usage",
-          badge: summary ? `$${summary.spend.usd.toFixed(2)}` : null,
-        },
-      ],
-    },
-    {
-      title: "Setup",
-      items: [
-        { href: "/integrations", glyph: "⧉", label: "Integrations" },
-        { href: "/settings", glyph: "⚙", label: "Settings" },
-      ],
+      items: [{ href: "/settings", icon: Settings, label: "Settings" }],
     },
   ];
 
-  const isActive = (item: NavItem) =>
-    item.match ? item.match(pathname) : pathname.startsWith(item.href);
+  const isActive = (item: NavItem) => (item.match ? item.match(pathname) : pathname.startsWith(item.href));
 
   return (
     <nav
       className={cn(
         "flex flex-none flex-col border-r border-border bg-rail transition-[width]",
-        collapsed ? "w-[60px] items-center py-4" : "w-[212px] px-3 py-4"
+        collapsed ? "w-[60px] items-center py-4" : "w-[228px] px-3 py-4"
       )}
     >
       <div className={cn("flex items-center", collapsed ? "mb-3.5 justify-center" : "mb-4 gap-2.5 px-1")}>
-        <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-[9px] bg-gradient-to-br from-role-supervisor to-[#6D5AE0] text-[12px] font-bold text-background">
+        <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-[8px] border border-role-supervisor/45 bg-role-supervisor/15 text-[12px] font-bold text-role-supervisor">
           AF
         </span>
         {!collapsed && (
@@ -289,7 +251,7 @@ export function Sidebar() {
                 <TooltipTrigger asChild>
                   <span className="block truncate font-mono text-[10.5px] text-text-faint">{model}</span>
                 </TooltipTrigger>
-                <TooltipContent side="right">Agent model — the reviewer runs on a separate tier</TooltipContent>
+                <TooltipContent side="right">Primary model. Reviewer may use a separate tier.</TooltipContent>
               </Tooltip>
             )}
           </span>
@@ -300,12 +262,12 @@ export function Sidebar() {
         {groups.map((group) => (
           <div key={group.title} className={cn("flex flex-col", collapsed ? "gap-1.5" : "gap-0.5")}>
             {!collapsed && (
-              <div className="px-2.5 pb-1 text-[10px] uppercase tracking-[0.11em] text-text-faint">
-                {group.title}
-              </div>
+              <div className="px-2.5 pb-1 text-[10px] uppercase tracking-[0.11em] text-text-faint">{group.title}</div>
             )}
             {group.items.map((item) => (
-              <NavRow key={item.label} item={item} collapsed={collapsed} active={isActive(item)} />
+              <div key={`${group.title}-${item.label}`} className="relative">
+                <NavRow item={item} collapsed={collapsed} active={isActive(item)} />
+              </div>
             ))}
           </div>
         ))}
@@ -318,10 +280,10 @@ export function Sidebar() {
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className={cn(
             "rounded-[7px] text-[12px] text-text-faint transition-colors hover:bg-surface-3/60 hover:text-text",
-            collapsed ? "h-[26px] w-[26px]" : "px-2.5 py-1 text-left"
+            collapsed ? "h-[28px] w-[28px]" : "px-2.5 py-1 text-left"
           )}
         >
-          {collapsed ? "›" : "‹ Collapse"}
+          {collapsed ? <KeyRound className="mx-auto h-3.5 w-3.5" /> : "Collapse"}
         </button>
       </div>
     </nav>

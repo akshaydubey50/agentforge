@@ -86,7 +86,7 @@ export function GraphInspector({ node, task }: { node: GraphNodeData | null; tas
                 {out.outline && out.outline.length > 0 && (
                   <ul className="mt-2 space-y-1 text-[11.5px] text-text-muted">
                     {out.outline.map((step, i) => (
-                      <li key={i}>· {step}</li>
+                      <li key={i}>- {step}</li>
                     ))}
                   </ul>
                 )}
@@ -106,10 +106,6 @@ export function GraphInspector({ node, task }: { node: GraphNodeData | null; tas
 
       {node.kind === "synthesize" &&
         (() => {
-          // node.spans holds this specific turn's synthesize span (see
-          // buildGraph) -- fall back to task.final_output only for a
-          // single-turn task where that's the same thing, so a multi-turn
-          // task doesn't show turn 2's answer when turn 1's node is selected.
           const turnAnswer = (node.spans[0]?.output as { final_answer?: string } | undefined)?.final_answer;
           const answer = turnAnswer ?? (node.spans.length === 0 && node.tone === "pending" ? null : task.final_output);
           return (
@@ -127,13 +123,11 @@ export function GraphInspector({ node, task }: { node: GraphNodeData | null; tas
 
       {(node.kind === "execute" || node.kind === "sketch") &&
         node.spans.map((span) => (
-          <Section key={span.id} label={span.span_type === "tool_call" ? `Live activity · ${span.name}` : "Live activity"}>
+          <Section key={span.id} label={span.span_type === "tool_call" ? `Live activity - ${span.name}` : "Model output"}>
             <div className="text-[12px] leading-relaxed text-text-muted">
               {span.span_type === "tool_call" && (
                 <>
                   <b className="text-text">{span.name}</b>
-                  {/* humanizeValue, not JSON.stringify -- this panel is read
-                      by a person inspecting a run, not by a debugger. */}
                   <span className="mt-0.5 block whitespace-pre-wrap">{humanizeValue(span.input)}</span>
                 </>
               )}

@@ -1,5 +1,76 @@
 # AgentForge
 
+AgentForge is a production-oriented AI Agent Execution Studio. It makes agent
+behavior visible: the user can give a goal, watch live execution, inspect graph
+nodes, review context and memory, approve external effects, and revisit durable
+execution history after the run completes.
+
+The current product UI is the Next.js Execution Studio in `web/`:
+
+- Mission Control to start or resume work.
+- Workspace with Chat + Live Execution Graph + Inspector + Timeline for one
+  active run.
+- Runs and Run Detail for execution history.
+- Approvals with exact-effect authorization.
+- Knowledge and Memory inspection.
+- Tool, MCP, Integration, Policy, Eval, Observability, Security, and Settings
+  surfaces that expose current backend capability honestly.
+
+```mermaid
+flowchart LR
+  User[User] --> Studio[Execution Studio]
+  Studio --> API[FastAPI agentsys]
+  Studio --> RAG[RAG API]
+  API --> Runtime[Agent runtime]
+  Runtime --> Context[Context engine]
+  Runtime --> Memory[Durable memory]
+  Runtime --> Policy[Policy and approvals]
+  Runtime --> Tools[Native tools and MCP]
+  Runtime --> Ledger[Execution ledger]
+  Runtime --> Verify[Verification]
+  Runtime --> Guardrails[Guardrails]
+  Runtime --> Obs[Observability and evals]
+  Memory --> Chroma[Chroma]
+  RAG --> Knowledge[Knowledge indexes]
+  API --> Postgres[(Postgres)]
+  API --> Redis[(Redis)]
+```
+
+## Portfolio Quick Read
+
+What this demonstrates:
+
+- A continuous agent loop, not a static workflow graph.
+- Durable run state in Postgres; SSE is live narration, not source of truth.
+- Human approval for external or risky effects.
+- Policy-enforced tool execution.
+- Gmail draft creation, not Gmail send.
+- Long-term memory with Chroma plus Postgres metadata.
+- RAG document ingestion, retrieval playground, source scores, and verification.
+- MCP tool discovery with trust gaps surfaced honestly.
+- Context budgeting and rolling-summary support where backend metadata exists.
+- Agent-specific observability, deterministic safety evals, and safe security
+  metadata.
+
+Release/deployment documentation:
+
+- Local run instructions are below.
+- Free portfolio deployment plan: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+- Product UX architecture: [docs/PHASE9A_PRODUCT_UX_ARCHITECTURE.md](docs/PHASE9A_PRODUCT_UX_ARCHITECTURE.md).
+
+Known portfolio limitations:
+
+- Cloud deployment requires a separate API service, worker service, Postgres,
+  Redis, and vector persistence.
+- Free hosts generally do not expose Docker sockets, so `code_execution` should
+  be disabled with `ENABLE_CODE_EXECUTION=false`.
+- RAG and memory persistence require Chroma with persistent disk or a future
+  vector-store migration.
+- DeepEval quality scores are not shown unless eval results are actually run
+  and exposed.
+- Security screens use safe metadata only; raw secrets and attack payloads are
+  intentionally not rendered.
+
 A multi-agent system — a continuous agent loop understands the request, takes one step at a time,
 and decides what's next in light of what it just learned; Specialists execute with tools; a
 Reviewer validates each step — with persistent memory, human-in-the-loop escalation, and full
