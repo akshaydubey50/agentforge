@@ -346,8 +346,8 @@ def get_current_user(request: Request) -> User:
 def get_or_create_system_user(key: str, email: str, name: str) -> str:
     """Get-or-create a synthetic User for infrastructure code that needs a
     real owner_id (Task.owner_id is NOT NULL, see db/models.py) but has no
-    signed-in human behind it -- worker.py's ping_task health check, the
-    eval harness (scripts/run_agent_eval.py). Idempotent: safe to call on
+    signed-in human behind it -- today that is the eval harness
+    (scripts/run_agent_eval.py). Idempotent: safe to call on
     every invocation. google_sub is namespaced with a "system:" prefix so
     it can never collide with a real Google account's sub, and each such
     user is invisible in every real user's dashboard the same way any other

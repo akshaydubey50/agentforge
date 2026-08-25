@@ -98,6 +98,12 @@ app.include_router(events_router)
 app.include_router(artifacts_router)
 
 
+_CELERY_PING_TIMEOUT_S = 2.0
+"""Bounded so a broker with no workers costs a two-second health check, not
+a hung request. Long enough for a worker under normal load to answer on the
+control channel."""
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -105,17 +111,49 @@ def health() -> dict[str, str]:
 
 @app.get("/health/deep")
 def health_deep() -> dict[str, str]:
-    with get_session() as session:
-        session.exec(select(Task).limit(1)).first()
+    """Readiness: are the dependencies reachable? Deliberately READ-ONLY and
+    bounded.
 
-    get_chroma_client().heartbeat()
+    This used to enqueue a real Celery task (`ping_task`) that INSERTED a
+    `Task` row, then blocked up to 15s on the result. Pointed at a load
+    balancer's health check that is unbounded growth in the application's own
+    business table plus a request that can hang a worker thread -- a health
+    check that degrades the thing it is checking (see
+    docs/ARCHITECTURE_AUDIT.md §7.6).
 
-    from agentsys.worker import ping_task
+    `control.ping` is the broker-level equivalent: it asks live workers to
+    answer over the control channel, creating no queue entry, no result row
+    and nothing durable. It proves what readiness actually needs -- a worker
+    is up and consuming -- and it takes a timeout.
 
-    result = ping_task.delay()
-    task_id = result.get(timeout=15)
+    Never 5xx. A degraded dependency is reported in the body with 200 so the
+    caller can distinguish "this endpoint is broken" from "Chroma is down",
+    which an exception would flatten into the same response."""
+    checks: dict[str, str] = {}
 
-    return {"database": "ok", "chroma": "ok", "celery": "ok" if task_id else "failed"}
+    try:
+        with get_session() as session:
+            session.exec(select(func.count()).select_from(Task).limit(1)).first()
+        checks["database"] = "ok"
+    except Exception as exc:  # noqa: BLE001 -- report, don't raise
+        checks["database"] = f"failed: {type(exc).__name__}"
+
+    try:
+        get_chroma_client().heartbeat()
+        checks["chroma"] = "ok"
+    except Exception as exc:  # noqa: BLE001
+        checks["chroma"] = f"failed: {type(exc).__name__}"
+
+    try:
+        from agentsys.worker import celery_app
+
+        replies = celery_app.control.ping(timeout=_CELERY_PING_TIMEOUT_S)
+        checks["celery"] = "ok" if replies else "failed: no workers responded"
+    except Exception as exc:  # noqa: BLE001
+        checks["celery"] = f"failed: {type(exc).__name__}"
+
+    checks["status"] = "ok" if all(v == "ok" for k, v in checks.items() if k != "status") else "degraded"
+    return checks
 
 
 @app.get("/v1/tools")

@@ -36,13 +36,43 @@ class KnowledgeSearchTool(Tool):
         if not question or not question.strip():
             return ToolResult(success=False, error="question must be a non-empty string")
 
+        if not settings.service_token:
+            # Named plainly rather than surfacing as a bare 401 from the
+            # other service: a misconfiguration should say what to set, not
+            # make someone read two codebases to find out.
+            return ToolResult(
+                success=False,
+                error=(
+                    "knowledge search is not configured: SERVICE_TOKEN is unset, so this "
+                    "service cannot authenticate to rag-api. Set the same SERVICE_TOKEN "
+                    "for both services."
+                ),
+            )
+
         try:
             response = httpx.post(
                 f"{settings.rag_api_url}/v1/ask",
                 json={"question": question},
+                # Bearer, not a cookie: this is a worker process with no
+                # browser session. Never logged -- httpx does not log headers,
+                # and the error paths below deliberately report only status.
+                headers={"Authorization": f"Bearer {settings.service_token}"},
                 timeout=60.0,
             )
             response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "knowledge search was refused (401): this service's SERVICE_TOKEN "
+                        "does not match rag-api's. Check both are set to the same value."
+                    ),
+                )
+            return ToolResult(
+                success=False,
+                error=f"knowledge search failed with status {e.response.status_code}",
+            )
         except httpx.HTTPError as e:
             return ToolResult(success=False, error=f"knowledge search request failed: {e}")
 

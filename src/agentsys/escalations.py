@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from agentsys import audit
 from agentsys.db.models import Escalation, EscalationStatus, Subtask, SubtaskStatus, Task, TaskStatus
 from agentsys.db.session import get_session
+from agentsys.memory import short_term
 
 
 class EscalationError(Exception):
@@ -44,6 +45,14 @@ def apply_escalation_decision(
     knows and this layer doesn't — optional, because a CLI or test genuinely
     has neither.
     """
+    # Imported here, not at module scope: agentsys.graph.nodes pulls in the
+    # whole tool registry, and this module is imported by main.py at startup.
+    from agentsys.graph.nodes import (
+        BUDGET_ESCALATION_KIND,
+        UNPRODUCTIVE_FIELD,
+        run_gated_tool_call,
+    )
+
     # Set only on the tool_approval/approve path, where a gated tool actually
     # runs as a direct consequence of the decision.
     gated_tool: tuple[str, bool] | None = None
@@ -79,8 +88,6 @@ def apply_escalation_decision(
                 # running it. "approve" means run it now, using the exact
                 # tool_name/kwargs it was gated with (see that function's
                 # _create_escalation call for how context got populated).
-                from agentsys.graph.nodes import run_gated_tool_call
-
                 tool_name = escalation.context.get("tool_name")
                 call_kwargs = escalation.context.get("kwargs", {})
                 if not tool_name:
@@ -110,6 +117,14 @@ def apply_escalation_decision(
                 task.final_output = f"Rejected by human ({decided_by}): {note}"
             else:  # approve — resume the existing plan as-is
                 task.status = TaskStatus.RUNNING
+                if escalation.kind == BUDGET_ESCALATION_KIND:
+                    # The streak lives in Redis, not in a row, so unlike the
+                    # step and cost budgets it can't be re-derived from
+                    # escalation.decided_at -- it has to be cleared here.
+                    # Without this, approving an unproductive-streak
+                    # escalation resumes into a streak that is still at the
+                    # limit and escalates again on the very next check.
+                    short_term.set_value(escalation.task_id, UNPRODUCTIVE_FIELD, 0)
 
         task.updated_at = datetime.now(timezone.utc)
         session.add(task)

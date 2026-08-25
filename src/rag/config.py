@@ -43,6 +43,20 @@ class Settings(BaseSettings):
     `session:{token}` keys. The two packages still don't import each other
     (see docs/MERGE.md) -- rag/auth.py duplicates the cookie-validation
     logic rather than importing agentsys.auth."""
+    service_token: str = ""
+    """Shared secret proving a caller is agentsys's worker rather than the
+    open internet. Must match agentsys's SERVICE_TOKEN exactly.
+
+    /v1/ask had NO authentication and rag-api publishes a host port, so
+    anyone who could reach it could query the entire knowledge corpus and
+    spend LLM budget, unmetered and unaudited (see
+    docs/ARCHITECTURE_AUDIT.md §7.3).
+
+    Empty means service authentication is IMPOSSIBLE, not disabled -- the
+    endpoint then accepts only a signed-in browser session. Fails closed on
+    purpose: an unset secret must not reopen the hole it was added to
+    close."""
+
     session_cookie_name: str = "af_session"
     session_cookie_secure: bool = False
     """Must match agentsys's setting of the same name -- it decides whether

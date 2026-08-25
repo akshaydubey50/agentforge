@@ -40,6 +40,7 @@ this).
 from __future__ import annotations
 
 import hashlib
+import hmac
 
 import redis
 from fastapi import HTTPException, Request
@@ -75,3 +76,40 @@ def require_session(request: Request) -> str:
     if not user_id:
         raise HTTPException(status_code=401, detail="session expired or invalid")
     return user_id
+
+
+def _presented_service_token(request: Request) -> str | None:
+    """`Authorization: Bearer <token>`. Returns None rather than raising for
+    anything malformed -- a caller with no bearer header is not an error, it
+    is a browser, and gets tried against the session path instead."""
+    header = request.headers.get("authorization") or ""
+    scheme, _, value = header.partition(" ")
+    if scheme.lower() != "bearer" or not value.strip():
+        return None
+    return value.strip()
+
+
+def require_service_or_session(request: Request) -> str:
+    """Gate for /v1/ask, which has two legitimate callers with nothing in
+    common: agentsys's WORKER (server-to-server, no browser, no cookie) and,
+    potentially, a signed-in human. Accepts either, rejects everything else.
+
+    Constant-time comparison via hmac.compare_digest, not `==`: a token
+    checked with ordinary string equality leaks its prefix through timing,
+    and this one is a bearer secret with no expiry.
+
+    The token is NEVER logged or echoed, including in the 401 body -- an
+    error message that repeats what was presented is how a secret ends up in
+    a log aggregator.
+    """
+    presented = _presented_service_token(request)
+    if presented is not None:
+        # `and` order matters: an unset server-side token must never match a
+        # caller who also presents an empty one.
+        if settings.service_token and hmac.compare_digest(presented, settings.service_token):
+            return "service"
+        raise HTTPException(status_code=401, detail="invalid service credential")
+
+    # No bearer header -- fall through to the browser session path, which
+    # 401s on its own if there is no valid cookie either.
+    return require_session(request)

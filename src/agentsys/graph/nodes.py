@@ -10,6 +10,7 @@ from agentsys.cancellation import TaskCancelled, is_cancel_requested
 from agentsys.config import settings
 from agentsys.db.models import (
     Escalation,
+    EscalationStatus,
     LlmCall,
     Review,
     Subtask,
@@ -86,22 +87,28 @@ def _set_task_status(session, task: Task, status: TaskStatus) -> None:
         events.publish(task.id, "task_status", {"status": status.value, "previous": previous.value})
 
 
-_UNPRODUCTIVE_FIELD = "unproductive_streak"
+UNPRODUCTIVE_FIELD = "unproductive_streak"
 
 
-def _task_cost_usd(task_id: str) -> float:
-    """Total spend on this task so far, summed from the LlmCall rows
-    cost.record_llm_call already writes after every call -- the ceiling
-    reuses that record rather than tracking spend a second way."""
+def _task_cost_usd(task_id: str, since: datetime | None = None) -> float:
+    """Spend on this task, summed from the LlmCall rows cost.record_llm_call
+    already writes after every call -- the ceiling reuses that record rather
+    than tracking spend a second way.
+
+    `since` bounds it to the current budget window. Lifetime spend would make
+    the ceiling unresumable: a human approving a cost escalation would be
+    approving a continuation whose very first check re-reads the same
+    already-spent total and escalates again (see _budget_window_start)."""
     with get_session() as session:
-        total = session.exec(
-            select(func.sum(LlmCall.cost_usd)).where(LlmCall.task_id == task_id)
-        ).one()
+        query = select(func.sum(LlmCall.cost_usd)).where(LlmCall.task_id == task_id)
+        if since is not None:
+            query = query.where(LlmCall.created_at >= since)
+        total = session.exec(query).one()
     return float(total or 0.0)
 
 
 def _unproductive_streak(task_id: str) -> int:
-    return int(short_term.get_value(task_id, _UNPRODUCTIVE_FIELD) or 0)
+    return int(short_term.get_value(task_id, UNPRODUCTIVE_FIELD) or 0)
 
 
 def _record_step_productivity(task_id: str, *, productive: bool) -> None:
@@ -110,7 +117,7 @@ def _record_step_productivity(task_id: str, *, productive: bool) -> None:
     means the agent found a way forward, so the budget for exploring should
     reset with it."""
     streak = 0 if productive else _unproductive_streak(task_id) + 1
-    short_term.set_value(task_id, _UNPRODUCTIVE_FIELD, streak)
+    short_term.set_value(task_id, UNPRODUCTIVE_FIELD, streak)
 
 
 def _create_escalation(
@@ -192,6 +199,64 @@ def _turn_start(task_id: str, task_created_at: datetime) -> datetime:
             select(TaskMessage).where(TaskMessage.task_id == task_id).order_by(TaskMessage.created_at.desc())
         ).first()
     return last_message.created_at if last_message else task_created_at
+
+
+def _naive(value: datetime) -> datetime:
+    """These timestamps are compared across three tables and two origins:
+    rows read back from Postgres are naive-UTC (TIMESTAMP WITHOUT TIME ZONE),
+    while a value just written in Python is aware. Comparing the two raises
+    TypeError, which inside the budget check would fail the whole task over a
+    tzinfo mismatch. Normalizing to naive-UTC is the cheap way to make the
+    comparison total."""
+    return value.replace(tzinfo=None) if value.tzinfo is not None else value
+
+
+BUDGET_ESCALATION_KIND = "budget"
+"""The kind covering all four "stop, this has gone far enough" conditions:
+step cap, cost ceiling, unproductive streak, and finishing with no work done.
+Named because escalations.py has to recognise the same set when a human
+approves one."""
+
+
+def _budget_resume_at(task_id: str) -> datetime | None:
+    """When a human last approved a budget escalation for this task.
+
+    This is the fix for the approve/re-escalate loop. Approving a budget
+    escalation set the task RUNNING and re-enqueued it, but nothing moved the
+    window the budget is measured over -- so agent_step_node recomputed the
+    same over-budget count from the same unchanged rows and immediately
+    created another identical escalation. Approving was a no-op that
+    manufactured a new escalation every time.
+
+    Deliberately derived from the Escalation row that already exists rather
+    than from a new column: `decided_at` on the most recent approved budget
+    escalation IS the "you may continue from here" marker, it is already
+    durable in Postgres, and reusing it needs no migration."""
+    with get_session() as session:
+        latest = session.exec(
+            select(Escalation)
+            .where(
+                Escalation.task_id == task_id,
+                Escalation.kind == BUDGET_ESCALATION_KIND,
+                Escalation.status == EscalationStatus.APPROVED,
+            )
+            .order_by(Escalation.decided_at.desc())
+        ).first()
+    return _naive(latest.decided_at) if latest and latest.decided_at else None
+
+
+def _budget_window_start(task_id: str, task: Task) -> datetime:
+    """Where the current budget window begins: the later of this turn's start
+    and the last budget approval.
+
+    Kept separate from _turn_start, which route_entry uses to decide
+    resume-vs-new-turn. Advancing _turn_start itself would make a resumed
+    task look like it had done no work this turn, sending it back through
+    triage -- exactly what route_entry documents must never happen to a
+    resume."""
+    turn_start = _naive(_turn_start(task_id, task.created_at))
+    resume_at = _budget_resume_at(task_id)
+    return max(turn_start, resume_at) if resume_at else turn_start
 
 
 def _gather_conversation_history(task_id: str, task: Task) -> str:
@@ -724,14 +789,17 @@ def agent_step_node(state: AgentState) -> AgentState:
         ).all()
 
     steps_taken = len(existing)
-    turn_start = _turn_start(task_id, task.created_at)
-    steps_taken_this_turn = sum(1 for s in existing if s.created_at >= turn_start)
+    # All three budgets below are measured over the SAME window, so a human
+    # approving any one of them grants a genuine fresh allowance rather than
+    # resuming into the identical guard (see _budget_window_start).
+    window_start = _budget_window_start(task_id, task)
+    steps_taken_this_turn = sum(1 for s in existing if _naive(s.created_at) >= window_start)
     if steps_taken_this_turn >= settings.max_task_steps:
         _create_escalation(
             task_id, None,
             f"Exceeded max_task_steps ({settings.max_task_steps}) without the agent choosing to "
             "finish -- needs human review.",
-            kind="budget",
+            kind=BUDGET_ESCALATION_KIND,
         )
         return {"task_id": task_id, "route": "escalate"}
 
@@ -740,13 +808,13 @@ def agent_step_node(state: AgentState) -> AgentState:
     # they cost -- a few document-sized contexts can outspend a dozen cheap
     # steps. Checked before deciding, so the ceiling is never blown by the
     # very call that discovers it.
-    spent = _task_cost_usd(task_id)
+    spent = _task_cost_usd(task_id, since=window_start)
     if spent >= settings.max_task_cost_usd:
         _create_escalation(
             task_id, None,
             f"Reached the cost ceiling for one task (${spent:.4f} of "
             f"${settings.max_task_cost_usd:.2f}) -- needs human review before spending more.",
-            kind="budget",
+            kind=BUDGET_ESCALATION_KIND,
         )
         return {"task_id": task_id, "route": "escalate"}
 
@@ -759,7 +827,7 @@ def agent_step_node(state: AgentState) -> AgentState:
             task_id, None,
             f"Stopped making progress: {settings.max_unproductive_steps} consecutive steps failed "
             "or repeated a known-dead tool call. Needs a human to redirect the approach.",
-            kind="budget",
+            kind=BUDGET_ESCALATION_KIND,
         )
         return {"task_id": task_id, "route": "escalate"}
 
@@ -791,16 +859,22 @@ def agent_step_node(state: AgentState) -> AgentState:
         _save_plan(task_id, decision.updated_plan, steps_taken)
 
     if decision.next_action == "finish":
-        if steps_taken == 0:
+        if steps_taken == 0 and _budget_resume_at(task_id) is None:
             # Safety net, not expected in normal operation: the model tried
             # to declare the request done without doing any work on a
             # task's very first decision. Treat this like the old
             # "stuck/inconsistent state" escalations rather than let
             # synthesize_node run with zero subtask outputs.
+            #
+            # Suppressed once a human has approved a budget escalation on
+            # this task: steps_taken is LIFETIME, so a task that escalated
+            # here and was approved would arrive back at this same guard with
+            # the same zero and escalate again forever. An approval on this
+            # kind means "yes, finish anyway" -- honour it.
             _create_escalation(
                 task_id, None,
                 "Agent chose to finish before completing any step -- needs human review.",
-                kind="budget",
+                kind=BUDGET_ESCALATION_KIND,
             )
             return {"task_id": task_id, "route": "escalate"}
         return {"task_id": task_id, "route": "synthesize"}

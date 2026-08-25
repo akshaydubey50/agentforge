@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from rag.auth import require_session
+from rag.auth import require_service_or_session, require_session
 from rag.config import settings
 from rag.generation.pipeline import answer_query
 from rag.ingest.chunking import ChunkingStrategy
@@ -175,13 +175,22 @@ def ingest(body: IngestRequest, _user_id: str = Depends(require_session)) -> Ing
 
 
 @app.post("/v1/ask", response_model=AskResponse)
-def ask(body: AskRequest) -> AskResponse:
-    """Deliberately NOT behind require_session: agentsys's knowledge_search
-    tool (src/agentsys/tools/knowledge_search.py) calls this server-to-server
-    from the worker process, with no browser session to present -- see
-    rag/auth.py's module docstring. The browser itself never calls this
-    directly (web/lib/ragApi.ts has no ask() -- only the gated document/
-    ingest endpoints)."""
+def ask(body: AskRequest, _caller: str = Depends(require_service_or_session)) -> AskResponse:
+    """Two legitimate callers, so require_service_or_session rather than
+    require_session: agentsys's knowledge_search tool calls this
+    server-to-server from the WORKER process (bearer token, no cookie), and
+    a signed-in browser could reasonably call it too.
+
+    This endpoint previously had no authentication at all while rag-api
+    published a host port -- anyone who could reach it could query the whole
+    corpus and spend LLM budget. See docs/ARCHITECTURE_AUDIT.md §7.3.
+
+    TENANCY DEBT, unchanged by this fix and deliberately so: rag has no user
+    model, so the corpus is shared across all users and this endpoint cannot
+    scope retrieval to the caller. `_caller` is therefore proof that SOMEONE
+    is authorised, not a filter on WHAT they may retrieve. Closing that
+    needs per-document ownership through ingest, index and retrieval --
+    a redesign, not a Phase-0 change. See §7.2."""
     strategy = _parse_strategy(body.strategy)
     config = RetrievalConfig(
         strategy=strategy,

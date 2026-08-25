@@ -64,20 +64,11 @@ def _recover_stranded_on_boot(**_kwargs) -> None:
         logger.warning("stranded-task recovery on boot failed (continuing anyway): %s", exc)
 
 
-@celery_app.task(name="agentsys.ping_task")
-def ping_task() -> str:
-    from agentsys.auth import get_or_create_system_user
-    from agentsys.db.models import Task, TaskStatus
-    from agentsys.db.session import get_session, init_db
-
-    init_db()
-    owner_id = get_or_create_system_user("health-check", "health-check@agentforge.local", "Health Check")
-    with get_session() as session:
-        task = Task(request_text="ping", status=TaskStatus.COMPLETED, final_output="pong", owner_id=owner_id)
-        session.add(task)
-        session.commit()
-        session.refresh(task)
-        return task.id
+# ping_task was removed here. It existed only for /health/deep, and it
+# INSERTED a real Task row on every call -- so a load balancer polling
+# readiness grew the application's own business table forever. Liveness is
+# now answered by celery_app.control.ping (see main.py's health_deep), which
+# proves a worker is up without writing anything.
 
 
 @celery_app.task(

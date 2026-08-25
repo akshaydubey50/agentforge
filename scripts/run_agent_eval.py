@@ -23,8 +23,7 @@ def main() -> None:
     init_db()
     # Golden tasks need a real owner_id (Task.owner_id is NOT NULL, see
     # db/models.py) but there's no human signing in to run this from a CI
-    # job or a terminal -- same synthetic-user pattern worker.py's
-    # ping_task health check uses.
+    # job or a terminal -- see auth.get_or_create_system_user.
     owner_id = get_or_create_system_user(
         "agent-eval-harness", "agent-eval@agentforge.local", "Agent Eval Harness"
     )

@@ -29,7 +29,44 @@ class Settings(BaseSettings):
     "anthropic/claude-..." (with ANTHROPIC_API_KEY set) is a one-line change,
     not a code change."""
 
+    # --- LLM resilience (see llm.py -- the ONE place retries happen) ---
+    llm_timeout_seconds: int = 60
+    """Per-request timeout passed to litellm. Nothing bounded a single model
+    call before this: a provider holding a socket open was caught only by
+    Celery's 20-minute wall clock, and at --concurrency=4 four hung calls
+    stall the whole worker."""
+    llm_max_attempts: int = 3
+    """Total attempts (not retries) per call, for TRANSIENT failures only --
+    rate limits, timeouts, connection resets, provider 5xx. A permanent
+    error (bad key, malformed request, context window) is raised on the
+    first attempt; a second identical call gets the identical rejection."""
+    llm_backoff_base_seconds: float = 1.0
+    llm_backoff_max_seconds: float = 20.0
+    """Equal-jitter exponential backoff between attempts. A provider's own
+    Retry-After header wins over this when it sends one."""
+    llm_fallback_model: str = ""
+    """Optional. Tried once after transient exhaustion on the primary model,
+    never after a permanent error (which would fail identically anywhere).
+    Empty = off. Chat models only -- embeddings never fall back."""
+
     database_url: str = "postgresql+psycopg://agent:agent@localhost:5432/agentsys"
+    db_query_url: str = ""
+    """Optional separate DSN for the db_query tool, pointing at a role with
+    SELECT on the allowlisted tables and NOTHING else (see
+    scripts/create_readonly_role.sql). This is the only guard that holds if
+    the in-process allowlist below is ever wrong, because it is enforced by
+    Postgres rather than by us. Empty = fall back to database_url, where the
+    allowlist is the sole boundary.
+
+    Not defaulted to a value because the role has to be created by someone
+    with rights to create it -- a default pointing at a role that doesn't
+    exist would break the tool everywhere rather than degrade."""
+    db_query_allowed_tables: str = "sample_metric"
+    """Comma-separated allowlist of relations db_query may read. Enforced by
+    resolving the query's actual relations through EXPLAIN, not by pattern-
+    matching the SQL text (see tools/db_query.py for why the regexes alone
+    were never a boundary)."""
+
     redis_url: str = "redis://localhost:6379/0"
     chroma_host: str = "localhost"
     chroma_port: int = 8001
@@ -39,6 +76,22 @@ class Settings(BaseSettings):
     them, used by tools/knowledge_search.py so the agent can actually use
     documents uploaded to Knowledge. Overridden to the docker-network hostname
     (http://rag-api:8000) in docker-compose.yml for the api/worker containers."""
+
+    service_token: str = ""
+    """Shared secret for server-to-server calls into rag-api's /v1/ask (see
+    tools/knowledge_search.py and rag/auth.py). That endpoint had no
+    authentication at all and is published on a host port, so anyone who
+    could reach it could query the whole corpus and spend LLM budget.
+
+    Empty = the agent presents no service credential, and rag-api rejects
+    the call. Deliberately fails CLOSED: a missing secret must not silently
+    reopen the hole it was added to close."""
+
+    @property
+    def db_query_allowed_tables_set(self) -> frozenset[str]:
+        return frozenset(
+            t.strip().lower() for t in self.db_query_allowed_tables.split(",") if t.strip()
+        )
 
     web_app_url: str = "http://localhost:3000"
     """Where the browser gets sent back to after a Google OAuth

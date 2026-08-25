@@ -56,6 +56,11 @@ UNIT_SUITES = [
     "tests/test_pricing.py",
     "tests/test_spill_loop.py",
     "tests/test_synthesis_redaction.py",
+    # Phase 0. Both verified to pass with Postgres and Redis unreachable and
+    # no API key set -- the provider is mocked in one and never reached in the
+    # other, so they keep tier 1's "free and deterministic" promise.
+    "tests/test_llm_resilience.py",
+    "tests/test_rag_ask_auth.py",
 ]
 
 JUDGE_THRESHOLD = 0.7
