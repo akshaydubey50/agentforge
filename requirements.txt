@@ -36,6 +36,14 @@ docker==7.1.0
 beautifulsoup4==4.12.3
 mcp[cli]==2.0.0
 alembic==1.13.3
+# Pinned explicitly even though chromadb already pulls all three in
+# transitively: agentsys/otel.py imports them directly now, and depending on
+# another package's dependency tree for something you import yourself breaks
+# silently the day that package drops it. Only loaded when
+# OTEL_EXPORTER_OTLP_ENDPOINT is set -- see otel.py.
+opentelemetry-api==1.44.0
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-grpc==1.44.0
 # ^ real migrations for db/models.py, added alongside the User/auth schema
 # work -- init_db()'s create_all() is additive-only and can't backfill a
 # NOT NULL column onto existing rows (see alembic/README in agentsys/db).

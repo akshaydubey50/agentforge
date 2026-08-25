@@ -122,6 +122,15 @@ class Settings(BaseSettings):
     binds every present and future subdomain. Turn on only for a domain
     whose HTTPS posture is settled."""
 
+    otel_exporter_otlp_endpoint: str = ""
+    """Turns on OpenTelemetry export (see otel.py). Empty means off, and off
+    means the SDK is never imported -- a deployment that doesn't want this
+    pays nothing for it. Set to a collector's gRPC endpoint
+    (e.g. http://localhost:4317) to get the same runs as a span tree in
+    Phoenix / Langfuse / Datadog / Jaeger. The standard OTEL_ variable name
+    is used deliberately so the usual tooling picks it up unchanged."""
+    otel_service_name: str = "agentsys"
+
     cors_allowed_origins: str = "http://localhost:3000"
     """Comma-separated, not a JSON list -- a human typing this into a
     deployment platform's env-var UI (Railway, etc.) shouldn't have to get
