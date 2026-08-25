@@ -151,12 +151,26 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
 
     # --- context engineering (see artifacts.py and nodes._gather_prior_context) ---
-    max_tool_output_chars: int = 2_000
+    max_tool_output_chars: int = 12_000
     """Above this, a successful tool result is written to the task workspace
-    and only a preview + pointer goes into the prompt (artifacts.spill).
-    Measured motivation: one 28,783-char Drive read was re-sent in full on
-    every subsequent step of a task, ~43k tokens of pure re-transmission
-    from a single tool call."""
+    and a digest + pointer goes into the prompt instead (artifacts.spill).
+
+    Originally 2,000, set when the measured problem was one 28,783-char Drive
+    read being re-sent in full on every subsequent step -- ~43k tokens of pure
+    re-transmission from a single tool call. But that is the RETRANSMISSION
+    problem, and context_recent_steps_full below now solves it independently
+    by truncating older steps. 2,000 chars is ~500 tokens against a 128k
+    window: it spilled essentially every real document, so the agent almost
+    never held the thing it was asked about. 12,000 (~3k tokens) keeps a
+    normal document whole and still catches the genuinely oversized."""
+    summarize_spilled_output: bool = True
+    """When a result is too large to keep, summarize the WHOLE of it rather
+    than keeping only its opening (artifacts._digest). One cheap call, and it
+    is the difference between the agent knowing what a document contains and
+    knowing what its title page says. Fails open to the preview."""
+    max_digest_input_chars: int = 60_000
+    """Bound on what the summarizer reads, so one pathological result cannot
+    turn into one pathological bill."""
     tool_output_preview_chars: int = 1_200
     """How much of a spilled result stays inline. Enough for the model to
     tell whether it needs the rest (and to answer outright when the head of

@@ -24,10 +24,13 @@ dereferencing a pointer needs nothing special.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 
 from agentsys.config import settings
+
+logger = logging.getLogger(__name__)
 
 ARTIFACT_DIRNAME = "_artifacts"
 
@@ -68,6 +71,8 @@ def spill(task_id: str, subtask_id: str, tool_name: str, output_text: str) -> di
     return {
         "_truncated": True,
         "total_chars": len(output_text),
+        # A digest of the WHOLE thing, not just its opening. See _digest.
+        "summary": _digest(output_text),
         "preview": output_text[: settings.tool_output_preview_chars],
         "full_output_path": relative_path,
         "hint": (
@@ -81,7 +86,48 @@ def spill(task_id: str, subtask_id: str, tool_name: str, output_text: str) -> di
     }
 
 
-_POINTER_KEYS = {"_truncated", "preview", "full_output_path", "hint"}
+_DIGEST_PROMPT = """Summarize the document below for someone who asked about its contents.
+
+Cover what it actually contains across its WHOLE length -- the sections, the topics, the specific facts, figures and names that matter. Do not describe it from the outside ("this document discusses..."); state what it says. Be dense and concrete; no preamble.
+
+Document:
+{text}
+"""
+
+
+def _digest(output_text: str) -> str:
+    """One cheap call that reads the whole result and says what is in it.
+
+    WHY A PREVIEW WAS NOT ENOUGH. Spilling used to put the first 1,200
+    characters into the prompt, which for a real document is its title page.
+    Asked about a 28,783-character interview script, the agent could see the
+    heading and the first question and nothing else -- so the best answer it
+    could give was metadata plus an apology. The loop never held a
+    representation of the document, only its opening.
+
+    A summary is a lossy view of ALL of it; a preview is a lossless view of
+    almost none of it. For deciding what to do next, and for answering, the
+    first is worth far more.
+
+    Fails open to "": the caller still has the preview and the pointer, so a
+    summariser outage costs answer quality, never the result itself.
+    """
+    if not settings.summarize_spilled_output:
+        return ""
+    try:
+        from agentsys.llm import complete
+
+        text, _completion = complete(
+            _DIGEST_PROMPT.format(text=output_text[: settings.max_digest_input_chars]),
+            model=settings.triage_model,
+        )
+        return text.strip()
+    except Exception as exc:  # noqa: BLE001 -- never fail a tool call over this
+        logger.warning("spill digest failed, falling back to preview: %s", exc)
+        return ""
+
+
+_POINTER_KEYS = {"_truncated", "preview", "full_output_path", "hint", "summary"}
 
 
 def for_synthesis(output_text: str | None) -> str:
@@ -98,8 +144,9 @@ def for_synthesis(output_text: str | None) -> str:
     the saved file at the path _artifacts/06b01af8-...json", which is a
     correct sentence addressed to entirely the wrong reader.
 
-    So the preview survives (that is real content) and the mechanics do not.
-    Anything that isn't a spill pointer passes through untouched.
+    The digest (or, failing that, the preview) survives -- that is real
+    content -- and the mechanics do not. Anything that isn't a spill pointer
+    passes through untouched.
     """
     if not output_text:
         return output_text or ""
@@ -110,15 +157,21 @@ def for_synthesis(output_text: str | None) -> str:
     if not isinstance(parsed, dict) or not parsed.get("_truncated"):
         return output_text
 
-    preview = parsed.get("preview", "")
+    # Prefer the digest. It describes the whole result; the preview is only
+    # its opening, which for a real document is the title page. The preview
+    # is still used when there is no digest (see _digest's fail-open).
+    summary = (parsed.get("summary") or "").strip()
+    body = summary or parsed.get("preview", "")
     total = parsed.get("total_chars")
-    note = (
-        f"\n[This result was long ({total} characters); the excerpt above is its "
-        f"beginning.]" if total else ""
-    )
+    if total and summary:
+        note = f"\n[Summarized from a {total}-character result.]"
+    elif total:
+        note = f"\n[This result was long ({total} characters); the excerpt above is its beginning.]"
+    else:
+        note = ""
     # Any sibling keys the tool itself produced (a filename, an id) are kept:
-    # they are genuine content, and only the four plumbing keys are dropped.
+    # they are genuine content, and only the plumbing keys are dropped.
     extra = {k: v for k, v in parsed.items() if k not in _POINTER_KEYS}
     if extra:
-        return f"{json.dumps(extra)}\n{preview}{note}"
-    return f"{preview}{note}"
+        return f"{json.dumps(extra)}\n{body}{note}"
+    return f"{body}{note}"

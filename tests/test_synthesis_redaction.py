@@ -89,3 +89,62 @@ class TestAgainstARealSpill:
         assert pointer["full_output_path"] not in result
         assert "file_io" not in result
         assert "_artifacts" not in result
+
+
+class TestDigestBeatsPreview:
+    """A preview is a lossless view of almost none of the document; a digest
+    is a lossy view of all of it. For answering a question, the second is
+    worth far more -- which is why spilling now summarizes."""
+
+    def test_summary_is_used_in_place_of_the_preview(self):
+        pointer = json.dumps(
+            {
+                "_truncated": True,
+                "total_chars": 28783,
+                "summary": "An interview script covering 12 questions on RAG, evals and system design.",
+                "preview": "INTERVIEW SCRIPT & ANSWER BOOK\nPrepared for:",
+            }
+        )
+        result = for_synthesis(pointer)
+        assert "12 questions on RAG" in result
+        assert "Summarized from a 28783-character result" in result
+
+    def test_falls_back_to_the_preview_when_the_digest_failed(self):
+        """A summarizer outage must cost answer quality, never the result."""
+        pointer = json.dumps(
+            {"_truncated": True, "total_chars": 900, "summary": "", "preview": "the opening words"}
+        )
+        result = for_synthesis(pointer)
+        assert "the opening words" in result
+        assert "beginning" in result
+
+    def test_digest_is_skipped_when_disabled(self, monkeypatch):
+        from agentsys import artifacts
+        from agentsys.config import settings
+
+        monkeypatch.setattr(settings, "summarize_spilled_output", False)
+        assert artifacts._digest("x" * 5000) == ""
+
+    def test_digest_failure_returns_empty_rather_than_raising(self, monkeypatch):
+        from agentsys import artifacts
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("provider down")
+
+        monkeypatch.setattr("agentsys.llm.complete", boom)
+        assert artifacts._digest("x" * 5000) == ""
+
+    def test_digest_input_is_bounded(self, monkeypatch):
+        """One pathological result must not become one pathological bill."""
+        from agentsys import artifacts
+        from agentsys.config import settings
+
+        seen = {}
+
+        def capture(prompt, **kwargs):
+            seen["len"] = len(prompt)
+            return "ok", None
+
+        monkeypatch.setattr("agentsys.llm.complete", capture)
+        artifacts._digest("x" * (settings.max_digest_input_chars * 3))
+        assert seen["len"] < settings.max_digest_input_chars + 2000
