@@ -35,6 +35,10 @@ langchain-core==0.3.9
 docker==7.1.0
 beautifulsoup4==4.12.3
 mcp[cli]==2.0.0
+# Same reasoning as the OTel pins below: litellm already requires jsonschema
+# transitively, but tools/mcp_tool.py now imports it directly to validate a
+# discovered tool's arguments against the schema its server advertises.
+jsonschema==4.26.0
 alembic==1.13.3
 # Pinned explicitly even though chromadb already pulls all three in
 # transitively: agentsys/otel.py imports them directly now, and depending on

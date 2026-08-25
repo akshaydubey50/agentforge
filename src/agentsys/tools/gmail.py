@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.integrations.google_oauth import GoogleOAuthError, get_valid_access_token
 from agentsys.sanitize import wrap_untrusted
@@ -47,8 +48,20 @@ def _decode_body(payload: dict) -> str:
     return walk(payload) or ""
 
 
+class GmailSearchArgs(BaseModel):
+    """user_id decides WHOSE mailbox this reads. It is injected from the task's
+    owner and is deliberately not a field, here and in every other Google tool
+    -- it is the per-user isolation boundary, not an argument."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(description="Gmail search syntax, e.g. 'from:jane@acme.com invoice'.")
+    max_results: int = Field(default=_MAX_RESULTS, ge=1, le=50)
+
+
 class GmailSearchTool(Tool):
     name = "gmail_search"
+    args_model = GmailSearchArgs
     description = (
         "Searches the connected Gmail account and returns matching messages' senders, "
         "subjects, dates, snippets, and ids -- read-only, cannot send, reply, or "
@@ -115,8 +128,15 @@ class GmailSearchTool(Tool):
         return ToolResult(success=True, output={"messages": messages})
 
 
+class GmailReadArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message_id: str = Field(description="An id from a gmail_search result.")
+
+
 class GmailReadTool(Tool):
     name = "gmail_read"
+    args_model = GmailReadArgs
     description = (
         "Reads one full email message from the connected Gmail account by its id (get "
         "ids from gmail_search first). Read-only. Arguments: message_id (str, required). "

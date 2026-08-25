@@ -250,7 +250,7 @@ That matters because the safety machinery has therefore never been exercised
 against the thing it exists for, and several load-bearing pieces turn out to
 be absent when you look for them.
 
-### 5.1 No typed tool contracts
+### 5.1 No typed tool contracts — *closed in Phase 1*
 
 Tool arguments are described in **prose**, inside the `description` string the
 LLM reads. The model emits `tool_input_json` as free text. `_execute_subtask`
@@ -398,7 +398,7 @@ Celery task and a single `graph.invoke`. A resume is a fresh trace on
 prefork child for its entire duration and the OTel trace fragments at every
 human decision.
 
-**R8 — `json.loads` failure degrades to `{}`.** In `_execute_subtask`, a
+**R8 — `json.loads` failure degrades to `{}`.** *(closed in Phase 1)* In `_execute_subtask`, a
 malformed `tool_input_json` results in the tool being called with **no
 arguments** rather than the call being rejected. For a read tool that is a
 confusing error; for a write tool it is an unpredictable one.
@@ -703,15 +703,53 @@ on these):
 - **§9.2's "`llm.py`: 2 lines" estimate was the only materially wrong sizing
   in the plan.** Every other Phase-0 estimate held.
 
-### Phase 1 — typed tool args
+### Phase 1 — typed tool args — **DONE**
 
-7. `args_model` + `risk` on `Tool`; one model per tool
-8. Validate in `_execute_subtask`; delete the `TypeError` catch and the
-   `json.loads` → `{}` fallback
-9. JSON Schema into the prompt alongside the prose description
+7. ~~`args_model` on `Tool`; one model per tool~~ — `risk` deliberately NOT
+   added; it is Phase 2's, and a field with no reader is dead schema
+8. ~~Validate in `_execute_subtask`; delete the `json.loads` → `{}` fallback~~
+9. ~~JSON Schema into the prompt alongside the prose description~~
 
-*Exit: no unvalidated kwargs reach a tool. Battery tool-precision unchanged or
-better.*
+*Exit criteria met: no unvalidated kwargs reach a tool — one gate
+(`tools/base.py`'s `validated_kwargs`) covers both execution seams, all 15
+registered tools expose a schema, and the battery is 6/7 both before and after
+(the one failure, `reasoning_no_tool`, reproduces identically on a clean tree:
+gpt-4o-mini reaches for `code_execution` to compute 15% of 240).*
+
+**Corrections found while implementing:**
+
+- **The `TypeError` catch was kept, not deleted.** It is no longer reachable
+  for a validated local tool, but it is still the only guard for the two
+  `**kwargs` tools whose contract isn't a local pydantic model: an MCP tool
+  trusting a third party's schema, and `generate_tweet`'s deliberate
+  `extra="allow"`. Deleting it would trade a failed `ToolResult` for a
+  crashed graph run in exactly the case the audit didn't consider.
+- **§5.1 understated the plumbing hole.** The injected kwargs were
+  `setdefault`, so the model's value won whenever it supplied one — including
+  `task_id` (which task's sandbox `file_io` writes to). Only `user_id` was
+  assigned unconditionally. Ordering, not typing, is what fixes this: the args
+  model has no field for them, and `_injected_kwargs` is applied *after*
+  validation.
+- **A live defect fell out of writing the contracts.** `kwargs.setdefault(
+  "task_id", ...)` was applied to all five Google tools, but only
+  `google_photos_pick` has a `task_id` parameter — so every `gmail_*` and
+  `google_drive_*` call has been failing on "invalid arguments" since the
+  Photos picker landed (`e8c619a`). The new
+  `run signature == args model ∪ injected keys` test is what catches this
+  class.
+- **There are two execution seams, not one.** `delegate_subagent` has its own
+  loop with its own `json.loads(...) → {}` and its own, shorter plumbing table
+  — which knew nothing about `user_id`, so a sub-agent calling `gmail_search`
+  could never work. Both now share `validated_kwargs` and `_injected_kwargs`.
+- **MCP tools need no pydantic models.** They already advertise JSON Schema, so
+  `MCPTool` overrides `validate_args` and checks against it with `jsonschema`
+  (already a hard litellm dependency). Two limits stated in the code: an empty
+  advertised schema gets no local check, and `additionalProperties` is the
+  server's call, not ours.
+- **Model-level docstrings must be stripped from the generated schema.**
+  Pydantic puts an args model's class docstring in the JSON Schema
+  `description`, which would have put maintainer rationale into every prompt —
+  the exact failure `mcp_servers/company_internal.py` warns about.
 
 ### Phase 2 — policy
 

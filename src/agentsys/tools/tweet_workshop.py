@@ -23,7 +23,7 @@ style in one place.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys import cost
 from agentsys.config import settings
@@ -117,8 +117,27 @@ class TweetEvaluation(BaseModel):
         return (2 if self.has_strong_hook else 0) + (1 if self.trend_or_meme_aware else 0) - (1 if self.resembles_existing else 0)
 
 
+class TweetWorkshopArgs(BaseModel):
+    """The one first-party tool that ALLOWS extra arguments instead of
+    forbidding them, deliberately.
+
+    run() already folds stray string kwargs (angle=, tone=, topic=) into the
+    brief rather than losing them -- that behaviour exists because the model
+    reliably produces them and the alternative was a TypeError and an
+    escalation. Forbidding extras here would re-break exactly that, and this
+    tool is not action-capable: it writes text and returns it, so the
+    fail-closed argument that applies to file_io or code_execution doesn't.
+    Anything action-capable should forbid extras.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    brief: str | None = Field(default=None, description="What the tweet should be about, plus any angle/voice notes.")
+
+
 class TweetWorkshopTool(Tool):
     name = "generate_tweet"
+    args_model = TweetWorkshopArgs
     description = (
         "Generates a high-quality, shareable tweet via a generate -> evaluate -> optimize loop: "
         "it drafts a tweet, a stricter editor scores it against a fixed quality rubric "

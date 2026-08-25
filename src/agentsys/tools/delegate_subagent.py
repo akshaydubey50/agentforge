@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from agentsys import cost
 from agentsys.config import settings
 from agentsys.db.models import SubAgentRun, SubAgentRunStatus
@@ -25,11 +27,22 @@ from agentsys.graph.prompts import SUBAGENT_STEP_PROMPT
 from agentsys.graph.schemas import SubAgentStep
 from agentsys.graph.tracing import span
 from agentsys.llm import structured_complete
-from agentsys.tools.base import Tool, ToolResult
+from agentsys.tools.base import Tool, ToolResult, ToolValidationError, validated_kwargs
+
+
+class DelegateSubagentArgs(BaseModel):
+    """goal is the only argument the model owns. task_id/subtask_id/depth are
+    injected -- depth especially: it is the recursion bound, so a proposal that
+    could set it could delegate its way past settings.max_delegation_depth."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    goal: str = Field(description="What the sub-agent should accomplish, usually the subtask description restated.")
 
 
 class DelegateSubagentTool(Tool):
     name = "delegate_subagent"
+    args_model = DelegateSubagentArgs
     description = (
         "Hands this subtask's goal to a sub-agent that can make several tool calls in "
         "sequence, inspecting each result before deciding what to do next -- unlike a normal "
@@ -46,6 +59,10 @@ class DelegateSubagentTool(Tool):
     )
 
     def run(self, goal: str, task_id: str, subtask_id: str, depth: int = 1) -> ToolResult:
+        # Both imported inside run() for the same reason get_registry is: this
+        # tool is registered BY the registry and its calls are dispatched BY
+        # the graph, so either at module scope would close an import cycle.
+        from agentsys.graph.nodes import _injected_kwargs
         from agentsys.tools.registry import get_registry
 
         with get_session() as session:
@@ -57,12 +74,8 @@ class DelegateSubagentTool(Tool):
 
         registry = get_registry()
         can_delegate_further = depth < settings.max_delegation_depth
-        available_tools = [
-            t for t in registry.list_tools() if can_delegate_further or t["name"] != self.name
-        ]
-        tool_descriptions = (
-            "\n".join(f"- {t['name']}: {t['description']}" for t in available_tools)
-            or "(no tools available)"
+        tool_descriptions = registry.describe(
+            exclude=frozenset() if can_delegate_further else frozenset({self.name})
         )
 
         step_lines: list[str] = []
@@ -94,16 +107,24 @@ class DelegateSubagentTool(Tool):
                 step_lines.append(f"{step_num}. tried '{tool_name}' -- not available, skipped")
                 continue
 
+            # Same validation gate and the same plumbing table as the main
+            # loop's _execute_subtask -- this is the second and only other
+            # place an LLM-proposed call becomes real kwargs, and it had the
+            # same `except: kwargs = {}` hole. Injected values go on after
+            # validation, so a sub-agent cannot set its own depth and delegate
+            # its way past settings.max_delegation_depth.
             try:
-                kwargs = json.loads(decision.tool_input_json or "{}")
-            except json.JSONDecodeError:
-                kwargs = {}
-            if tool_name == "file_io":
-                kwargs.setdefault("task_id", task_id)
-            elif tool_name == self.name:
-                kwargs.setdefault("task_id", task_id)
-                kwargs.setdefault("subtask_id", subtask_id)
-                kwargs.setdefault("depth", depth + 1)
+                kwargs = validated_kwargs(
+                    registry.get(tool_name),
+                    decision.tool_input_json,
+                    defaults={"goal": goal} if tool_name == self.name else None,
+                    injected=_injected_kwargs(tool_name, task_id, subtask_id, depth=depth + 1),
+                )
+            except ToolValidationError as exc:
+                # Rejected, not run. The sub-agent sees why and can fix the
+                # arguments on its next step.
+                step_lines.append(f"{step_num}. {exc}")
+                continue
 
             try:
                 result = registry.get(tool_name).run(**kwargs)

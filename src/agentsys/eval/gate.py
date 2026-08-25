@@ -61,6 +61,10 @@ UNIT_SUITES = [
     # other, so they keep tier 1's "free and deterministic" promise.
     "tests/test_llm_resilience.py",
     "tests/test_rag_ask_auth.py",
+    # Phase 1. Pure: instantiates tools directly rather than through the
+    # registry (no MCP subprocess, no Google config probe) and stubs the one
+    # owner lookup, so it needs no Postgres, no Redis and no API key.
+    "tests/test_tool_contracts.py",
 ]
 
 JUDGE_THRESHOLD = 0.7

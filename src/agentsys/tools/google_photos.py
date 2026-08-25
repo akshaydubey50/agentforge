@@ -22,6 +22,8 @@ can't-follow-the-pointer shape that broke the Drive read path.
 
 from __future__ import annotations
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from agentsys.integrations import google_photos as api
 from agentsys.memory import short_term
 from agentsys.tools.base import Tool, ToolResult
@@ -29,8 +31,16 @@ from agentsys.tools.base import Tool, ToolResult
 _SESSION_FIELD = "photos_picker_session"
 
 
+class GooglePhotosPickArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(description="A short, specific sentence shown to the user explaining what to pick and why.")
+    max_items: int = Field(default=20, ge=1, le=100)
+
+
 class GooglePhotosPickTool(Tool):
     name = "google_photos_pick"
+    args_model = GooglePhotosPickArgs
     description = (
         "Asks the user to choose photos or videos from their Google Photos library, then "
         "returns what they chose. Arguments: reason (str, required) -- a short, specific "

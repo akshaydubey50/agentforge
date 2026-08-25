@@ -13,6 +13,7 @@ act on it, exactly like a rate-limited web_search.
 from __future__ import annotations
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.integrations.google_oauth import GoogleOAuthError, get_valid_access_token
 from agentsys.sanitize import wrap_untrusted
@@ -22,8 +23,16 @@ _DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
 _MAX_RESULTS = 10
 
 
+class GoogleDriveSearchArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(description="Plain words to look for in file names and contents.")
+    max_results: int = Field(default=_MAX_RESULTS, ge=1, le=100)
+
+
 class GoogleDriveTool(Tool):
     name = "google_drive_search"
+    args_model = GoogleDriveSearchArgs
     description = (
         "Searches the connected Google Drive account for files by name or content and "
         "returns their names, types, and IDs -- read-only, cannot modify or delete "
@@ -88,8 +97,15 @@ class GoogleDriveTool(Tool):
         return ToolResult(success=True, output={"files": files})
 
 
+class GoogleDriveReadArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    file_id: str = Field(description="An id from a google_drive_search result.")
+
+
 class GoogleDriveReadTool(Tool):
     name = "google_drive_read"
+    args_model = GoogleDriveReadArgs
     description = (
         "Reads the text contents of one file in the connected Google Drive account, "
         "by its file id (get ids from google_drive_search first). Read-only. Google "

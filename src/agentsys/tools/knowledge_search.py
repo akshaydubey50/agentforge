@@ -7,13 +7,21 @@ one back. This is what closes that gap.
 """
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
 from agentsys.tools.base import Tool, ToolResult
 
 
+class KnowledgeSearchArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(description="A full natural-language question, not a bare name or keyword.")
+
+
 class KnowledgeSearchTool(Tool):
     name = "knowledge_search"
+    args_model = KnowledgeSearchArgs
     description = (
         "Answers a question using documents uploaded to Knowledge -- runs real hybrid "
         "search (not a keyword match) plus grounded generation with citations. Use this "

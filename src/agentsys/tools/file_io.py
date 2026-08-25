@@ -3,14 +3,31 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
 from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.base import Tool, ToolResult
 
 
+class FileIOArgs(BaseModel):
+    """task_id is absent on purpose: it selects WHICH task's sandbox this call
+    is confined to, so it is injected from the running task (graph/nodes.py's
+    _injected_kwargs) and is not something the model may name. It used to be a
+    setdefault, which meant a proposal supplying task_id won."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["read", "write", "list"]
+    path: str = Field(description="Relative path within the task workspace -- no leading slash, no '..'.")
+    content: str | None = Field(default=None, description="Required for action='write', ignored otherwise.")
+
+
 class FileIOTool(Tool):
     name = "file_io"
+    args_model = FileIOArgs
     description = (
         "Reads, writes, or lists files inside this task's sandboxed workspace directory. "
         "Arguments: action (str, required, one of 'read'/'write'/'list'), "

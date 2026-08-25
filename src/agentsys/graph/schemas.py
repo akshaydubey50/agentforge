@@ -59,8 +59,10 @@ class NextStepDecision(BaseModel):
     )
     tool_input_json: str | None = Field(
         default=None,
-        description="A JSON object (as a string) with exactly the keyword arguments that "
-        "tool's run() expects. Required when next_action is 'act' and tool_name isn't 'none'.",
+        description="A JSON object (as a string) satisfying the chosen tool's argument schema -- "
+        "every required property, correct types, no property the schema does not list. Arguments "
+        "that fail it are rejected before the tool runs. Required when next_action is 'act' and "
+        "tool_name isn't 'none'.",
     )
     updated_plan: list[str] | None = Field(
         default=None,
@@ -78,7 +80,7 @@ class NextStepDecision(BaseModel):
 class ToolChoice(BaseModel):
     tool_name: str
     tool_input_json: str = Field(
-        description="A JSON object (as a string) with exactly the keyword arguments that tool's run() expects."
+        description="A JSON object (as a string) satisfying the chosen tool's argument schema."
     )
     rationale: str
 
@@ -96,8 +98,8 @@ class SubAgentStep(BaseModel):
     )
     tool_input_json: str | None = Field(
         default=None,
-        description="A JSON object (as a string) with exactly the keyword arguments that "
-        "tool's run() expects. Required when next_action is 'call_tool'.",
+        description="A JSON object (as a string) satisfying the chosen tool's argument schema. "
+        "Required when next_action is 'call_tool'.",
     )
     final_answer: str | None = Field(
         default=None, description="Required when next_action is 'finish'."

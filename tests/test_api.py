@@ -53,10 +53,18 @@ def test_browser_facing_endpoints_require_a_session():
     assert client.get("/v1/documents").status_code == 401
 
 
-def test_ask_stays_open_for_server_to_server_callers():
-    """/v1/ask is deliberately NOT gated: agentsys's knowledge_search tool
-    calls it from the worker, which has no browser session to present (see
-    rag/auth.py's module docstring). A 400 here means it got past auth and
-    rejected the strategy on its merits."""
-    response = client.post("/v1/ask", json={"question": "test", "strategy": "not_a_real_strategy"})
+def test_ask_rejects_an_unknown_strategy():
+    """What happens PAST the gate: a 400 means the request got through
+    authentication and was then rejected on its merits, before any retrieval.
+
+    /v1/ask used to be ungated entirely, and this test presented no
+    credential at all. Phase 0 closed that (audit §7.3) -- it now takes
+    either a service token or a browser session (rag/auth.py's
+    require_service_or_session). Whether that gate holds is
+    tests/test_rag_ask_auth.py's subject and is not restated here; a signed-in
+    client is used because it is the branch this file already has a helper
+    for, and the one test_rag_ask_auth.py does not exercise."""
+    response = _signed_in_client().post(
+        "/v1/ask", json={"question": "test", "strategy": "not_a_real_strategy"}
+    )
     assert response.status_code == 400

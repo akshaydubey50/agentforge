@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 import re
 
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -116,8 +117,21 @@ def _denied(relation: str) -> bool:
     return relation in _ALWAYS_DENIED or any(s in relation for s in _DENIED_SUBSTRINGS)
 
 
+class DbQueryArgs(BaseModel):
+    """Shape only. WHAT the SQL is allowed to touch stays where it already is
+    -- the three-layer guard in run() (statement-kind regexes, an EXPLAIN-based
+    relation allowlist, and a restricted Postgres role). A type check cannot
+    tell a SELECT on sample_metric from one on googleconnection, and a second,
+    weaker copy of that decision here is exactly the drift Phase 0 closed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sql: str
+
+
 class DbQueryTool(Tool):
     name = "db_query"
+    args_model = DbQueryArgs
     description = (
         "Runs a read-only SQL SELECT query against the seeded sample business "
         "database (table: sample_metric, columns: id, company, quarter, revenue_usd, "

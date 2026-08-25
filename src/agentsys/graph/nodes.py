@@ -46,15 +46,76 @@ from agentsys.graph.tracing import span
 from agentsys.llm import complete, structured_complete
 from agentsys.memory import long_term, short_term
 from agentsys.sanitize import scrub_nul
-from agentsys.tools.base import ToolResult
+from agentsys.tools.base import ToolResult, ToolValidationError, validated_kwargs
 from agentsys.tools.registry import get_registry
 
 logger = logging.getLogger(__name__)
 
+_GOOGLE_TOOLS = (
+    "gmail_search", "gmail_read", "google_drive_search", "google_drive_read", "google_photos_pick",
+)
+
 
 def _tool_descriptions() -> str:
-    tools = get_registry().list_tools()
-    return "\n".join(f"- {t['name']}: {t['description']}" for t in tools) or "(no tools available)"
+    return get_registry().describe()
+
+
+def _injected_kwargs(tool_name: str, task_id: str, subtask_id: str, depth: int = 1) -> dict:
+    """The arguments the RUNTIME owns for this call.
+
+    One table for both execution seams: this loop and the delegate_subagent
+    tool's own loop, which used to carry a shorter, divergent copy that knew
+    about file_io and itself but not about the Google tools' user_id -- so a
+    sub-agent calling gmail_search produced a missing-argument error rather
+    than a search. `depth` is the only thing that differs between them.
+
+    Applied after validation (see tools/base.py's validated_kwargs), so a
+    proposal that names one of these is overwritten rather than honoured.
+    These were previously kwargs.setdefault(...) applied to the raw parsed
+    JSON, which means the model's value won whenever it supplied one -- and
+    two of them are security boundaries, not plumbing: user_id decides whose
+    connected Gmail/Drive/Photos a call acts as, task_id decides which task's
+    sandbox file_io is confined to.
+    """
+    if tool_name == "file_io":
+        return {"task_id": task_id}
+    if tool_name == "generate_tweet":
+        # Injected so the tool's internal generate/evaluate/optimize steps
+        # write real TraceSpans and book their cost against this task.
+        return {"task_id": task_id, "subtask_id": subtask_id}
+    if tool_name == "delegate_subagent":
+        return {"task_id": task_id, "subtask_id": subtask_id, "depth": depth}
+    if tool_name in _GOOGLE_TOOLS:
+        with get_session() as session:
+            owner_id = session.get(Task, task_id).owner_id
+        injected = {"user_id": owner_id}
+        if tool_name == "google_photos_pick":
+            # ONLY the picker: it survives a pause by remembering its session
+            # against the task (see tools/google_photos.py). The other four
+            # Google tools take no task_id, and injecting one into them passed
+            # an argument their run() has no parameter for -- every gmail_* and
+            # google_drive_* call has been failing on "invalid arguments" since
+            # the picker landed, because this was one setdefault for all five.
+            injected["task_id"] = task_id
+        return injected
+    return {}
+
+
+def _rejected_call(task_id: str, subtask_id: str, tool_name: str, proposed: str | None, reason: str) -> str:
+    """Record a proposed call that deterministic validation refused, and return
+    the observation the agent loop should reason about next.
+
+    On the trace as a tool_call span with status=error, so a refusal is as
+    visible as a failure. Deliberately NOT a ToolCall row: that table records
+    calls that actually happened, and a rejected proposal is not an effect."""
+    with span(
+        task_id, "tool_call", tool_name, subtask_id=subtask_id,
+        input={"proposed_arguments": proposed},
+    ) as s:
+        s["output"] = {"rejected": reason}
+        s["status"] = "error"
+    _record_step_productivity(task_id, productive=False)
+    return f"Tool call rejected before it ran: {reason}"
 
 
 def _check_cancelled(task_id: str) -> None:
@@ -449,11 +510,14 @@ def _run_tool_call(task_id: str, subtask_id: str, tool_name: str, kwargs: dict) 
         try:
             result = registry.get(tool_name).run(**kwargs)
         except TypeError as exc:
-            # The specialist's LLM call can construct arguments that don't
-            # match the tool's actual signature (wrong/missing kwarg name).
-            # That's a fixable mistake, not a system failure — surface it
-            # as a failed ToolResult so the reviewer can reject-and-retry
-            # with the corrected signature, instead of crashing the graph.
+            # A backstop now, not the primary guard: every proposed call is
+            # validated against the tool's args_model before reaching here
+            # (see validated_kwargs), so a plain kwarg mismatch can no longer
+            # get this far. What still can is a **kwargs tool whose contract
+            # isn't a local pydantic model -- an MCP tool trusting a third
+            # party's schema, or generate_tweet's deliberate extra="allow".
+            # Surface it as a failed ToolResult so the reviewer can
+            # reject-and-retry, instead of crashing the graph.
             result = ToolResult(success=False, error=f"invalid arguments for {tool_name}: {exc}")
         # A tool result can carry a NUL byte from a scraped page or a read
         # file; scrub before any of it reaches a JSONB/text column below.
@@ -520,7 +584,13 @@ def run_gated_tool_call(task_id: str, subtask_id: str, tool_name: str, kwargs: d
     on a tool_approval escalation -- actually executes the tool call that
     was held at the gate in _execute_subtask below, using the exact
     tool_name/kwargs stored in Escalation.context (see the gate's
-    _create_escalation call)."""
+    _create_escalation call).
+
+    Not re-validated here, deliberately: these kwargs are the ones that came
+    out of validated_kwargs before the gate, complete with injected plumbing,
+    and a second pass would now reject task_id/user_id as unknown fields. The
+    stored dict is a validated call, and what a human approved is that exact
+    call -- re-deriving it would be approving one thing and running another."""
     return _run_tool_call(task_id, subtask_id, tool_name, kwargs)
 
 
@@ -578,111 +648,114 @@ def _execute_subtask(
         cost.record_llm_call(task_id, subtask_id, "tool_selection", completion)
 
     tool_success = True
-    if choice.tool_name and choice.tool_name != "none" and choice.tool_name in registry.names():
+    tool = registry.get(choice.tool_name) if choice.tool_name in registry.names() else None
+    if choice.tool_name and choice.tool_name != "none" and tool is None:
+        # UNKNOWN TOOL. Kept distinct from a validation failure and from a
+        # runtime failure: the fix is a different tool_name, not different
+        # arguments and not a different approach. It used to fall through to
+        # the reasoning branch below, so a step that had explicitly asked for
+        # a tool was quietly answered out of the model's own head instead.
+        tool_success = False
+        output_text = _rejected_call(
+            task_id, subtask_id, choice.tool_name, choice.tool_input_json,
+            f"unknown tool '{choice.tool_name}'. Available tools: {', '.join(registry.names())}",
+        )
+    elif tool is not None:
         try:
-            kwargs = json.loads(choice.tool_input_json)
-        except json.JSONDecodeError:
-            kwargs = {}
-        if choice.tool_name == "file_io":
-            kwargs.setdefault("task_id", task_id)
-        elif choice.tool_name == "generate_tweet":
-            # Injected so the tool's internal generate/evaluate/optimize steps
-            # write real TraceSpans and book their cost against this task.
-            kwargs.setdefault("task_id", task_id)
-            kwargs.setdefault("subtask_id", subtask_id)
-        elif choice.tool_name == "delegate_subagent":
-            kwargs.setdefault("goal", description)
-            kwargs.setdefault("task_id", task_id)
-            kwargs.setdefault("subtask_id", subtask_id)
-            kwargs.setdefault("depth", 1)
-        elif choice.tool_name in (
-            "gmail_search", "gmail_read", "google_drive_search", "google_drive_read",
-            "google_photos_pick",
-        ):
-            # user_id decides whose connected Gmail/Drive/Photos the call acts
-            # as -- injected from the task's owner, never left for the LLM to
-            # supply, the same reasoning as task_id/subtask_id above but
-            # security-sensitive rather than just plumbing.
-            with get_session() as session:
-                kwargs["user_id"] = session.get(Task, task_id).owner_id
-            # The picker survives a pause by remembering its session against
-            # the task (see tools/google_photos.py), so it needs task_id too.
-            kwargs.setdefault("task_id", task_id)
-
-        if registry.get(choice.tool_name).needs_approval(kwargs):
-            # Gate BEFORE the tool ever runs -- unlike the other three
-            # escalation kinds (plan/review/budget), which all react to an
-            # outcome that already happened, this one heads it off. See
-            # run_gated_tool_call below for what "approve" actually does on
-            # resume, and escalations.apply_escalation_decision for why that
-            # can't just be "mark this subtask DONE" like the others.
-            with get_session() as session:
-                subtask = session.get(Subtask, subtask_id)
-                subtask.assigned_tool = choice.tool_name
-                subtask.status = SubtaskStatus.ESCALATED
-                subtask.output = f"Awaiting human approval to run '{choice.tool_name}'."
-                session.add(subtask)
-                session.commit()
-            _create_escalation(
-                task_id, subtask_id,
-                f"Tool '{choice.tool_name}' performs a side-effecting action and requires approval "
-                f"before it runs. Proposed call: {json.dumps(kwargs)}",
-                kind="tool_approval",
-                context={"tool_name": choice.tool_name, "kwargs": kwargs},
+            kwargs = validated_kwargs(
+                tool,
+                choice.tool_input_json,
+                # goal is the model's to choose but has a sensible runtime
+                # fallback, so it goes in BEFORE validation where a proposed
+                # value still wins -- unlike the injected plumbing below.
+                defaults={"goal": description} if choice.tool_name == "delegate_subagent" else None,
+                injected=_injected_kwargs(choice.tool_name, task_id, subtask_id),
             )
-            return None  # sentinel: gated, agent_step_node must not call _review_subtask
-
-        if deadcalls.is_dead(task_id, choice.tool_name, kwargs):
-            # This exact call already failed earlier in this task. Running it
-            # again costs a real API call to get the identical error -- on the
-            # run that motivated this, the same unreadable .docx and .zip were
-            # each retried a second time, four wasted steps out of eleven.
+        except ToolValidationError as exc:
+            # MALFORMED JSON or SCHEMA FAILURE -- the exception message says
+            # which, and names the field. Nothing ran. This replaces
+            # `except JSONDecodeError: kwargs = {}`, which did not reject a
+            # bad proposal at all: it called the tool with no arguments and
+            # let every default stand in for whatever the model meant.
             tool_success = False
-            output_text = (
-                f"Tool call skipped: this exact {choice.tool_name} call already failed earlier in "
-                f"this task and was not retried. Try a different approach or a different input -- "
-                f"repeating it will not produce a different result."
+            output_text = _rejected_call(
+                task_id, subtask_id, choice.tool_name, choice.tool_input_json, str(exc)
             )
         else:
-            tool_success, output_text = _run_tool_call(task_id, subtask_id, choice.tool_name, kwargs)
-
-            # A tool can ask for a human MID-CALL, which the approval gate
-            # above cannot express: that one pauses BEFORE running, on the
-            # question "may I?". This one pauses AFTER, because the tool has
-            # produced something only a person can act on -- a picker URL, a
-            # consent link, a device code. Generic on purpose; Google Photos
-            # is just the first caller.
-            awaiting = _awaiting_human(output_text)
-            if awaiting:
+            if tool.needs_approval(kwargs):
+                # Gate BEFORE the tool ever runs -- unlike the other three
+                # escalation kinds (plan/review/budget), which all react to an
+                # outcome that already happened, this one heads it off. See
+                # run_gated_tool_call below for what "approve" actually does on
+                # resume, and escalations.apply_escalation_decision for why that
+                # can't just be "mark this subtask DONE" like the others.
                 with get_session() as session:
                     subtask = session.get(Subtask, subtask_id)
                     subtask.assigned_tool = choice.tool_name
                     subtask.status = SubtaskStatus.ESCALATED
-                    subtask.output = awaiting.get("reason") or "Waiting on a person."
+                    subtask.output = f"Awaiting human approval to run '{choice.tool_name}'."
                     session.add(subtask)
                     session.commit()
                 _create_escalation(
-                    task_id, subtask_id, awaiting.get("reason") or "This step needs you.",
-                    kind=awaiting.get("kind", "human_action"),
-                    context=awaiting.get("context", {}),
+                    task_id, subtask_id,
+                    f"Tool '{choice.tool_name}' performs a side-effecting action and requires approval "
+                    f"before it runs. Proposed call: {json.dumps(kwargs)}",
+                    kind="tool_approval",
+                    context={"tool_name": choice.tool_name, "kwargs": kwargs},
                 )
-                # Same sentinel as the approval gate: nothing to review, and
-                # approving re-runs the tool, which is why a tool using this
-                # must be idempotent across the pause.
-                return None
+                return None  # sentinel: gated, agent_step_node must not call _review_subtask
 
-        # A step is unproductive when it errored OR when it succeeded at
-        # something already done. The second half used to be invisible: one
-        # real task made 13 successful, near-identical file_io reads and only
-        # the step budget stopped it, because every guard keyed on failure.
-        repeated = tool_success and deadcalls.record_success(task_id, choice.tool_name, kwargs)
-        if repeated:
-            output_text = (
-                f"{output_text}\n\n[Note: this exact {choice.tool_name} call was already made "
-                f"earlier in this task and returned the same result. Use what you already have "
-                f"rather than fetching it again.]"
-            )
-        _record_step_productivity(task_id, productive=tool_success and not repeated)
+            if deadcalls.is_dead(task_id, choice.tool_name, kwargs):
+                # This exact call already failed earlier in this task. Running it
+                # again costs a real API call to get the identical error -- on the
+                # run that motivated this, the same unreadable .docx and .zip were
+                # each retried a second time, four wasted steps out of eleven.
+                tool_success = False
+                output_text = (
+                    f"Tool call skipped: this exact {choice.tool_name} call already failed earlier in "
+                    f"this task and was not retried. Try a different approach or a different input -- "
+                    f"repeating it will not produce a different result."
+                )
+            else:
+                tool_success, output_text = _run_tool_call(task_id, subtask_id, choice.tool_name, kwargs)
+
+                # A tool can ask for a human MID-CALL, which the approval gate
+                # above cannot express: that one pauses BEFORE running, on the
+                # question "may I?". This one pauses AFTER, because the tool has
+                # produced something only a person can act on -- a picker URL, a
+                # consent link, a device code. Generic on purpose; Google Photos
+                # is just the first caller.
+                awaiting = _awaiting_human(output_text)
+                if awaiting:
+                    with get_session() as session:
+                        subtask = session.get(Subtask, subtask_id)
+                        subtask.assigned_tool = choice.tool_name
+                        subtask.status = SubtaskStatus.ESCALATED
+                        subtask.output = awaiting.get("reason") or "Waiting on a person."
+                        session.add(subtask)
+                        session.commit()
+                    _create_escalation(
+                        task_id, subtask_id, awaiting.get("reason") or "This step needs you.",
+                        kind=awaiting.get("kind", "human_action"),
+                        context=awaiting.get("context", {}),
+                    )
+                    # Same sentinel as the approval gate: nothing to review, and
+                    # approving re-runs the tool, which is why a tool using this
+                    # must be idempotent across the pause.
+                    return None
+
+            # A step is unproductive when it errored OR when it succeeded at
+            # something already done. The second half used to be invisible: one
+            # real task made 13 successful, near-identical file_io reads and only
+            # the step budget stopped it, because every guard keyed on failure.
+            repeated = tool_success and deadcalls.record_success(task_id, choice.tool_name, kwargs)
+            if repeated:
+                output_text = (
+                    f"{output_text}\n\n[Note: this exact {choice.tool_name} call was already made "
+                    f"earlier in this task and returned the same result. Use what you already have "
+                    f"rather than fetching it again.]"
+                )
+            _record_step_productivity(task_id, productive=tool_success and not repeated)
     else:
         with span(task_id, "reasoning", "specialist_reason", subtask_id=subtask_id, input={"description": description}) as s:
             prompt = REASONING_ONLY_PROMPT.format(

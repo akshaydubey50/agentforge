@@ -35,7 +35,7 @@ so if what you've actually learned suggests a different, better, fewer, or addit
 the plan currently lists, change the plan and do that instead. Revising the plan as you learn is \
 exactly the point — following a stale plan blindly when the evidence says otherwise is the mistake.
 
-Available tools:
+Available tools (each entry: what it does, then the JSON Schema its arguments must satisfy):
 {tool_descriptions}
 
 That list is the complete set of things you can do. If the request needs a capability that \
@@ -74,8 +74,8 @@ Then decide your next step:
   random or simulated outcome, a database row, anything external — you MUST pick a tool that can \
   obtain it. You cannot produce such a value by thinking about it, and guessing one is a failure, \
   not an answer. If you choose a real tool, tool_input_json must be a valid JSON object string \
-  with exactly the keyword arguments that tool expects; if tool_name is "none", set \
-  tool_input_json to "{{}}".
+  satisfying that tool's argument schema above -- every required property, correct types, and no \
+  property the schema does not list; if tool_name is "none", set tool_input_json to "{{}}".
 - finish: choose this only once the request has actually been fully addressed by the steps \
   you've already taken — not because the plan above has been exhausted, and not just because \
   you're ready to stop. Do not finish before taking at least one act step. If the request needs \
@@ -110,9 +110,9 @@ the current date or time, a random or simulated outcome, a database row, anythin
 MUST pick a tool that can obtain it. You cannot produce such a value by thinking about it, and \
 guessing one is a failure, not an answer. If the user named a specific tool, use that tool.
 
-If you choose a real tool, tool_input_json must be a valid JSON object string with exactly the \
-keyword arguments that tool expects. If no tool is needed, set tool_name to "none" and \
-tool_input_json to "{{}}"."""
+If you choose a real tool, tool_input_json must be a valid JSON object string satisfying that \
+tool's argument schema above -- every required property, correct types, and no property the \
+schema does not list. If no tool is needed, set tool_name to "none" and tool_input_json to "{{}}"."""
 
 
 REASONING_ONLY_PROMPT = """You are a specialist agent completing a subtask with no external tool \
@@ -181,8 +181,8 @@ What you've done so far this run (may be empty on your first step):
 {step_history}
 
 Decide your next step:
-- call_tool: set tool_name and tool_input_json (a valid JSON object string with exactly the \
-  keyword arguments that tool expects)
+- call_tool: set tool_name and tool_input_json (a valid JSON object string satisfying that \
+  tool's argument schema above -- arguments that do not are rejected before the tool runs)
 - finish: set final_answer to your complete answer to the goal, using only what you actually \
   found via your tool calls above — do not invent a result you never retrieved
 

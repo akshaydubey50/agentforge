@@ -49,10 +49,11 @@ import logging
 import os
 from typing import Any
 
+import jsonschema
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from agentsys.tools.base import Tool, ToolResult
+from agentsys.tools.base import Tool, ToolResult, ToolValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,14 @@ class MCPTool(Tool):
         self.server_name = server_name
         self.server_config = server_config
         self.remote_tool_name = remote_tool.name
+        # The argument contract, straight from the server. An MCP tool already
+        # ships machine-readable JSON Schema, so there is nothing to translate:
+        # wrapping every discovered tool in a hand-written pydantic model would
+        # mean writing code for tools this repo has never seen, which is the
+        # opposite of what discovery is for. args_model stays None and
+        # validate_args below checks against this instead -- same invariant
+        # (nothing reaches run() unvalidated), different source of truth.
+        self.input_schema = getattr(remote_tool, "input_schema", None) or {}
         # Namespaced so two servers exposing a "search" tool can coexist, and so
         # provenance is obvious in the trace explorer and analytics tables.
         self.name = f"mcp_{server_name}_{remote_tool.name}"
@@ -178,9 +187,37 @@ class MCPTool(Tool):
         base_desc = " ".join((remote_tool.description or "").split())
         base_desc = base_desc or f"{remote_tool.name} (via MCP)"
         self.description = (
-            f"{base_desc} {_describe_schema(getattr(remote_tool, 'input_schema', None))} "
+            f"{base_desc} {_describe_schema(self.input_schema)} "
             f"[provided by the '{server_name}' MCP server]"
         )
+
+    def args_schema(self) -> dict | None:
+        return self.input_schema or None
+
+    def validate_args(self, proposed: dict) -> dict:
+        """Validated against the server's own advertised schema.
+
+        Two honest limits, stated rather than papered over. A server that
+        advertises no schema (or an empty one) gets no local check -- there is
+        nothing to check against, and inventing constraints for a third party's
+        tool would reject calls the server would have accepted. And a schema
+        that doesn't set additionalProperties:false permits extra arguments,
+        because that is what the server said it permits; the fail-closed choice
+        belongs to whoever wrote the tool. In both cases the server validates
+        again on its side, so this is the first of two checks, not the only one.
+        """
+        if not self.input_schema:
+            return dict(proposed)
+        try:
+            jsonschema.validate(proposed, self.input_schema)
+        except jsonschema.ValidationError as exc:
+            field = ".".join(str(part) for part in exc.absolute_path) or None
+            raise ToolValidationError(self.name, exc.message, field) from exc
+        except jsonschema.SchemaError as exc:
+            # A malformed schema is the server's bug, but it must not be a
+            # licence to call the tool unvalidated.
+            raise ToolValidationError(self.name, f"server advertised an invalid schema: {exc.message}") from exc
+        return dict(proposed)
 
     def run(self, **kwargs) -> ToolResult:
         try:

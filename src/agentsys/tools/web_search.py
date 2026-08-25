@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
 from agentsys.llm import complete
@@ -222,8 +223,22 @@ def _duckduckgo_search(query: str, max_results: int, _retries: int = 1) -> ToolR
     return ToolResult(success=True, output={"results": results})
 
 
+class WebSearchArgs(BaseModel):
+    """extra="forbid" here and on every other first-party args model below:
+    an argument this tool never reads is a misunderstanding on the model's
+    part, and silently dropping it hides that -- the classic version of this
+    is a max_results typed as max_result and quietly ignored, which reads as
+    "the tool ignored my limit" rather than "I named it wrong"."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    max_results: int = Field(default=5, ge=1, le=25)
+
+
 class WebSearchTool(Tool):
     name = "web_search"
+    args_model = WebSearchArgs
     description = (
         "Searches the web and returns a list of titles, URLs, and snippets: "
         "{results: [{title, url, snippet}, ...]}. "

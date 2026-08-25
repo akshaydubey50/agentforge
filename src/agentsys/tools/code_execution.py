@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import docker
 import docker.errors
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
 from agentsys.tools.base import Tool, ToolResult
@@ -52,8 +53,21 @@ PIDS_LIMIT = 64
 KILL_GRACE_S = 5
 
 
+class CodeExecutionArgs(BaseModel):
+    """timeout_s is bounded here rather than in run(): it is a container wait,
+    so an unbounded value from the model would hold a prefork worker child for
+    as long as it liked. 300s is well past any legitimate sandbox script and
+    still short of the worker's own wall clock."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(description="A Python script. Runs as a script, not a REPL -- print() what you want to see.")
+    timeout_s: int = Field(default=10, ge=1, le=300)
+
+
 class CodeExecutionTool(Tool):
     name = "code_execution"
+    args_model = CodeExecutionArgs
     requires_approval = True
     """Every call executes arbitrary code -- gated behind human approval
     regardless of arguments (see Tool.requires_approval/needs_approval in
