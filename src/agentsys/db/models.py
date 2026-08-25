@@ -152,6 +152,11 @@ class Subtask(SQLModel, table=True):
     description: str
     depends_on: list[str] = Field(default_factory=list, sa_column=Column(JSONB))
     assigned_tool: str | None = None
+    success_criteria: str | None = None
+    """Optional, compact postcondition for Phase 4 verification. This is not a
+    plan table and not a dependency graph; it is only the current subtask's
+    expected outcome, e.g. `file_exists: report.txt`, `result_count >= 5`, or
+    `semantic` when deterministic verification cannot decide."""
     status: SubtaskStatus = Field(default=SubtaskStatus.PENDING)
     output: str | None = None
     attempt_count: int = Field(default=0)

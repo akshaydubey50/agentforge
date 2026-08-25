@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 from sqlmodel import select
 
-from agentsys import artifacts, audit, cost, deadcalls, events, execution, policy
+from agentsys import artifacts, audit, cost, deadcalls, events, execution, policy, verification
 from agentsys.cancellation import TaskCancelled, is_cancel_requested
 from agentsys.config import settings
 from agentsys.db.models import (
@@ -18,11 +18,13 @@ from agentsys.db.models import (
     Task,
     TaskMessage,
     TaskStatus,
+    ToolCall,
     TraceSpan,
 )
 from agentsys.db.session import get_session
 from agentsys.graph.prompts import (
     AGENT_STEP_PROMPT,
+    GOAL_VERIFICATION_PROMPT,
     QUICK_REPLY_PROMPT,
     MEMORY_REFLECTION_PROMPT,
     REASONING_ONLY_PROMPT,
@@ -33,6 +35,7 @@ from agentsys.graph.prompts import (
     TRIAGE_PROMPT,
 )
 from agentsys.graph.schemas import (
+    GoalVerificationOutput,
     MemoryReflection,
     NextStepDecision,
     ReviewOutput,
@@ -48,6 +51,7 @@ from agentsys.policy import ActionType, PolicyDecision, PolicyDecisionType
 from agentsys.sanitize import scrub_nul
 from agentsys.tools.base import ToolValidationError, validated_kwargs
 from agentsys.tools.registry import get_registry
+from agentsys.verification import VerificationRoute
 
 logger = logging.getLogger(__name__)
 
@@ -273,13 +277,21 @@ def _gather_prior_context(task_id: str, current_subtask_id: str | None = None) -
     and any output big enough to matter was already spilled to a file the
     agent can re-read on demand (see artifacts.spill)."""
     with get_session() as session:
-        done = session.exec(
+        prior = session.exec(
             select(Subtask)
-            .where(Subtask.task_id == task_id, Subtask.status == SubtaskStatus.DONE)
+            .where(
+                Subtask.task_id == task_id,
+                Subtask.status.in_((  # type: ignore[attr-defined]
+                    SubtaskStatus.DONE,
+                    SubtaskStatus.FAILED,
+                    SubtaskStatus.ESCALATED,
+                    SubtaskStatus.SKIPPED,
+                )),
+            )
             .order_by(Subtask.position)
         ).all()
 
-    relevant = [s for s in done if s.id != current_subtask_id]
+    relevant = [s for s in prior if s.id != current_subtask_id]
     if not relevant:
         return "(no prior context yet)"
 
@@ -293,7 +305,8 @@ def _gather_prior_context(task_id: str, current_subtask_id: str | None = None) -
                 f"… [truncated, {len(output)} chars total — this is an earlier step; "
                 f"its full output is still available if a later step needs it]"
             )
-        lines.append(f"- {subtask.description}: {output}")
+        label = "done" if subtask.status == SubtaskStatus.DONE else subtask.status.value
+        lines.append(f"- [{label}] {subtask.description}: {output}")
 
     return "\n".join(lines)
 
@@ -1022,17 +1035,118 @@ def _execute_subtask(
     return tool_success
 
 
+def _latest_tool_call(subtask_id: str) -> ToolCall | None:
+    with get_session() as session:
+        return session.exec(
+            select(ToolCall)
+            .where(ToolCall.subtask_id == subtask_id)
+            .order_by(ToolCall.created_at.desc())
+        ).first()
+
+
+def _record_review_row(subtask_id: str, *, score: int, verdict: str, feedback: str) -> None:
+    with get_session() as session:
+        session.add(Review(subtask_id=subtask_id, score=score, verdict=verdict, feedback=feedback))
+        session.commit()
+
+
+def _verify_subtask(task_id: str, subtask_id: str, tool_success: bool) -> verification.VerificationResult:
+    with get_session() as session:
+        subtask = session.get(Subtask, subtask_id)
+        latest_call = _latest_tool_call(subtask_id)
+
+    with span(
+        task_id,
+        "verification",
+        "verify_subtask",
+        subtask_id=subtask_id,
+        input={
+            "success_criteria": subtask.success_criteria,
+            "tool_success": tool_success,
+            "tool": subtask.assigned_tool,
+        },
+    ) as s:
+        result = verification.verify_step(task_id, subtask, latest_call, tool_success=tool_success)
+        s["output"] = result.model_dump()
+        s["status"] = "ok" if result.route in (VerificationRoute.PASS, VerificationRoute.REVIEW) else "error"
+    return result
+
+
+def _append_verification_failure(output: str | None, result: verification.VerificationResult) -> str:
+    base = output or ""
+    note = f"[verification] {result.route.value}: {result.reason}"
+    return f"{base}\n{note}" if base else note
+
+
 def _review_subtask(task_id: str, subtask_id: str, tool_success: bool) -> str:
     """Reviewer: validate the specialist's output. Returns the next step for
     agent_step_node's own retry loop to act on: "agent_step" (pass, this
     step is done -- the loop moves on to its next decide-next-step call),
     "execute" (reject-and-revise, under the retry cap), or "escalate"
     (reject exhausted, or the reviewer says this isn't fixable by a retry)."""
+    verification_result = _verify_subtask(task_id, subtask_id, tool_success)
     with get_session() as session:
         subtask = session.get(Subtask, subtask_id)
         description, output, tool_used, attempt_count = (
             subtask.description, subtask.output, subtask.assigned_tool, subtask.attempt_count
         )
+
+    if verification_result.route == VerificationRoute.PASS:
+        _record_review_row(subtask_id, score=5, verdict="pass", feedback=verification_result.reason)
+        with get_session() as session:
+            subtask = session.get(Subtask, subtask_id)
+            subtask.status = SubtaskStatus.DONE
+            session.add(subtask)
+            session.commit()
+        _record_step_productivity(task_id, productive=True)
+        return "agent_step"
+
+    if verification_result.route == VerificationRoute.RETRY:
+        _record_review_row(subtask_id, score=1, verdict="reject", feedback=verification_result.reason)
+        _record_step_productivity(task_id, productive=False)
+        with get_session() as session:
+            subtask = session.get(Subtask, subtask_id)
+            subtask.output = _append_verification_failure(subtask.output, verification_result)
+            if attempt_count < settings.max_subtask_retries:
+                subtask.status = SubtaskStatus.NEEDS_REVISION
+                route = "execute"
+            else:
+                subtask.status = SubtaskStatus.ESCALATED
+                _create_escalation(
+                    task_id, subtask_id,
+                    f"Verification retry exhausted after {attempt_count} attempt(s): {verification_result.reason}",
+                    kind="verification",
+                )
+                route = "escalate"
+            session.add(subtask)
+            session.commit()
+        return route
+
+    if verification_result.route == VerificationRoute.REPLAN:
+        latest_call = _latest_tool_call(subtask_id)
+        if latest_call is not None:
+            deadcalls.record_failure(task_id, latest_call.tool_name, latest_call.input)
+        _record_review_row(subtask_id, score=1, verdict="reject", feedback=verification_result.reason)
+        _record_step_productivity(task_id, productive=False)
+        with get_session() as session:
+            subtask = session.get(Subtask, subtask_id)
+            subtask.status = SubtaskStatus.FAILED
+            subtask.output = _append_verification_failure(subtask.output, verification_result)
+            session.add(subtask)
+            session.commit()
+        return "agent_step"
+
+    if verification_result.route in (VerificationRoute.REQUIRE_HUMAN, VerificationRoute.FAIL):
+        _record_review_row(subtask_id, score=1, verdict="escalate", feedback=verification_result.reason)
+        _record_step_productivity(task_id, productive=False)
+        with get_session() as session:
+            subtask = session.get(Subtask, subtask_id)
+            subtask.status = SubtaskStatus.ESCALATED
+            subtask.output = _append_verification_failure(subtask.output, verification_result)
+            session.add(subtask)
+            session.commit()
+        _create_escalation(task_id, subtask_id, verification_result.reason, kind="verification")
+        return "escalate"
 
     with span(task_id, "review", "reviewer_validate", subtask_id=subtask_id, input={"output": output}) as s:
         prompt = REVIEW_PROMPT.format(
@@ -1192,7 +1306,22 @@ def agent_step_node(state: AgentState) -> AgentState:
                 kind=BUDGET_ESCALATION_KIND,
             )
             return {"task_id": task_id, "route": "escalate"}
-        return {"task_id": task_id, "route": "synthesize"}
+        goal_result = _verify_goal_before_synthesis(task_id, task, existing)
+        if goal_result.route == VerificationRoute.PASS:
+            return {"task_id": task_id, "route": "synthesize"}
+        _record_step_productivity(task_id, productive=False)
+        if goal_result.route == VerificationRoute.REPLAN:
+            _create_goal_verification_failure(task_id, steps_taken, goal_result.reason)
+            return {"task_id": task_id, "route": "agent_step"}
+        if goal_result.route == VerificationRoute.REQUIRE_HUMAN:
+            _create_escalation(task_id, None, goal_result.reason, kind="verification")
+            return {"task_id": task_id, "route": "escalate"}
+        _create_escalation(
+            task_id, None,
+            f"Goal verification failed before synthesis: {goal_result.reason}",
+            kind="verification",
+        )
+        return {"task_id": task_id, "route": "escalate"}
 
     # next_action == "act"
     with get_session() as session:
@@ -1201,6 +1330,7 @@ def agent_step_node(state: AgentState) -> AgentState:
             position=steps_taken,
             description=decision.subtask_description or "(no description provided)",
             depends_on=[],
+            success_criteria=decision.success_criteria,
             status=SubtaskStatus.RUNNING,
         )
         session.add(subtask)
@@ -1344,6 +1474,84 @@ def escalate_node(state: AgentState) -> AgentState:
     return {"task_id": task_id}
 
 
+def _subtask_outputs_for_prompt(subtasks) -> str:
+    return "\n".join(
+        f"{i + 1}. [{s.status.value}] {s.description}\n"
+        f"   -> {artifacts.for_synthesis(s.output) or '(skipped/failed)'}"
+        for i, s in enumerate(subtasks)
+    )
+
+
+def _create_goal_verification_failure(task_id: str, position: int, reason: str) -> None:
+    with get_session() as session:
+        session.add(
+            Subtask(
+                task_id=task_id,
+                position=position,
+                description="Goal verification before final synthesis",
+                depends_on=[],
+                success_criteria="goal_completed",
+                status=SubtaskStatus.FAILED,
+                output=f"[goal verification] {reason}",
+            )
+        )
+        session.commit()
+
+
+def _verify_goal_before_synthesis(task_id: str, task: Task, subtasks) -> verification.VerificationResult:
+    deterministic = verification.verify_goal(task_id, task.request_text, list(subtasks))
+    with span(
+        task_id,
+        "verification",
+        "verify_goal",
+        input={"method": deterministic.method},
+    ) as s:
+        if deterministic.route != VerificationRoute.REVIEW:
+            s["output"] = deterministic.model_dump()
+            s["status"] = "ok" if deterministic.verified else "error"
+            return deterministic
+
+        conversation = _gather_conversation_history(task_id, task)
+        prompt = GOAL_VERIFICATION_PROMPT.format(
+            request=task.request_text,
+            conversation=conversation,
+            subtask_outputs=_subtask_outputs_for_prompt(subtasks),
+        )
+        goal_review, completion = structured_complete(
+            prompt, GoalVerificationOutput, model=settings.reviewer_llm_model
+        )
+        cost.record_llm_call(task_id, None, "goal_verification", completion)
+        if not isinstance(goal_review, GoalVerificationOutput):
+            result = verification.VerificationResult(
+                verified=False,
+                reason="Goal verification returned an invalid schema; replanning instead of treating finish as success.",
+                needs_replan=True,
+                route=VerificationRoute.REPLAN,
+                method="llm",
+            )
+            s["output"] = result.model_dump()
+            s["status"] = "error"
+            return result
+        route = (
+            VerificationRoute.PASS
+            if goal_review.verified
+            else VerificationRoute.REQUIRE_HUMAN if goal_review.needs_human
+            else VerificationRoute.REPLAN if goal_review.needs_replan
+            else VerificationRoute.FAIL
+        )
+        result = verification.VerificationResult(
+            verified=goal_review.verified,
+            reason=goal_review.reason,
+            needs_replan=goal_review.needs_replan,
+            needs_human=goal_review.needs_human,
+            route=route,
+            method="llm",
+        )
+        s["output"] = result.model_dump()
+        s["status"] = "ok" if result.verified else "error"
+        return result
+
+
 def synthesize_node(state: AgentState) -> AgentState:
     """Supervisor: combine subtask outputs into the final answer, and record
     an episodic memory of how this task went for future planning."""
@@ -1358,10 +1566,8 @@ def synthesize_node(state: AgentState) -> AgentState:
     # Spill plumbing is stripped here and only here: agent_step needs the
     # pointer to decide whether to go and fetch the rest, while synthesis
     # writes for a human who has no workspace -- see artifacts.for_synthesis.
-    outputs = "\n".join(
-        f"{i + 1}. {s.description}\n   -> {artifacts.for_synthesis(s.output) or '(skipped/failed)'}"
-        for i, s in enumerate(subtasks)
-    )
+    completed = [s for s in subtasks if s.status == SubtaskStatus.DONE]
+    outputs = _subtask_outputs_for_prompt(completed)
     conversation = _gather_conversation_history(task_id, task)
 
     with span(task_id, "synthesize", "supervisor_synthesize", input={"request": request_text}) as s:

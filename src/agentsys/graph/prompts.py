@@ -75,7 +75,10 @@ Then decide your next step:
   obtain it. You cannot produce such a value by thinking about it, and guessing one is a failure, \
   not an answer. If you choose a real tool, tool_input_json must be a valid JSON object string \
   satisfying that tool's argument schema above -- every required property, correct types, and no \
-  property the schema does not list; if tool_name is "none", set tool_input_json to "{{}}".
+  property the schema does not list; if tool_name is "none", set tool_input_json to "{{}}". \
+  When the step has an obvious machine-checkable success condition, set success_criteria compactly: \
+  `file_exists: report.txt`, `content_matches`, `result_count >= 5`, `exit_code == 0`, or \
+  `output_contains: expected text`. Use `semantic` when only the reviewer can judge completion.
 - finish: choose this only once the request has actually been fully addressed by the steps \
   you've already taken — not because the plan above has been exhausted, and not just because \
   you're ready to stop. Do not finish before taking at least one act step. If the request needs \
@@ -213,6 +216,20 @@ document and offer to go further, in plain language.
 Original request: {request}
 
 Subtask outputs (all subtasks done so far this task, including earlier turns):
+{subtask_outputs}"""
+
+
+GOAL_VERIFICATION_PROMPT = """Verify whether the completed work satisfies the user's current goal.
+
+Use only the request and subtask outputs below. Do not invent missing work. If a file/action/result
+was requested but the outputs do not show it was completed, verified=false. If more agent work could
+plausibly fix the gap, set needs_replan=true. If a person is required because the system lacks a
+capability or the outcome is unknowable, set needs_human=true.
+
+Request: {request}
+{conversation}
+
+Completed/recorded subtask outputs:
 {subtask_outputs}"""
 
 

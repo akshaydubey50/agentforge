@@ -64,6 +64,13 @@ class NextStepDecision(BaseModel):
         "that fail it are rejected before the tool runs. Required when next_action is 'act' and "
         "tool_name isn't 'none'.",
     )
+    success_criteria: str | None = Field(
+        default=None,
+        description="Optional compact postcondition for this step. Use a deterministic criterion "
+        "when one is obvious, e.g. 'file_exists: report.txt', 'content_matches', "
+        "'result_count >= 5', 'exit_code == 0', or 'output_contains: text'. Use 'semantic' "
+        "when only the reviewer can judge whether the step is complete.",
+    )
     updated_plan: list[str] | None = Field(
         default=None,
         description="Your current best plan for the WHOLE task, as a short ordered list of "
@@ -89,6 +96,19 @@ class ReviewOutput(BaseModel):
     score: int = Field(ge=1, le=5)
     verdict: Literal["pass", "reject", "escalate"]
     feedback: str
+
+
+class GoalVerificationOutput(BaseModel):
+    verified: bool = Field(description="True only if the completed subtasks satisfy the user's goal.")
+    reason: str = Field(description="One or two sentences explaining what is satisfied or missing.")
+    needs_replan: bool = Field(
+        default=False,
+        description="True if more agent work could plausibly satisfy the goal.",
+    )
+    needs_human: bool = Field(
+        default=False,
+        description="True if a person is needed because the system lacks enough information or capability.",
+    )
 
 
 class SubAgentStep(BaseModel):

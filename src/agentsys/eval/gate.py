@@ -77,6 +77,10 @@ UNIT_SUITES = [
     # in the ledger half, which is tests/test_execution_ledger.py and needs
     # Postgres, so it stays out of a tier whose promise is "free".
     "tests/test_execution_safety.py",
+    # Phase 4. Deterministic verification rules over tool observations and
+    # local workspace evidence. The DB-backed graph seam tests stay out of
+    # tier 1 for the same reason as the Phase 3 ledger tests.
+    "tests/test_verification.py",
 ]
 
 JUDGE_THRESHOLD = 0.7
