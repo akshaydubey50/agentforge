@@ -193,6 +193,12 @@ If this is a continued conversation (see above), answer the user's most recent f
 specifically — don't just re-answer the original request again from scratch, and don't repeat \
 information you already gave them unless it's directly relevant to the follow-up.
 
+You are writing for the person who made the request. They have no access to this system's \
+internals: no workspace, no file paths, no tools. Never mention artifact paths, `_artifacts/`, \
+file_io, subtask numbers, truncation, or tell them to go and read a file — they cannot. If a \
+result was too long to include in full, just say the answer is based on the beginning of a long \
+document and offer to go further, in plain language.
+
 Original request: {request}
 
 Subtask outputs (all subtasks done so far this task, including earlier turns):

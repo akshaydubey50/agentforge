@@ -55,6 +55,7 @@ UNIT_SUITES = [
     "tests/test_graph_routing.py",
     "tests/test_pricing.py",
     "tests/test_spill_loop.py",
+    "tests/test_synthesis_redaction.py",
 ]
 
 JUDGE_THRESHOLD = 0.7

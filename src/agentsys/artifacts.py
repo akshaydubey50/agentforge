@@ -23,6 +23,7 @@ dereferencing a pointer needs nothing special.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -78,3 +79,46 @@ def spill(task_id: str, subtask_id: str, tool_name: str, output_text: str) -> di
             f"call to see the rest; it will just be truncated again."
         ),
     }
+
+
+_POINTER_KEYS = {"_truncated", "preview", "full_output_path", "hint"}
+
+
+def for_synthesis(output_text: str | None) -> str:
+    """Strip spill plumbing out of a step output before it reaches synthesis.
+
+    The pointer dict spill() returns is a CONTROL AFFORDANCE FOR THE LOOP, not
+    content for the answer. Its `hint` is literally an instruction addressed
+    to the model ("read it with file_io using {...}"), and it rides inside the
+    tool output's data. agent_step needs that -- it is how the model knows it
+    can go get the rest. synthesize does not: it writes prose for a human who
+    has no workspace, no file_io and no idea what an artifact is.
+
+    Observed live: a Drive lookup answered with "you may need to read it from
+    the saved file at the path _artifacts/06b01af8-...json", which is a
+    correct sentence addressed to entirely the wrong reader.
+
+    So the preview survives (that is real content) and the mechanics do not.
+    Anything that isn't a spill pointer passes through untouched.
+    """
+    if not output_text:
+        return output_text or ""
+    try:
+        parsed = json.loads(output_text)
+    except (TypeError, ValueError):
+        return output_text
+    if not isinstance(parsed, dict) or not parsed.get("_truncated"):
+        return output_text
+
+    preview = parsed.get("preview", "")
+    total = parsed.get("total_chars")
+    note = (
+        f"\n[This result was long ({total} characters); the excerpt above is its "
+        f"beginning.]" if total else ""
+    )
+    # Any sibling keys the tool itself produced (a filename, an id) are kept:
+    # they are genuine content, and only the four plumbing keys are dropped.
+    extra = {k: v for k, v in parsed.items() if k not in _POINTER_KEYS}
+    if extra:
+        return f"{json.dumps(extra)}\n{preview}{note}"
+    return f"{preview}{note}"

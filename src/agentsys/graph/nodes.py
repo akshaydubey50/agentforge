@@ -918,8 +918,11 @@ def synthesize_node(state: AgentState) -> AgentState:
             select(Subtask).where(Subtask.task_id == task_id).order_by(Subtask.position)
         ).all()
 
+    # Spill plumbing is stripped here and only here: agent_step needs the
+    # pointer to decide whether to go and fetch the rest, while synthesis
+    # writes for a human who has no workspace -- see artifacts.for_synthesis.
     outputs = "\n".join(
-        f"{i + 1}. {s.description}\n   -> {s.output or '(skipped/failed)'}"
+        f"{i + 1}. {s.description}\n   -> {artifacts.for_synthesis(s.output) or '(skipped/failed)'}"
         for i, s in enumerate(subtasks)
     )
     conversation = _gather_conversation_history(task_id, task)
