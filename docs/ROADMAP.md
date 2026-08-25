@@ -4,7 +4,7 @@ Companion to [WAKU_COMPARISON.md](WAKU_COMPARISON.md), which is the analysis
 this plan came out of. That document ranks 19 gaps (G1–G19); this one tracks
 what's been closed, what's in flight, and what order the rest should happen in.
 
-Last updated: 2026-08-25 (after G11, G2, G3 and G6 landed).
+Last updated: 2026-08-25 (after G11, G2, G3, G6 and G4 landed).
 
 ---
 
@@ -30,8 +30,8 @@ durability, HITL, recovery) that waku doesn't have and can't easily get.
 | G11 | OpenTelemetry export | **Done** |
 | G2 | Deterministic eval battery + release gate | **Done** (paid tiers unrun) |
 | G3 | Four-outcome scoring (PASS/STALE/INVENTED/MISS) | **Done** |
-| G4 | Triage fast path | Next |
-| G5 | Retrieval gate + mid-loop memory | Not started |
+| G4 | Triage fast path | **Done** |
+| G5 | Retrieval gate + mid-loop memory | Next |
 | G8 | Compare / Arena page | Not started |
 | G1 | Skills (procedural memory) | Not started |
 | G6 | Derive cost at read time | **Done** |
@@ -60,6 +60,7 @@ Branch `feature/system-view`, based on `feature/agentforge-dashboard-ui`.
 | `ace5396` | Judge-free eval tier + release gate (G2) |
 | `cb5e531` | Four-outcome scoring + grounding check (G3) |
 | `295f917` | Read-time pricing, incl. cached tokens (G6) |
+| `b9ea457` | Triage fast path (G4) |
 
 **New API surface**
 
