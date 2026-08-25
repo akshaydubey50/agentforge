@@ -4,7 +4,7 @@ Companion to [WAKU_COMPARISON.md](WAKU_COMPARISON.md), which is the analysis
 this plan came out of. That document ranks 19 gaps (G1–G19); this one tracks
 what's been closed, what's in flight, and what order the rest should happen in.
 
-Last updated: 2026-08-25 (after G11 and G2 landed).
+Last updated: 2026-08-25 (after G11, G2, G3 and G6 landed).
 
 ---
 
@@ -29,12 +29,12 @@ durability, HITL, recovery) that waku doesn't have and can't easily get.
 | — | **Visual verification of all of the above** | **BLOCKED** |
 | G11 | OpenTelemetry export | **Done** |
 | G2 | Deterministic eval battery + release gate | **Done** (paid tiers unrun) |
-| G3 | Four-outcome scoring (PASS/STALE/INVENTED/MISS) | Next |
-| G4 | Triage fast path | Not started |
+| G3 | Four-outcome scoring (PASS/STALE/INVENTED/MISS) | **Done** |
+| G4 | Triage fast path | Next |
 | G5 | Retrieval gate + mid-loop memory | Not started |
 | G8 | Compare / Arena page | Not started |
 | G1 | Skills (procedural memory) | Not started |
-| G6 | Derive cost at read time | Not started |
+| G6 | Derive cost at read time | **Done** |
 | G7 | Provider registry + model picker | Not started |
 | G13 | Persona / system-prompt file | Not started |
 | G14 | Agent manages its own memory | Not started |
@@ -58,6 +58,8 @@ Branch `feature/system-view`, based on `feature/agentforge-dashboard-ui`.
 | `d3ca540` | Task artifacts — open the files a task actually produced |
 | `85d9ffd` | OpenTelemetry export (G11) |
 | `ace5396` | Judge-free eval tier + release gate (G2) |
+| `cb5e531` | Four-outcome scoring + grounding check (G3) |
+| `295f917` | Read-time pricing, incl. cached tokens (G6) |
 
 **New API surface**
 
