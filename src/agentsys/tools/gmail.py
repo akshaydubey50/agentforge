@@ -14,6 +14,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.integrations.google_oauth import GoogleOAuthError, get_valid_access_token
+from agentsys.policy import ActionType, Risk
 from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.base import Tool, ToolResult
 
@@ -62,6 +63,12 @@ class GmailSearchArgs(BaseModel):
 class GmailSearchTool(Tool):
     name = "gmail_search"
     args_model = GmailSearchArgs
+    action_type = ActionType.READ
+    risk = Risk.MEDIUM
+    """MEDIUM: reads a real person's mailbox. The boundary that decides WHOSE
+    is the injected user_id (graph/nodes.py's _injected_kwargs), not anything
+    policy can see in the arguments -- so the READ/MEDIUM rule allows the call
+    and that injection remains the whole of the access control, unchanged."""
     description = (
         "Searches the connected Gmail account and returns matching messages' senders, "
         "subjects, dates, snippets, and ids -- read-only, cannot send, reply, or "
@@ -137,6 +144,8 @@ class GmailReadArgs(BaseModel):
 class GmailReadTool(Tool):
     name = "gmail_read"
     args_model = GmailReadArgs
+    action_type = ActionType.READ
+    risk = Risk.MEDIUM
     description = (
         "Reads one full email message from the connected Gmail account by its id (get "
         "ids from gmail_search first). Read-only. Arguments: message_id (str, required). "

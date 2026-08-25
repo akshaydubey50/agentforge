@@ -751,14 +751,140 @@ gpt-4o-mini reaches for `code_execution` to compute 15% of 240).*
   `description`, which would have put maintainer rationale into every prompt —
   the exact failure `mcp_servers/company_internal.py` warns about.
 
-### Phase 2 — policy
+**Open defects found while verifying Phase 1** — none caused by it, none fixed
+yet. Measured 2026-08-25 over 40 probe runs (10× each case, on `3c98aef` and on
+`6ef7cab` in a detached worktree), so treat these numbers as established rather
+than re-spending the API calls.
 
-10. `policy.py`; route the approval gate through `decide()`; delete
-    `requires_approval`/`needs_approval`
-11. Record the decision + reason on the audit chain
-12. `tests/test_policy.py` as a tier-1 battery
+| | `6ef7cab` | `3c98aef` | first tool proposed | rejected calls |
+|---|---|---|---|---|
+| `reasoning_no_tool` | 0/10 | 0/10 | `code_execution` 10/10 both | 0 |
+| `web_search_recent_fact` | 10/10 | 9/10 | `web_search` 9, `knowledge_search` 1 | 0 |
 
-*Exit: gating a tool is a rule in one list, not a class attribute.*
+`rejected_calls == 0` across all 40 runs is the finding that clears Phase 1:
+validation never turned a previously-accepted call into a rejected one. Its
+only measurable effect is prompt size, +21–31% tokens from the schema block —
+cached prefix, so cost rather than correctness.
+
+1. **`SERVICE_TOKEN` is unset in `.env` and in the containers**, so
+   `knowledge_search` can never succeed — yet it registers unconditionally and
+   its description tells the model to try it *before* `web_search`. When the
+   model follows that advice the tool errors twice, the reviewer escalates, and
+   the case dies. This breaks this repo's own rule that an unusable tool
+   removes itself from the advertised set (`code_execution` and the Google
+   tools already obey it). Fix: gate registration on `settings.service_token`,
+   or set the token.
+2. **The agent reaches for `code_execution` to do arithmetic** — "15% of 240"
+   proposes `print(240 * 0.15)` on 10/10 runs of both commits, which gates into
+   an approval escalation. `reasoning_no_tool` is therefore a deterministic
+   failure reporting a real behaviour, not a flaky case. Fix: one sentence in
+   that tool's description, then re-measure.
+3. **`check_case` reports both of the above as the same thing.** Its escalation
+   branch runs before every other check, so both surfaced as "escalated, but
+   this request should have been handled", masking a Docker approval gate in
+   one case and a misconfigured tool in the other. Fix: include the escalation
+   kind and the last tool error in the verdict reason. No pass/fail change.
+
+Tier 2 also sets no `seed` and no `temperature` at either `litellm.completion`
+call site, so "every stochastic run must pass" is not a property this gate can
+hold. Prefer deterministic subchecks (tool called, args carry the constraint,
+approval fired, step ceiling) as hard pass/fail, with a measured pass-rate for
+model-choice cases. Not changed yet.
+
+### Phase 2 — policy — **DONE**
+
+10. ~~`policy.py`; route the approval gate through `decide()`; delete
+    `requires_approval`/`needs_approval`~~
+11. ~~Record the decision + reason on the audit chain~~
+12. ~~`tests/test_policy.py` as a tier-1 battery~~
+
+*Exit criteria met: gating a tool is a rule in one function in one file.
+`requires_approval` and `needs_approval` are deleted; all 15 registered tools
+declare `action_type` + `risk`; `policy.decide()` is the only thing that
+decides whether a call runs, and it is called at **both** execution seams.
+Tier 1 is 49 new pure tests (free: verified passing with Postgres, Redis and
+every API key unreachable), plus 19 DB-backed flow tests. Full suite 447
+passed / 2 failed, both failures reproducing identically on `3c98aef`.*
+
+**Corrections found while implementing:**
+
+- **§5.2 understated the hole: the approval gate covered one of the two
+  execution seams.** `_execute_subtask` checked `needs_approval`;
+  `delegate_subagent`'s inner loop checked *nothing*, so a sub-agent that
+  proposed `code_execution` simply ran it — approval was bypassable by
+  delegating. Phase 1 closed the *validation* hole in both seams and this one
+  was left behind in one. Both now call `policy.decide()`. A sub-agent cannot
+  pause for a human (it runs synchronously inside one tool call), so its
+  enforcement is **refuse**, not escalate; the parent agent can still propose
+  the action directly and get a real approval.
+- **`Risk` needs no ordering.** §8.2 sketched `tool.risk >= Risk.WRITE`. Every
+  rule actually written is an equality or a membership test, so `Risk` is a
+  plain `str` enum. Add ordering when Phase 3's ledger is the first caller
+  that needs it — not before, and with tests pinning it.
+- **The audit's own §8.3 said "approval expiry, step-up auth: add when the
+  first genuinely irreversible tool exists (Phase 5)". Expiry landed now
+  anyway, because it turned out to cost almost nothing**: `Escalation.created_at`
+  already existed, and the resume path already funnelled through one function.
+  It is ~15 lines in `nodes._approval_refusal` plus one setting. Step-up auth
+  did *not* land — see the MFA note below.
+- **`system_api.py` was a reader of `requires_approval` nobody had listed.**
+  The `/system/tools` response fed a badge in the web UI. It now derives the
+  same boolean from `policy.decide(tool, {})`, so the API keeps its shape while
+  the static attribute goes away.
+- **`PolicyDecision` needs `action_type` and `risk`, not just decision +
+  reason.** The brief suggested the minimal pair. But an argument-dependent
+  rule *raises* a call's classification above its tool's baseline, and §13's
+  audit record has to show the effective values — re-deriving them from the
+  tool at the audit seam would record the baseline and silently lose the
+  reason the call was gated.
+- **A fail-closed handler must not read the object it is failing closed
+  about.** The first version of `decide()`'s exception path used
+  `getattr(tool, "risk", default)` to report the classification. `getattr`
+  with a default only swallows `AttributeError` — a property raising anything
+  else throws straight out of the handler that exists to prevent exactly that.
+  The fallback now uses constants.
+- **MCP tools are the only inheritors of the fail-closed default, and gating
+  all of them was too blunt.** A third-party server's effects are unknown, so
+  `EXTERNAL_WRITE`/`HIGH` is right by default. But it would also have gated
+  this repo's own demo server (`get_current_time`, `roll_dice`,
+  `lookup_office` — all pure reads). Resolved with an optional per-server
+  declaration in the `mcp_servers` config entry that already exists; a server
+  that declares nothing stays gated.
+- **`db_query` stays ALLOW, deliberately.** It is MEDIUM risk — arbitrary SQL
+  on the app's own engine — but its boundary is the Phase-0 three-layer guard,
+  not the gate. Gating it would put a human in front of every metrics lookup,
+  which is how humans learn to approve without reading. Policy weakens nothing
+  there; there is a regression test asserting the guard still refuses.
+
+**Policy debt, stated rather than hidden:**
+
+1. **Step-up auth / MFA is not implemented, and cannot be honestly faked.**
+   `UserSession.mfa_satisfied_at` exists in the schema and is written by
+   *nothing* — `grep -rn mfa src/` outside `db/models.py` returns no hits.
+   There is no second factor anywhere in the auth flow (sign-in is Google
+   OAuth, one hop), so "require recent MFA for this action" would be a check
+   against a column that is always `NULL`: either always-deny, or a no-op dressed
+   as a control. Phase 2 does not read the field. **Debt: the field exists but
+   no usable step-up flow does.** It needs a real second factor first.
+2. **A sub-agent cannot escalate.** It refuses gated actions instead. Making
+   it escalate means suspending a running tool call mid-flight and resuming
+   into it, which is a durable-execution change (Phase 3), not a policy one.
+3. **No per-user, per-org or per-environment policy.** `decide()` accepts
+   `user_id` and no rule reads it. There is no environment concept in the app
+   at all, so `decide()` deliberately has no `environment` parameter — adding
+   the config field so that policy could accept it would be inventing the
+   requirement to satisfy the abstraction.
+4. **Nobody decides who may approve what.** Any owner of a task can approve
+   any escalation on it. Unchanged from before Phase 2, still §5.2's gap.
+5. **The approval fingerprint is drift resistance, not tamper-proofing.** It
+   lives in the same JSONB dict it protects, so anything with write access to
+   the row could update both halves. It catches the failure that actually
+   threatens this codebase — a future code path changing the arguments without
+   re-evaluating policy — not a database attacker.
+6. **`_effective()` keys argument-dependent classification off `tool.name`.**
+   One entry (`file_io`) today. That is a string switch, and it is the right
+   shape while there is one: it keeps the whole policy readable in one place,
+   which is the §13 auditability goal. Revisit if it reaches ~5 entries.
 
 ### Phase 3 — durable execution
 

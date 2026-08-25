@@ -14,7 +14,7 @@ answers the question the agent moves on having paid ~1.2k chars instead of
 one deliberate step rather than a permanent tax on every step.
 
 Written with Path directly, NOT through FileIOTool: file_io's write action
-is approval-gated (Tool.needs_approval), and this is the harness persisting
+is approval-gated (policy.decide), and this is the harness persisting
 a result the agent already legitimately fetched, not the agent choosing to
 write. Routing it through the tool would pop a human approval prompt on
 every large tool call. Reads stay through file_io, which is ungated, so

@@ -59,7 +59,7 @@ def wrap_untrusted(text: str, source: str) -> str:
     Not a guarantee an LLM won't still comply with an embedded instruction --
     delimiter/label framing measurably reduces but does not eliminate
     injection susceptibility. It's one layer, paired with the
-    Tool.requires_approval gate (tools/base.py) for anything the content
+    policy gate (policy.py, called from graph/nodes.py) for anything the content
     could actually get the agent to DO."""
     if not text:
         return text

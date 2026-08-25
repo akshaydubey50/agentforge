@@ -107,6 +107,17 @@ class Action:
     GOOGLE_DISCONNECTED = "auth.google.disconnected"
     ESCALATION_DECIDED = "escalation.decided"
     TOOL_APPROVAL_EXECUTED = "escalation.tool_approval.executed"
+    TOOL_POLICY_DECISION = "policy.tool.decision"
+    """A deterministic policy decision that stopped or gated a proposed tool
+    call (see policy.py). Recorded for REQUIRE_APPROVAL and DENY only --
+    an ALLOW is the ordinary path and is already fully visible as a
+    tool_call TraceSpan and a ToolCall row, so logging every one of those here
+    would bury the decisions that matter under the ones that don't."""
+
+    TOOL_APPROVAL_STALE = "escalation.tool_approval.stale"
+    """An approval that was granted but no longer executable when it came to
+    run -- expired past settings.approval_expiry_seconds, or its stored
+    arguments no longer matched what policy evaluated. The tool did NOT run."""
 
 
 # Key-name fragments whose values are never written. Substring match on the

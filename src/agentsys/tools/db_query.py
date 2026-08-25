@@ -52,6 +52,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentsys.config import settings
 from agentsys.db.session import get_engine
+from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult
 
 MAX_ROWS = 200
@@ -132,6 +133,16 @@ class DbQueryArgs(BaseModel):
 class DbQueryTool(Tool):
     name = "db_query"
     args_model = DbQueryArgs
+    action_type = ActionType.READ
+    risk = Risk.MEDIUM
+    """MEDIUM, not LOW: this is arbitrary SQL against the application's own
+    engine, and the thing that keeps it to one sample table is the three-layer
+    guard in run() (Phase 0), not the shape of the argument. Policy must not
+    weaken that -- the READ/MEDIUM rule ALLOWS this tool, which means the
+    allowlist, the statement-shape prefilters and the read-only role remain the
+    entire boundary, exactly as before. Gating it instead would put a human in
+    front of every ordinary metrics lookup, which is how humans learn to
+    approve without reading."""
     description = (
         "Runs a read-only SQL SELECT query against the seeded sample business "
         "database (table: sample_metric, columns: id, company, quarter, revenue_usd, "

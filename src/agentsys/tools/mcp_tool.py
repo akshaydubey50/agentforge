@@ -53,6 +53,7 @@ import jsonschema
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult, ToolValidationError
 
 logger = logging.getLogger(__name__)
@@ -156,6 +157,20 @@ def _error_text(result: Any) -> str:
     return "\n".join(texts) if texts else "tool reported an error with no message"
 
 
+def _declared(value: Any, enum_type: type, fallback: Any) -> Any:
+    """One server-config classification value, or the fail-closed fallback."""
+    if value is None:
+        return fallback
+    try:
+        return enum_type(str(value).lower())
+    except ValueError:
+        logger.warning(
+            "MCP server declared an unrecognised %s=%r; falling back to %r",
+            enum_type.__name__, value, fallback,
+        )
+        return fallback
+
+
 class MCPTool(Tool):
     """One AgentForge tool bound to one tool on one external MCP server."""
 
@@ -163,6 +178,31 @@ class MCPTool(Tool):
         self.server_name = server_name
         self.server_config = server_config
         self.remote_tool_name = remote_tool.name
+        # POLICY CLASSIFICATION FOR CODE THIS REPO HAS NEVER SEEN.
+        #
+        # An MCP tool's effects belong to a third party. The schema says what
+        # arguments it takes and the description says what it claims to do;
+        # neither is a statement about whether calling it deletes a record.
+        # So the default is Tool's fail-closed pair (EXTERNAL_WRITE / HIGH),
+        # which policy gates behind human approval -- the same posture
+        # validate_args takes on a server that advertises no schema.
+        #
+        # An operator who knows a server can declare it, per server, in the
+        # mcp_servers config entry that already exists:
+        #
+        #     {"name": "company_internal", ..., "action_type": "read", "risk": "low"}
+        #
+        # Declared once for the whole server rather than per tool: a server is
+        # the unit an operator actually knows something about, and a per-tool
+        # table would be a policy database for tools that are discovered at
+        # startup and may not exist tomorrow. A server mixing reads and deletes
+        # should declare nothing and let every one of its tools be gated.
+        #
+        # Anything unparseable in that declaration falls back to the
+        # fail-closed default rather than raising: a typo in config must not
+        # stop the app from starting, and must not open the gate either.
+        self.action_type = _declared(server_config.get("action_type"), ActionType, Tool.action_type)
+        self.risk = _declared(server_config.get("risk"), Risk, Tool.risk)
         # The argument contract, straight from the server. An MCP tool already
         # ships machine-readable JSON Schema, so there is nothing to translate:
         # wrapping every discovered tool in a hand-written pydantic model would

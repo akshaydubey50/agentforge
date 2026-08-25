@@ -65,6 +65,13 @@ UNIT_SUITES = [
     # registry (no MCP subprocess, no Google config probe) and stubs the one
     # owner lookup, so it needs no Postgres, no Redis and no API key.
     "tests/test_tool_contracts.py",
+    # Phase 2. The policy ruleset is a pure function of (tool, validated args)
+    # -- policy.py imports no database, no settings and no LLM, deliberately,
+    # so the whole decision table is free to verify. The DB-backed half
+    # (tests/test_policy_approval_flow.py, which drives the real escalation
+    # flow) is NOT here: it needs Postgres and Redis, so it belongs with the
+    # rest of the integration suite, not in a tier whose promise is "free".
+    "tests/test_policy.py",
 ]
 
 JUDGE_THRESHOLD = 0.7

@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from agentsys.policy import ActionType, Risk
+
 
 class ToolResult(BaseModel):
     success: bool
@@ -70,12 +72,25 @@ class Tool(ABC):
          cycle every time.
     """
 
-    requires_approval: bool = False
-    """Class-level default for needs_approval() below -- True for a tool
-    that's ALWAYS side-effecting regardless of arguments (e.g.
-    code_execution, which executes arbitrary code on every call). A tool
-    where only some actions are side-effecting (e.g. file_io's write vs.
-    read/list) should leave this False and override needs_approval instead."""
+    action_type: ActionType = ActionType.EXTERNAL_WRITE
+    risk: Risk = Risk.HIGH
+    """This tool's BASELINE classification, which is what policy.decide()
+    starts from -- see policy.py for what the values mean and which rule each
+    combination hits.
+
+    The defaults are deliberately the fail-closed pair, not the harmless one.
+    A tool that never declares its classification is gated behind human
+    approval, because "the author forgot" and "this is safe" must not look the
+    same to the policy engine. Every first-party tool in this package declares
+    both explicitly; MCPTool, whose effects belong to a third party, keeps
+    these defaults unless the operator declares otherwise in the server's
+    config entry.
+
+    Baseline, not verdict: a rule may raise a specific call above it based on
+    that call's validated arguments (policy._effective), which is how file_io
+    is a LOW-risk READ to list a directory and a MEDIUM-risk LOCAL_WRITE to
+    write a file. Approval is NOT a static property here -- that was the old
+    requires_approval bool this replaces (ARCHITECTURE_AUDIT 5.2)."""
 
     args_model: type[BaseModel] | None = None
     """The tool's argument contract: a pydantic model of exactly the arguments
@@ -132,15 +147,6 @@ class Tool(ABC):
             return self.args_model.model_validate(proposed).model_dump()
         except ValidationError as exc:
             raise ToolValidationError.from_pydantic(self.name, exc) from exc
-
-    def needs_approval(self, kwargs: dict) -> bool:
-        """Whether THIS specific call (about to be made with these exact
-        kwargs) must be gated behind human approval before running -- see
-        graph/nodes.py's _execute_subtask, which checks this right before
-        registry.get(tool_name).run(**kwargs). Defaults to the class-level
-        requires_approval flag; override for a tool where only some actions
-        are side-effecting."""
-        return self.requires_approval
 
 
 def validated_kwargs(

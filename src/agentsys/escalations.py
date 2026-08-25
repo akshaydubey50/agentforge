@@ -89,11 +89,15 @@ def apply_escalation_decision(
                 # tool_name/kwargs it was gated with (see that function's
                 # _create_escalation call for how context got populated).
                 tool_name = escalation.context.get("tool_name")
-                call_kwargs = escalation.context.get("kwargs", {})
                 if not tool_name:
                     raise EscalationError(500, "tool_approval escalation is missing tool_name in its context")
+                # The whole approval snapshot goes through, not just the two
+                # fields: run_gated_tool_call re-checks the recorded policy
+                # decision and the argument fingerprint before executing, and
+                # needs created_at to tell whether the approval is stale (see
+                # settings.approval_expiry_seconds).
                 tool_success, output_text = run_gated_tool_call(
-                    escalation.task_id, escalation.subtask_id, tool_name, call_kwargs
+                    escalation.task_id, escalation.subtask_id, escalation.context, escalation.created_at
                 )
                 gated_tool = (tool_name, tool_success)
                 subtask.output = output_text

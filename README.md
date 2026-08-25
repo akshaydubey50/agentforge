@@ -19,6 +19,10 @@ histories preserved. Neither imports the other — see
 [docs/MERGE.md](docs/MERGE.md) for what had to be reconciled, the known
 Chroma-mode inconsistency, and how to run both stacks.
 
+If you're evaluating system direction, also see
+[docs/GOAL_EXECUTION_SYSTEM.md](docs/GOAL_EXECUTION_SYSTEM.md) for AgentForge's
+north-star definition as a goal-execution agent (not just a chat loop).
+
 ```bash
 docker compose up -d --build   # both stacks: agentsys on 8100/8601, rag on 8000/8501
 ```
@@ -202,9 +206,54 @@ holds retrieval and generation to elsewhere.
   match. `prune_low_value_memories` caps growth by dropping the least important, least recently
   accessed entries once the store passes a size threshold.
 
+## Policy: the LLM proposes, deterministic code disposes
+
+Whether a tool call is *allowed* is never the model's decision. Every proposed call passes two
+deterministic gates before anything runs, and neither one is reachable by anything the model
+writes:
+
+```
+LLM proposes a tool call
+        ↓
+typed validation      tools/base.py -- validated_kwargs, against the tool's pydantic args model
+        ↓
+policy.decide(...)    policy.py -- pure function of (tool, validated args)
+        ↓
+ALLOW / REQUIRE_APPROVAL / DENY
+        ↓
+existing execution  /  existing escalation  /  refused with a reason
+```
+
+Each tool declares an `action_type` (`READ` / `LOCAL_WRITE` / `EXTERNAL_WRITE` / `DESTRUCTIVE`)
+and a `risk` (`LOW` / `MEDIUM` / `HIGH` / `CRITICAL`); `policy.py` holds the whole ruleset as one
+function. Four properties that are easy to claim and easy to get wrong:
+
+- **Decisions are per-call, not per-tool.** `file_io` reading its workspace is an allowed
+  `READ`/`LOW`; the same tool with `action="write"` is a gated `LOCAL_WRITE`/`MEDIUM`. This
+  replaced a boolean on a Python class that only two of fifteen tools set.
+- **It fails closed, in three places.** An exception anywhere in the rule body returns `DENY`
+  rather than propagating (a policy engine you can open by breaking it is not one). A tool that
+  declares no classification inherits `EXTERNAL_WRITE`/`HIGH` and is gated — "the author forgot"
+  and "this is safe" must not look alike. A third-party MCP server's tools are gated unless an
+  operator declares that server read-only.
+- **Both execution seams are gated.** The main loop *and* `delegate_subagent`'s inner loop. The
+  sub-agent seam previously had no approval check at all, so a sub-agent proposing
+  `code_execution` just ran it — approval was bypassable by delegating. A sub-agent can't pause
+  for a human, so it refuses gated actions and reports that they need their own approved step.
+- **An approval binds to the exact call it approved.** The escalation stores the tool name, the
+  validated arguments, the decision and a fingerprint; at resume all three are re-checked, so
+  approving `send_email(to=A)` cannot resume as `send_email(to=B)`, and an approval older than
+  `approval_expiry_seconds` is refused rather than executed against a world that has moved on.
+
+Not implemented, and not faked: step-up/MFA. `UserSession.mfa_satisfied_at` exists in the schema
+but nothing writes it and there is no second factor in the auth flow, so a "require recent MFA"
+rule would check a column that is always `NULL`. Tracked as debt in
+[docs/ARCHITECTURE_AUDIT.md](docs/ARCHITECTURE_AUDIT.md), not shipped as a control.
+
 ## Human-in-the-loop
 
-Escalation triggers: low sketch confidence, exhausted subtask retries, a reviewer explicitly
+Escalation triggers: a policy decision of `REQUIRE_APPROVAL` on a proposed tool call (see above),
+low sketch confidence, exhausted subtask retries, a reviewer explicitly
 flagging `escalate`, the step budget (`max_task_steps`) being exhausted, or the agent declaring
 "finish" before completing any step. Three resolution levels via
 `POST /v1/escalations/{id}/decide`:

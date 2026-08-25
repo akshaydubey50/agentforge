@@ -27,6 +27,7 @@ from agentsys.graph.prompts import SUBAGENT_STEP_PROMPT
 from agentsys.graph.schemas import SubAgentStep
 from agentsys.graph.tracing import span
 from agentsys.llm import structured_complete
+from agentsys.policy import ActionType, PolicyDecisionType, Risk, decide
 from agentsys.tools.base import Tool, ToolResult, ToolValidationError, validated_kwargs
 
 
@@ -43,6 +44,13 @@ class DelegateSubagentArgs(BaseModel):
 class DelegateSubagentTool(Tool):
     name = "delegate_subagent"
     args_model = DelegateSubagentArgs
+    action_type = ActionType.READ
+    risk = Risk.MEDIUM
+    """Delegating has no effect of its own: the sub-agent's own tool calls are
+    each evaluated by policy inside its loop (see run() below), so gating the
+    delegation as well would ask for approval twice for one action and once for
+    none. MEDIUM rather than LOW because it spends real budget and its inner
+    calls are chosen from a wider set than any single step."""
     description = (
         "Hands this subtask's goal to a sub-agent that can make several tool calls in "
         "sequence, inspecting each result before deciding what to do next -- unlike a normal "
@@ -62,8 +70,12 @@ class DelegateSubagentTool(Tool):
         # Both imported inside run() for the same reason get_registry is: this
         # tool is registered BY the registry and its calls are dispatched BY
         # the graph, so either at module scope would close an import cycle.
-        from agentsys.graph.nodes import _injected_kwargs
+        from agentsys.graph.nodes import _injected_kwargs, _task_owner_id
         from agentsys.tools.registry import get_registry
+
+        # Looked up once for the whole loop rather than per step: it is the
+        # same task throughout, and policy.decide is called on every step.
+        owner_id = _task_owner_id(task_id)
 
         with get_session() as session:
             run_row = SubAgentRun(task_id=task_id, subtask_id=subtask_id, depth=depth, goal=goal)
@@ -124,6 +136,38 @@ class DelegateSubagentTool(Tool):
                 # Rejected, not run. The sub-agent sees why and can fix the
                 # arguments on its next step.
                 step_lines.append(f"{step_num}. {exc}")
+                continue
+
+            # THE SAME POLICY BOUNDARY AS THE MAIN LOOP, which this seam did
+            # not have. Phase 1 closed the validation hole in both execution
+            # seams and left the approval gate in only one: _execute_subtask
+            # checked needs_approval, this loop checked nothing, so a
+            # sub-agent that proposed code_execution simply ran it. Approval
+            # was bypassable by delegating.
+            #
+            # A sub-agent cannot ask for a human. It runs synchronously inside
+            # one tool call, so there is no point at which it can park a
+            # tool_approval escalation and be resumed -- pausing it would mean
+            # suspending a running tool mid-call, which is a materially bigger
+            # change than Phase 2 (see docs/ARCHITECTURE_AUDIT.md). So its
+            # enforcement is REFUSE, for REQUIRE_APPROVAL and DENY alike: the
+            # step does not happen, the sub-agent is told why, and it can
+            # finish with what it has or take a route that needs no approval.
+            #
+            # That is deliberately stricter than the main loop. A gated action
+            # is still reachable -- the parent agent can propose it directly
+            # and get a human -- it just cannot be reached from inside a
+            # sub-agent, where nobody would be asked.
+            # Named policy_decision, not decision: `decision` in this loop is
+            # the model's own SubAgentStep, and shadowing it here would be a
+            # trap for the next person to add a line after this block.
+            policy_decision = decide(registry.get(tool_name), kwargs, user_id=owner_id)
+            if policy_decision.decision is not PolicyDecisionType.ALLOW:
+                step_lines.append(
+                    f"{step_num}. refused '{tool_name}' -- {policy_decision.reason}. A sub-agent cannot "
+                    f"obtain human approval; if this action is required, finish and report that "
+                    f"it needs to be done as its own approved step."
+                )
                 continue
 
             try:

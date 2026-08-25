@@ -22,8 +22,8 @@ class GoldenTask(BaseModel):
     ("should decline", "should escalate") rather than a checkable fact."""
     should_escalate: bool = False
     """Whether a CORRECT run of this task ends in an escalation (a
-    deliberately ambiguous request, or a requires_approval tool -- see
-    tools/base.py's Tool.needs_approval) rather than a completed answer.
+    deliberately ambiguous request, or a tool call policy gates -- see
+    policy.py's decide) rather than a completed answer.
     Getting this wrong in either direction is itself a real failure: acting
     on an ambiguous request is as bad as needlessly escalating a clear one."""
     max_acceptable_steps: int | None = None

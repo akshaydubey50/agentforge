@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.integrations import google_photos as api
 from agentsys.memory import short_term
+from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult
 
 _SESSION_FIELD = "photos_picker_session"
@@ -41,6 +42,14 @@ class GooglePhotosPickArgs(BaseModel):
 class GooglePhotosPickTool(Tool):
     name = "google_photos_pick"
     args_model = GooglePhotosPickArgs
+    action_type = ActionType.READ
+    risk = Risk.MEDIUM
+    """A read with a person already in the loop by construction: Google removed
+    library-wide access, so this returns only what the user personally selected
+    in Google's own picker. It creates a picker session on Google's side, which
+    is why it is not LOW -- but nothing in the user's library changes, and the
+    call already pauses for a human via the _awaiting_human seam, so gating it
+    would ask for approval to ask for approval."""
     description = (
         "Asks the user to choose photos or videos from their Google Photos library, then "
         "returns what they chose. Arguments: reason (str, required) -- a short, specific "

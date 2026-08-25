@@ -186,8 +186,8 @@ class Escalation(SQLModel, table=True):
     kind: str = Field(default="plan")
     """One of: plan (low sketch confidence), review (reviewer rejected past
     retry budget), budget (step cap exceeded), tool_approval (a
-    requires_approval tool is about to run -- see graph/nodes.py's
-    _execute_subtask and Tool.requires_approval in tools/base.py). The first
+    tool call that policy did not ALLOW is about to run -- see
+    graph/nodes.py's _execute_subtask and policy.decide in policy.py). The first
     three resume by marking the subtask/task done as-is on approve; "approve"
     for tool_approval instead puts the subtask back to READY so it's
     re-selected and the gated tool actually executes -- see

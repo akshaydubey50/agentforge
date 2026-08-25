@@ -16,6 +16,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.integrations.google_oauth import GoogleOAuthError, get_valid_access_token
+from agentsys.policy import ActionType, Risk
 from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.base import Tool, ToolResult
 
@@ -33,6 +34,8 @@ class GoogleDriveSearchArgs(BaseModel):
 class GoogleDriveTool(Tool):
     name = "google_drive_search"
     args_model = GoogleDriveSearchArgs
+    action_type = ActionType.READ
+    risk = Risk.MEDIUM
     description = (
         "Searches the connected Google Drive account for files by name or content and "
         "returns their names, types, and IDs -- read-only, cannot modify or delete "
@@ -106,6 +109,8 @@ class GoogleDriveReadArgs(BaseModel):
 class GoogleDriveReadTool(Tool):
     name = "google_drive_read"
     args_model = GoogleDriveReadArgs
+    action_type = ActionType.READ
+    risk = Risk.MEDIUM
     description = (
         "Reads the text contents of one file in the connected Google Drive account, "
         "by its file id (get ids from google_drive_search first). Read-only. Google "

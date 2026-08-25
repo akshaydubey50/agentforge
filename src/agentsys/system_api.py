@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import case, func
 from sqlmodel import select
 
-from agentsys import cost
+from agentsys import cost, policy
 from agentsys.auth import get_current_user
 from agentsys.config import settings
 from agentsys.db.models import (
@@ -205,7 +205,14 @@ def _tools() -> list[dict]:
                 # the model (see tools/base.py) and runs to paragraphs; the
                 # diagram needs a label, and /tools shows the rest.
                 "summary": entry["description"].strip().split("\n")[0][:180],
-                "requires_approval": bool(getattr(tool, "requires_approval", False)),
+                # Policy's verdict for this tool with no specific arguments in
+                # hand -- the old static Tool.requires_approval bool it replaces
+                # could not express anything else anyway. A tool whose gating
+                # depends on its arguments (file_io: read no, write yes) reports
+                # its baseline here, which is exactly what the old bool reported
+                # too. The per-call decision is the one in the audit chain.
+                "requires_approval": policy.decide(tool, {}).decision
+                is not policy.PolicyDecisionType.ALLOW,
                 # MCPTool carries the server it came from (tools/mcp_tool.py);
                 # asking the object beats pattern-matching its name, which
                 # would misfile any first-party tool that happens to start

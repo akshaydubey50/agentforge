@@ -10,6 +10,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
+from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult
 
 
@@ -22,6 +23,8 @@ class KnowledgeSearchArgs(BaseModel):
 class KnowledgeSearchTool(Tool):
     name = "knowledge_search"
     args_model = KnowledgeSearchArgs
+    action_type = ActionType.READ
+    risk = Risk.LOW
     description = (
         "Answers a question using documents uploaded to Knowledge -- runs real hybrid "
         "search (not a keyword match) plus grounded generation with citations. Use this "

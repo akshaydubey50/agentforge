@@ -29,6 +29,7 @@ from agentsys import cost
 from agentsys.config import settings
 from agentsys.graph.tracing import span
 from agentsys.llm import structured_complete
+from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult
 
 # The shared rubric. Both the generator (aim for this) and the evaluator
@@ -138,6 +139,13 @@ class TweetWorkshopArgs(BaseModel):
 class TweetWorkshopTool(Tool):
     name = "generate_tweet"
     args_model = TweetWorkshopArgs
+    action_type = ActionType.READ
+    risk = Risk.LOW
+    """Writes text and returns it -- it does not post anything, and there is
+    no Twitter/X client in this repo. READ is the honest fit in policy's
+    four-value taxonomy for "no external effect"; the day this tool gains a
+    publish step it becomes EXTERNAL_WRITE and is gated by the existing rule
+    with no new code."""
     description = (
         "Generates a high-quality, shareable tweet via a generate -> evaluate -> optimize loop: "
         "it drafts a tweet, a stricter editor scores it against a fixed quality rubric "

@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
+from agentsys.policy import ActionType, Risk
 from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.base import Tool, ToolResult
 
@@ -28,6 +29,17 @@ class FileIOArgs(BaseModel):
 class FileIOTool(Tool):
     name = "file_io"
     args_model = FileIOArgs
+    action_type = ActionType.READ
+    risk = Risk.LOW
+    """The BASELINE is the read: action="read"/"list" touch nothing. A call
+    with action="write" is raised to LOCAL_WRITE/MEDIUM by policy._effective
+    and gated -- this is the one registered tool whose decision genuinely
+    depends on its arguments, and it needed that before policy existed (it
+    shipped a needs_approval override for exactly this, now deleted).
+
+    Sandbox escapes are NOT policy's call: _resolve_within_sandbox below
+    refuses any path outside the task directory, and a second copy of that
+    check in policy would be the weaker one."""
     description = (
         "Reads, writes, or lists files inside this task's sandboxed workspace directory. "
         "Arguments: action (str, required, one of 'read'/'write'/'list'), "
@@ -39,12 +51,6 @@ class FileIOTool(Tool):
         "{content: \"...\"}); see what's already there with "
         "{\"action\": \"list\", \"path\": \".\"} (returns {files: [...]})."
     )
-
-    def needs_approval(self, kwargs: dict) -> bool:
-        """Only 'write' is side-effecting -- 'read'/'list' stay ungated so
-        the specialist isn't blocked on human approval to look at its own
-        workspace."""
-        return kwargs.get("action") == "write"
 
     def run(self, action: str, task_id: str, path: str, content: str | None = None) -> ToolResult:
         task_dir = Path(settings.workspace_dir) / task_id

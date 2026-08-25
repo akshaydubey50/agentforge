@@ -46,6 +46,7 @@ import docker.errors
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
+from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult
 
 MEMORY_LIMIT = "128m"
@@ -68,10 +69,14 @@ class CodeExecutionArgs(BaseModel):
 class CodeExecutionTool(Tool):
     name = "code_execution"
     args_model = CodeExecutionArgs
-    requires_approval = True
-    """Every call executes arbitrary code -- gated behind human approval
-    regardless of arguments (see Tool.requires_approval/needs_approval in
-    tools/base.py and the gate in graph/nodes.py's _execute_subtask)."""
+    action_type = ActionType.LOCAL_WRITE
+    risk = Risk.HIGH
+    """LOCAL_WRITE because the effects are confined to an ephemeral,
+    network-isolated container -- nothing outside this system changes. HIGH
+    because the code is arbitrary and the sandbox is honest about being a
+    guard against accidents rather than a boundary against a determined
+    attacker (see the description). HIGH => REQUIRE_APPROVAL, which preserves
+    exactly the gating the deleted `requires_approval = True` provided."""
     description = (
         "Runs untrusted Python code in an ephemeral, network-isolated Docker container "
         "(no network, memory/process caps, hard timeout). A real sandbox against "

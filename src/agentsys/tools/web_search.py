@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
 from agentsys.llm import complete
+from agentsys.policy import ActionType, Risk
 from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.base import Tool, ToolResult
 
@@ -239,6 +240,13 @@ class WebSearchArgs(BaseModel):
 class WebSearchTool(Tool):
     name = "web_search"
     args_model = WebSearchArgs
+    action_type = ActionType.READ
+    risk = Risk.LOW
+    """Fetches public pages via a search provider. No effect on anything, but
+    the SNIPPETS ARE UNTRUSTED INPUT -- they are wrapped as such (see
+    sanitize.wrap_untrusted) precisely because a search result can carry a
+    prompt injection. Reading attacker-influenceable text is a LOW-risk read;
+    what the agent then proposes on the strength of it gets its own decision."""
     description = (
         "Searches the web and returns a list of titles, URLs, and snippets: "
         "{results: [{title, url, snippet}, ...]}. "

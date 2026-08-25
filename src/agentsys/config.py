@@ -313,6 +313,25 @@ class Settings(BaseSettings):
     hard SIGKILLs the child process when something swallows the soft one.
     Hard must stay comfortably above soft so the soft handler gets to run."""
 
+    approval_expiry_seconds: int = 60 * 60
+    """How long a tool_approval escalation stays executable after it was
+    raised. Past this, approving it does NOT run the tool -- the step fails
+    with an explanation, the agent re-proposes, and a fresh policy evaluation
+    raises a fresh approval request against the current world.
+
+    The risk this closes is the architecture audit's (5.2): a human approving
+    a three-day-old request is approving arguments the model chose against a
+    three-day-old world -- a query, a recipient, a filename that may since
+    have become the wrong one. Measured from Escalation.created_at (when the
+    agent proposed the call), not decided_at, because staleness is a property
+    of the proposal, not of how long the human took to read it.
+
+    Seconds, matching session_idle_timeout_seconds and friends. One hour is
+    long enough for a person to come back from lunch and short enough that
+    the arguments still describe the situation they were chosen for. It
+    self-heals either way: an expired approval costs one extra round trip,
+    never a stuck task."""
+
     max_subtask_retries: int = 2
     plan_confidence_escalation_threshold: int = 3
     review_escalation_threshold: int = 2
@@ -356,6 +375,15 @@ class Settings(BaseSettings):
             "command": sys.executable,
             "args": ["-m", "agentsys.mcp_servers.company_internal"],
             "env": {"PYTHONPATH": str(PROJECT_ROOT / "src")},
+            # Policy classification for this server's tools (see
+            # tools/mcp_tool.py). Declared because this one is THIS repo's own
+            # code and every tool it exposes is a pure read -- the current
+            # time, a dice roll, an office lookup. A third-party server with no
+            # declaration gets Tool's fail-closed default instead, so its tools
+            # are gated behind human approval until someone who knows the
+            # server says otherwise.
+            "action_type": "read",
+            "risk": "low",
         }
     ]
     """External MCP servers whose tools are discovered at startup and registered

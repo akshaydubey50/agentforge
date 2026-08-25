@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 from sqlmodel import select
 
-from agentsys import artifacts, cost, deadcalls, events
+from agentsys import artifacts, audit, cost, deadcalls, events, policy
 from agentsys.cancellation import TaskCancelled, is_cancel_requested
 from agentsys.config import settings
 from agentsys.db.models import (
@@ -45,6 +45,7 @@ from agentsys.graph.state import AgentState
 from agentsys.graph.tracing import span
 from agentsys.llm import complete, structured_complete
 from agentsys.memory import long_term, short_term
+from agentsys.policy import PolicyDecision, PolicyDecisionType
 from agentsys.sanitize import scrub_nul
 from agentsys.tools.base import ToolResult, ToolValidationError, validated_kwargs
 from agentsys.tools.registry import get_registry
@@ -179,6 +180,55 @@ def _record_step_productivity(task_id: str, *, productive: bool) -> None:
     reset with it."""
     streak = 0 if productive else _unproductive_streak(task_id) + 1
     short_term.set_value(task_id, UNPRODUCTIVE_FIELD, streak)
+
+
+def _task_owner_id(task_id: str) -> str | None:
+    """Who this task belongs to, for the policy context. Task.owner_id is the
+    isolation boundary the whole app already enforces (see db/models.py's
+    User), so this is the same identity the API authorises against -- not a
+    second notion of "current user" invented for policy."""
+    with get_session() as session:
+        task = session.get(Task, task_id)
+        return task.owner_id if task else None
+
+
+def _record_policy_decision(
+    task_id: str, subtask_id: str | None, tool_name: str, kwargs: dict, decision: PolicyDecision
+) -> None:
+    """Put a non-trivial policy decision on the existing audit chain.
+
+    Called for REQUIRE_APPROVAL and DENY only. An ALLOW is the ordinary path
+    and is already fully recorded -- a tool_call TraceSpan with its arguments
+    plus a ToolCall row with its result -- so writing an audit row for every
+    one of those would add a locked, hash-chained insert to the hot path and
+    bury the decisions that matter under the ones that don't.
+
+    Arguments are summarised to their KEYS, not their values. The values are a
+    proposal shaped by attacker-influenceable content (a web page, an email
+    body, a read file), they are already stored in full on the escalation and
+    the span, and audit.record's redact() is a key-name filter -- it would
+    strip a key called "token" but not a token pasted into a `sql` or `code`
+    argument. Naming the fields is what an audit reader needs ("which
+    arguments did this decision see?"); reproducing them is a third copy in
+    the one table that must never carry a credential.
+    """
+    audit.record(
+        audit.Action.TOOL_POLICY_DECISION,
+        actor_id=None,
+        actor_label="policy",
+        target_type="task",
+        target_id=task_id,
+        outcome="denied" if decision.decision is PolicyDecisionType.DENY else "pending",
+        meta={
+            "tool_name": tool_name,
+            "action_type": decision.action_type.value,
+            "risk": decision.risk.value,
+            "decision": decision.decision.value,
+            "reason": decision.reason,
+            "argument_keys": sorted(kwargs),
+            "subtask_id": subtask_id,
+        },
+    )
 
 
 def _create_escalation(
@@ -579,18 +629,118 @@ def _run_tool_call(task_id: str, subtask_id: str, tool_name: str, kwargs: dict) 
     return True, output_text
 
 
-def run_gated_tool_call(task_id: str, subtask_id: str, tool_name: str, kwargs: dict) -> tuple[bool, str]:
+def _approval_refusal(context: dict, proposed_at: datetime) -> str | None:
+    """Why this approved call must NOT run after all, or None to proceed.
+
+    Three checks, all of which must pass before an approved tool executes.
+    They exist because "a human clicked approve" and "this exact call is still
+    the one they approved, and it is still safe to make" are different claims:
+
+    1. EXPIRY. An approval granted against a proposal the agent made hours ago
+       is an approval of arguments chosen for a world that has moved on -- the
+       architecture audit's stale-approval risk (5.2). Measured from when the
+       agent proposed, not from when the human decided.
+
+    2. THE SNAPSHOT STILL MATCHES. The fingerprint written at gate time is
+       recomputed from the stored kwargs. This is what makes "ask approval for
+       send_email(to=A), resume with send_email(to=B)" a refusal rather than a
+       silent substitution. Nothing in the API mutates Escalation.context
+       today, so this guards against a future code path -- an approver UI that
+       lets a human tweak a field, a resume that re-derives kwargs from the
+       model -- changing the call without re-evaluating policy. Both halves
+       live in the same row, so it is drift resistance, not tamper-proofing.
+
+    3. POLICY STILL DOESN'T DENY IT. Re-evaluated against the current rules,
+       because a rule may have changed (a tool reclassified, a deploy) between
+       proposal and approval. A REQUIRE_APPROVAL result is expected and fine
+       -- that is why we are here, and the human just supplied it. A DENY
+       means no approval is sufficient, so the human's cannot be either.
+
+    A refusal is not a dead end: the subtask fails with this reason, the agent
+    loop reads it, re-proposes, and a fresh policy evaluation raises a fresh
+    approval request. The one thing that must never happen is executing.
+    """
+    tool_name = context.get("tool_name")
+    kwargs = context.get("kwargs", {})
+
+    # _naive on both sides: Escalation.created_at comes back from Postgres as
+    # naive-UTC and datetime.now() is aware, and subtracting the two raises.
+    age = (_naive(datetime.now(timezone.utc)) - _naive(proposed_at)).total_seconds()
+    if age > settings.approval_expiry_seconds:
+        return (
+            f"Approval expired: this call was proposed {int(age // 60)} minutes ago and "
+            f"approvals are only executable for {settings.approval_expiry_seconds // 60} "
+            "minutes. Nothing ran. Propose the step again if it is still what you need -- "
+            "it will be re-checked against the current situation and re-approved."
+        )
+
+    expected = context.get("args_fingerprint")
+    if expected and expected != policy.args_fingerprint(tool_name, kwargs):
+        return (
+            "Approval refused: the arguments recorded for this call no longer match the "
+            "ones the approval was granted for. Nothing ran. A changed call needs its own "
+            "approval."
+        )
+
+    try:
+        tool = get_registry().get(tool_name)
+    except KeyError as exc:
+        # The tool went away between proposal and approval (a config change, a
+        # dropped MCP server). Fail closed: an approval for a tool we can no
+        # longer classify is an approval we cannot honour.
+        return f"Approval refused: {exc}. Nothing ran."
+
+    decision = policy.decide(tool, kwargs, user_id=_task_owner_id(context.get("task_id") or ""))
+    if decision.decision is PolicyDecisionType.DENY:
+        return (
+            f"Approval refused: policy now denies this call ({decision.reason}). Nothing ran. "
+            "A denied action cannot be unlocked by approving it."
+        )
+    return None
+
+
+def run_gated_tool_call(
+    task_id: str, subtask_id: str, context: dict, proposed_at: datetime
+) -> tuple[bool, str]:
     """Entry point for escalations.apply_escalation_decision's approve path
     on a tool_approval escalation -- actually executes the tool call that
     was held at the gate in _execute_subtask below, using the exact
     tool_name/kwargs stored in Escalation.context (see the gate's
-    _create_escalation call).
+    _create_escalation call, and policy.snapshot for what that dict holds).
 
     Not re-validated here, deliberately: these kwargs are the ones that came
     out of validated_kwargs before the gate, complete with injected plumbing,
     and a second pass would now reject task_id/user_id as unknown fields. The
     stored dict is a validated call, and what a human approved is that exact
-    call -- re-deriving it would be approving one thing and running another."""
+    call -- re-deriving it would be approving one thing and running another.
+
+    It is however re-CHECKED, which is a different thing: see
+    _approval_refusal above for the three conditions an approval has to still
+    satisfy at the moment it is cashed in."""
+    tool_name = context.get("tool_name")
+    kwargs = context.get("kwargs", {})
+
+    refusal = _approval_refusal({**context, "task_id": task_id}, proposed_at)
+    if refusal:
+        # Recorded on the audit chain as its own event: "a human approved this
+        # and it still did not run" is exactly the thing an incident review
+        # asks about, and it must not look like an ordinary tool failure.
+        audit.record(
+            audit.Action.TOOL_APPROVAL_STALE,
+            actor_label="policy",
+            target_type="task",
+            target_id=task_id,
+            outcome="denied",
+            meta={"tool_name": tool_name, "subtask_id": subtask_id, "reason": refusal},
+        )
+        with span(
+            task_id, "tool_call", tool_name or "unknown", subtask_id=subtask_id,
+            input={"approved_call": kwargs},
+        ) as s:
+            s["output"] = {"refused": refusal}
+            s["status"] = "error"
+        return False, refusal
+
     return _run_tool_call(task_id, subtask_id, tool_name, kwargs)
 
 
@@ -600,7 +750,7 @@ def _execute_subtask(
     """Specialist: pick a tool (or pure reasoning) and complete the subtask.
     Returns tool_success for the immediately-following review step, or None
     if the chosen tool needed human approval and got gated instead of run
-    (see the needs_approval check below) -- the caller (agent_step_node)
+    (see the policy gate below) -- the caller (agent_step_node)
     must treat None as "stop, do not call _review_subtask, this turn ends
     in an escalation" rather than a falsy tool_success. Kept as a plain
     function (not a graph node) so agent_step_node can call it inside its
@@ -682,13 +832,39 @@ def _execute_subtask(
                 task_id, subtask_id, choice.tool_name, choice.tool_input_json, str(exc)
             )
         else:
-            if tool.needs_approval(kwargs):
+            # THE POLICY BOUNDARY. Everything above this line is the model's
+            # proposal; nothing below it is the model's decision. Deterministic
+            # code decides whether this call runs, needs a human, or is refused
+            # -- see policy.py. It replaces `tool.needs_approval(kwargs)`, a
+            # bool on a Python class that two of fifteen tools set.
+            #
+            # It receives VALIDATED kwargs, never the raw tool_input_json: the
+            # validated_kwargs call above either produced them or raised, so a
+            # malformed proposal never reaches a policy rule that might read a
+            # field it does not have.
+            decision = policy.decide(tool, kwargs, user_id=_task_owner_id(task_id))
+
+            if decision.decision is PolicyDecisionType.DENY:
+                # Refused outright, and the tool is never called. Recorded the
+                # same way a validation refusal is (a tool_call span with
+                # status=error, an unproductive step, an observation the loop
+                # can reason about) because from the agent's side they are the
+                # same event: nothing ran, and repeating it will not help.
+                _record_policy_decision(task_id, subtask_id, choice.tool_name, kwargs, decision)
+                tool_success = False
+                output_text = _rejected_call(
+                    task_id, subtask_id, choice.tool_name, choice.tool_input_json,
+                    f"refused by policy: {decision.reason}",
+                )
+
+            elif decision.decision is PolicyDecisionType.REQUIRE_APPROVAL:
                 # Gate BEFORE the tool ever runs -- unlike the other three
                 # escalation kinds (plan/review/budget), which all react to an
                 # outcome that already happened, this one heads it off. See
                 # run_gated_tool_call below for what "approve" actually does on
                 # resume, and escalations.apply_escalation_decision for why that
                 # can't just be "mark this subtask DONE" like the others.
+                _record_policy_decision(task_id, subtask_id, choice.tool_name, kwargs, decision)
                 with get_session() as session:
                     subtask = session.get(Subtask, subtask_id)
                     subtask.assigned_tool = choice.tool_name
@@ -698,14 +874,19 @@ def _execute_subtask(
                     session.commit()
                 _create_escalation(
                     task_id, subtask_id,
-                    f"Tool '{choice.tool_name}' performs a side-effecting action and requires approval "
-                    f"before it runs. Proposed call: {json.dumps(kwargs)}",
+                    f"Tool '{choice.tool_name}' requires approval before it runs "
+                    f"({decision.reason}). Proposed call: {json.dumps(kwargs)}",
                     kind="tool_approval",
-                    context={"tool_name": choice.tool_name, "kwargs": kwargs},
+                    # The approval snapshot: tool name, the exact validated
+                    # kwargs, the decision that asked for approval, and a
+                    # fingerprint the resume path re-checks. Stored in the
+                    # JSONB column that already carried tool_name and kwargs,
+                    # so this needs no migration and no new table.
+                    context=policy.snapshot(choice.tool_name, kwargs, decision),
                 )
                 return None  # sentinel: gated, agent_step_node must not call _review_subtask
 
-            if deadcalls.is_dead(task_id, choice.tool_name, kwargs):
+            elif deadcalls.is_dead(task_id, choice.tool_name, kwargs):
                 # This exact call already failed earlier in this task. Running it
                 # again costs a real API call to get the identical error -- on the
                 # run that motivated this, the same unreadable .docx and .zip were
@@ -748,14 +929,20 @@ def _execute_subtask(
             # something already done. The second half used to be invisible: one
             # real task made 13 successful, near-identical file_io reads and only
             # the step budget stopped it, because every guard keyed on failure.
-            repeated = tool_success and deadcalls.record_success(task_id, choice.tool_name, kwargs)
-            if repeated:
-                output_text = (
-                    f"{output_text}\n\n[Note: this exact {choice.tool_name} call was already made "
-                    f"earlier in this task and returned the same result. Use what you already have "
-                    f"rather than fetching it again.]"
-                )
-            _record_step_productivity(task_id, productive=tool_success and not repeated)
+            #
+            # Skipped on a policy DENY: nothing ran, so there is no success to
+            # record, and _rejected_call already marked the step unproductive.
+            # Running this as well would count one refused call twice against
+            # settings.max_unproductive_steps.
+            if decision.decision is not PolicyDecisionType.DENY:
+                repeated = tool_success and deadcalls.record_success(task_id, choice.tool_name, kwargs)
+                if repeated:
+                    output_text = (
+                        f"{output_text}\n\n[Note: this exact {choice.tool_name} call was already made "
+                        f"earlier in this task and returned the same result. Use what you already have "
+                        f"rather than fetching it again.]"
+                    )
+                _record_step_productivity(task_id, productive=tool_success and not repeated)
     else:
         with span(task_id, "reasoning", "specialist_reason", subtask_id=subtask_id, input={"description": description}) as s:
             prompt = REASONING_ONLY_PROMPT.format(
@@ -979,7 +1166,7 @@ def agent_step_node(state: AgentState) -> AgentState:
         tool_success = _execute_subtask(task_id, subtask_id, preselected_choice=preselected)
         preselected = None  # only ever valid for the first attempt
         if tool_success is None:
-            # Gated on a requires_approval tool -- _execute_subtask already
+            # Gated by a policy REQUIRE_APPROVAL -- _execute_subtask already
             # created the tool_approval escalation and set the subtask
             # ESCALATED; nothing to review, this turn just ends here.
             return {"task_id": task_id, "route": "escalate"}
