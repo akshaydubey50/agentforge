@@ -1,4 +1,5 @@
 import { Collapsible } from "@/components/ui/Collapsible";
+import { humanizeValue } from "@/lib/formatValue";
 import { Markdown } from "@/components/ui/Markdown";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
@@ -52,7 +53,7 @@ export function StepOutput({ output }: { output: string }) {
           <Markdown>{summary}</Markdown>
         ) : (
           <pre className="mono overflow-x-auto rounded-[var(--rs)] border border-border bg-surface-2 p-2.5 text-[12.5px] whitespace-pre-wrap text-text">
-            {preview}
+            {asReadableText(preview)}
           </pre>
         )}
         <p className="text-[11.5px] text-text-faint">
@@ -63,7 +64,7 @@ export function StepOutput({ output }: { output: string }) {
         {summary && preview && (
           <Collapsible label="Show the raw opening">
             <pre className="mono overflow-x-auto rounded-[var(--rs)] border border-border bg-surface-2 p-2.5 text-[12px] whitespace-pre-wrap text-text-muted">
-              {preview}
+              {asReadableText(preview)}
             </pre>
           </Collapsible>
         )}
@@ -167,11 +168,12 @@ export function StepOutput({ output }: { output: string }) {
     );
   }
 
-  // file_io read: {content}
+  // file_io read: {content}. Reading back a spilled artifact returns the
+  // harness's own JSON, so it is decoded rather than shown as braces.
   if (typeof obj.content === "string") {
     return (
       <pre className="mono overflow-x-auto rounded-[var(--rs)] border border-border bg-surface-2 p-2.5 text-[12.5px] whitespace-pre-wrap text-text">
-        {obj.content}
+        {asReadableText(obj.content)}
       </pre>
     );
   }
@@ -211,6 +213,26 @@ function GenericList({ items }: { items: unknown[] }) {
 function formatScalar(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (Array.isArray(value)) return value.map(formatScalar).join(", ");
-  if (typeof value === "object") return JSON.stringify(value);
+  // humanizeValue rather than JSON.stringify: this is the fallback for tool
+  // shapes we don't have a branch for (MCP servers contribute arbitrary
+  // ones), so it is exactly where a raw dump would otherwise leak through.
+  if (typeof value === "object") return humanizeValue(value);
   return String(value);
+}
+
+/** A string that is itself serialized JSON, rendered as text.
+ *
+ * Some payloads arrive double-encoded: a tool returns a dict, the harness
+ * json.dumps it, and that string becomes the `preview` or a file's contents.
+ * Showing it raw puts braces and escaped quotes on screen for no reason, so
+ * it is parsed back and humanized. Anything that isn't JSON is returned
+ * untouched -- ordinary prose must not be mangled by this. */
+function asReadableText(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return raw;
+  try {
+    return humanizeValue(JSON.parse(trimmed));
+  } catch {
+    return raw;
+  }
 }

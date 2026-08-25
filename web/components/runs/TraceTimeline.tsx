@@ -1,10 +1,14 @@
 import type { TraceSpanOut } from "@/lib/api";
 import { Pill } from "@/components/ui/Pill";
+import { humanizeValue } from "@/lib/formatValue";
 
 function summarize(value: unknown, max = 220): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  if (!text) return "";
-  return text.length > max ? `${text.slice(0, max)}…` : text;
+  // humanizeValue, not JSON.stringify: a trace row is read by a person, and
+  // a wall of braces and escaped quotes is not a summary of anything.
+  const text = typeof value === "string" ? value : humanizeValue(value);
+  if (!text || text === "—") return "";
+  const flat = text.replace(/\s*\n\s*/g, " · ").trim();
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }
 
 const SPAN_LABEL: Record<string, string> = {

@@ -49,3 +49,6 @@ test:           ## the full pytest suite (real Postgres/Docker/LLM calls -- cost
 
 web:            ## the Next.js dashboard in dev mode
 	npm run dev --prefix web
+
+ui-check:       ## no raw JSON in rendering code (see web/scripts/check-no-raw-json.mjs)
+	npm run check:ui --prefix web
