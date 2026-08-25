@@ -167,6 +167,23 @@ class Settings(BaseSettings):
     here, and the full text is always still in Postgres."""
     context_older_step_chars: int = 300
 
+    enable_triage: bool = True
+    """The front door (graph/nodes.py's triage_node). Every turn used to pay
+    sketch + at least one agent_step + synthesize, so "thanks" cost three
+    model calls and a row of subtasks.
+
+    On by default because the failure is bounded in the safe direction: the
+    fast path has no tools, writes no subtasks, and its prompt forbids
+    asserting anything not already in the conversation, so a misrouted turn
+    answers unhelpfully rather than acting wrongly. Every error inside triage
+    falls open to the full path. Set false to restore the previous
+    always-full behaviour exactly."""
+    triage_model: str = "openai/gpt-4o-mini"
+    """The classifier and the fast-path reply. A separate setting from
+    llm_model so the cheap front door stays cheap if the main model is ever
+    pointed at something expensive -- the whole point is that a greeting
+    doesn't wake the big one."""
+
     # --- loop engineering (see deadcalls.py and nodes.agent_step_node) ---
     max_unproductive_steps: int = 3
     """Consecutive steps whose tool call failed or was blocked as a known

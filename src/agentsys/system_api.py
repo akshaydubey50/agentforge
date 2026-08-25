@@ -65,6 +65,30 @@ _NODE_META: dict[str, dict] = {
         "kind": "entry",
         "summary": "A submitted request, or a resume after a human decision.",
     },
+    "triage": {
+        "label": "Triage",
+        "role": "reviewer",
+        "kind": "llm",
+        "summary": (
+            "The front door. One cheap call decides whether this turn needs the machine at "
+            "all. Biased hard toward the full path, and any failure falls open to it — so "
+            "this can cost latency, never capability."
+        ),
+        "href": "/runs",
+        "span_type": "triage",
+    },
+    "quick_reply": {
+        "label": "Quick reply",
+        "role": "reviewer",
+        "kind": "llm",
+        "summary": (
+            "The fast path: one call, no tools, no subtasks. Its prompt forbids asserting "
+            "anything not already in the conversation, so a misrouted turn answers "
+            "unhelpfully rather than acting wrongly."
+        ),
+        "href": "/runs",
+        "span_type": "quick_reply",
+    },
     "sketch": {
         "label": "Sketch",
         "role": "supervisor",

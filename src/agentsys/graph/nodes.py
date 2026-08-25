@@ -23,12 +23,14 @@ from agentsys.db.models import (
 from agentsys.db.session import get_session
 from agentsys.graph.prompts import (
     AGENT_STEP_PROMPT,
+    QUICK_REPLY_PROMPT,
     MEMORY_REFLECTION_PROMPT,
     REASONING_ONLY_PROMPT,
     REVIEW_PROMPT,
     SKETCH_PROMPT,
     SYNTHESIS_PROMPT,
     TOOL_SELECTION_PROMPT,
+    TRIAGE_PROMPT,
 )
 from agentsys.graph.schemas import (
     MemoryReflection,
@@ -36,6 +38,7 @@ from agentsys.graph.schemas import (
     ReviewOutput,
     SketchOutput,
     ToolChoice,
+    TriageDecision,
 )
 from agentsys.graph.state import AgentState
 from agentsys.graph.tracing import span
@@ -204,9 +207,15 @@ def _gather_conversation_history(task_id: str, task: Task) -> str:
         ).all()
         if not messages:
             return ""
+        # quick_reply answers count as answers. Without them here, a turn
+        # answered on the fast path would vanish from the next turn's history
+        # and the agent would re-answer a question it had already answered.
         synth_spans = session.exec(
             select(TraceSpan)
-            .where(TraceSpan.task_id == task_id, TraceSpan.span_type == "synthesize")
+            .where(
+                TraceSpan.task_id == task_id,
+                TraceSpan.span_type.in_(("synthesize", "quick_reply")),
+            )
             .order_by(TraceSpan.started_at)
         ).all()
 
@@ -731,6 +740,111 @@ def agent_step_node(state: AgentState) -> AgentState:
     return {"task_id": task_id, "route": route}  # "agent_step" (pass) or "escalate"
 
 
+def _classify_turn(request_text: str, conversation: str):
+    """Fails open to "full". A broken classifier must cost latency, never
+    capability -- the same rule tool execution follows when a tool errors, and
+    the reason this is safe to have on by default."""
+    try:
+        return structured_complete(
+            TRIAGE_PROMPT.format(
+                request=request_text, conversation=conversation or "(nothing yet)"
+            ),
+            TriageDecision,
+            model=settings.triage_model,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("triage failed open to the full path: %s", exc)
+        return TriageDecision(route="full", reason=f"triage error ({type(exc).__name__})"), None
+
+
+def _turn_text(task_id: str, task: Task) -> str:
+    """What the user actually said this turn: the newest follow-up if there is
+    one, otherwise the original request."""
+    with get_session() as session:
+        latest = session.exec(
+            select(TaskMessage)
+            .where(TaskMessage.task_id == task_id)
+            .order_by(TaskMessage.created_at.desc())
+        ).first()
+    return latest.content if latest else task.request_text
+
+
+def triage_node(state: AgentState) -> AgentState:
+    """The front door. Most turns need the machine; some are just talking.
+
+    Before this, every turn paid sketch + at least one agent_step +
+    synthesize, so "thanks" cost three model calls and a row of subtasks.
+    This decides once, cheaply, whether that is warranted.
+
+    The asymmetry is deliberate and the prompt states it: routing real work to
+    "quick" means the user asked for something and got chat, which is far
+    worse than spending a few extra calls. Anything not obviously
+    conversational goes full."""
+    task_id = state["task_id"]
+    _check_cancelled(task_id)
+
+    with get_session() as session:
+        task = session.get(Task, task_id)
+        has_subtasks = bool(
+            session.exec(select(Subtask).where(Subtask.task_id == task_id).limit(1)).first()
+        )
+
+    conversation = _gather_conversation_history(task_id, task)
+    turn = _turn_text(task_id, task)
+
+    with span(task_id, "triage", "triage_turn", input={"turn": turn}) as s:
+        decision, completion = _classify_turn(turn, conversation)
+        s["output"] = decision.model_dump()
+    if completion is not None:
+        cost.record_llm_call(task_id, None, "triage", completion)
+
+    if decision.route == "quick":
+        return {"task_id": task_id, "route": "quick_reply"}
+    # Full path picks up exactly where route_entry used to send it.
+    return {"task_id": task_id, "route": "agent_step" if has_subtasks else "sketch"}
+
+
+def quick_reply_node(state: AgentState) -> AgentState:
+    """One model call. No tools, no subtasks, no memory write.
+
+    Nothing here can act, and the prompt forbids asserting anything not
+    already in the conversation -- so the worst a misrouted turn can do is
+    answer unhelpfully, never take a wrong action or invent a figure. That
+    bound is what makes the fast path safe to leave on."""
+    task_id = state["task_id"]
+
+    with get_session() as session:
+        task = session.get(Task, task_id)
+    turn = _turn_text(task_id, task)
+    conversation = _gather_conversation_history(task_id, task)
+
+    with span(task_id, "quick_reply", "quick_reply", input={"turn": turn}) as s:
+        try:
+            reply, completion = complete(
+                QUICK_REPLY_PROMPT.format(
+                    request=turn, conversation=conversation or "(nothing yet)"
+                ),
+                model=settings.triage_model,
+            )
+            cost.record_llm_call(task_id, None, "quick_reply", completion)
+        except Exception as exc:  # noqa: BLE001
+            # Fails toward the machine, not toward a broken turn.
+            s["output"] = {"error": str(exc)}
+            s["status"] = "error"
+            return {"task_id": task_id, "route": "sketch"}
+        # Keyed "final_answer" so _gather_conversation_history reads a quick
+        # turn exactly like a synthesized one.
+        s["output"] = {"final_answer": reply}
+
+    with get_session() as session:
+        task = session.get(Task, task_id)
+        task.final_output = scrub_nul(reply)
+        _set_task_status(session, task, TaskStatus.COMPLETED)
+        session.commit()
+
+    return {"task_id": task_id, "route": "end"}
+
+
 def escalate_node(state: AgentState) -> AgentState:
     task_id = state["task_id"]
     with get_session() as session:
@@ -824,13 +938,34 @@ def _reflect_and_save_memory(task_id: str, request_text: str, subtasks, final_an
 
 
 def route_entry(state: AgentState) -> str:
-    """A task with no subtasks yet needs a sketch; a task resuming after a
-    human decision (or mid-loop) already has subtasks and just needs to
-    keep looping."""
+    """Where a graph invocation starts.
+
+    The distinction that matters is RESUME vs NEW TURN:
+
+      resume     work already happened this turn (mid-loop, or a human just
+                 decided an escalation) -> straight back into the loop. Never
+                 triaged: the user already committed to this work, so
+                 re-classifying it would add a call and could only get it
+                 wrong.
+      new turn   a fresh task, or a follow-up on an existing one -> the front
+                 door, which decides whether this turn needs the machine.
+
+    "This turn" is measured the way agent_step_node measures its step budget
+    -- subtasks created since _turn_start -- so the two cannot disagree about
+    where a turn begins."""
     task_id = state["task_id"]
     with get_session() as session:
-        exists = session.exec(select(Subtask).where(Subtask.task_id == task_id).limit(1)).first()
-    return "agent_step" if exists else "sketch"
+        task = session.get(Task, task_id)
+        subtasks = session.exec(select(Subtask).where(Subtask.task_id == task_id)).all()
+
+    turn_start = _turn_start(task_id, task.created_at)
+    work_this_turn = any(s.created_at >= turn_start for s in subtasks)
+
+    if work_this_turn or task.status == TaskStatus.AWAITING_APPROVAL:
+        return "agent_step"
+    if not settings.enable_triage:
+        return "agent_step" if subtasks else "sketch"
+    return "triage"
 
 
 def route_after(state: AgentState) -> str:

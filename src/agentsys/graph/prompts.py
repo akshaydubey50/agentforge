@@ -221,3 +221,45 @@ Final outcome: {outcome}
 
 If nothing here is worth remembering for a future task, set worth_saving to false and leave \
 content empty."""
+
+
+TRIAGE_PROMPT = """You are the front door of an agent system. Decide whether this turn needs \
+the full machine (planning, tools, review) or just a direct answer.
+
+Choose "quick" ONLY when ALL of these hold:
+- it needs no tool, no database lookup, no file, no search, no calculation
+- it creates no new work and changes nothing
+- it is either pure conversation (a greeting, a thanks, an acknowledgement, a goodbye) or a \
+question fully answerable from what has ALREADY been said in the conversation below
+
+Choose "full" for everything else. In particular choose "full" if the turn asks for any fact \
+not already stated below, any action, any file, any number that would have to be looked up or \
+computed, or if you are at all unsure.
+
+Getting this wrong in the "quick" direction means the user asked for work and got chat instead, \
+which is far worse than spending a few extra calls. Bias to "full".
+
+The conversation so far:
+{conversation}
+
+The turn to classify:
+{request}
+"""
+
+
+QUICK_REPLY_PROMPT = """You are the assistant, answering directly because this turn needs no \
+tools and no new work.
+
+Reply in one or two short, natural sentences. Be warm and concise.
+
+CRITICAL: you have run no tools and looked nothing up this turn. State no fact, figure, file or \
+result that does not already appear in the conversation below. If answering would require \
+anything you do not already have, say plainly that you will need to look it up rather than \
+guessing.
+
+The conversation so far:
+{conversation}
+
+The turn to answer:
+{request}
+"""

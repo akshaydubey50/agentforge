@@ -5,9 +5,11 @@ review/synthesize) are covered separately in test_graph_integration.py."""
 from sqlmodel import select
 
 from agentsys.config import settings
-from agentsys.db.models import Escalation, Subtask, SubtaskStatus, Task
+from datetime import datetime, timedelta, timezone
+
+from agentsys.db.models import Escalation, Subtask, SubtaskStatus, Task, TaskMessage, TaskStatus
 from agentsys.db.session import get_session, init_db
-from agentsys.graph.nodes import _load_sketch, agent_step_node, route_entry
+from agentsys.graph.nodes import _classify_turn, _load_sketch, agent_step_node, route_entry
 from conftest import get_test_owner_id
 
 
@@ -35,15 +37,66 @@ def _make_subtask(task_id: str, position: int, status: SubtaskStatus, depends_on
         return subtask
 
 
-def test_route_entry_sketches_a_fresh_task():
+def test_route_entry_sends_a_fresh_task_to_the_front_door():
+    """A new turn is triaged first -- it may need no machinery at all."""
     task_id = _make_task()
-    assert route_entry({"task_id": task_id}) == "sketch"
+    assert route_entry({"task_id": task_id}) == "triage"
 
 
-def test_route_entry_resumes_a_task_with_existing_subtasks():
+def test_route_entry_skips_triage_when_disabled():
+    """ENABLE_TRIAGE=false must restore the previous behaviour exactly."""
+    task_id = _make_task()
+    with_triage_off = {"task_id": task_id}
+    settings.enable_triage = False
+    try:
+        assert route_entry(with_triage_off) == "sketch"
+    finally:
+        settings.enable_triage = True
+
+
+def test_route_entry_resumes_mid_loop_without_re_triaging():
+    """Work already happened this turn, so the user has committed to it --
+    re-classifying would add a call and could only get it wrong."""
     task_id = _make_task()
     _make_subtask(task_id, 0, SubtaskStatus.DONE)
     assert route_entry({"task_id": task_id}) == "agent_step"
+
+
+def test_route_entry_resumes_a_task_awaiting_approval_without_triage():
+    """A human just decided an escalation; that decision is the instruction,
+    not something to reclassify."""
+    task_id = _make_task()
+    with get_session() as session:
+        task = session.get(Task, task_id)
+        task.status = TaskStatus.AWAITING_APPROVAL
+        session.add(task)
+        session.commit()
+    assert route_entry({"task_id": task_id}) == "agent_step"
+
+
+def test_route_entry_triages_a_follow_up_turn_on_an_existing_task():
+    """The case triage helps most: a completed task gets "thanks". Prior
+    subtasks exist, but none belong to THIS turn, so it is a new turn."""
+    task_id = _make_task()
+    _make_subtask(task_id, 0, SubtaskStatus.DONE)
+    with get_session() as session:
+        session.add(
+            TaskMessage(task_id=task_id, role="user", content="thanks!",
+                        created_at=datetime.now(timezone.utc) + timedelta(seconds=5))
+        )
+        session.commit()
+    assert route_entry({"task_id": task_id}) == "triage"
+
+
+def test_triage_fails_open_to_the_full_path(monkeypatch):
+    """A broken classifier must cost latency, never capability."""
+    def boom(*args, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr("agentsys.graph.nodes.structured_complete", boom)
+    decision, completion = _classify_turn("anything", "")
+    assert decision.route == "full"
+    assert completion is None
 
 
 def test_load_sketch_falls_back_when_no_sketch_span_exists():

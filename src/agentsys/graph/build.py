@@ -3,24 +3,44 @@ from langgraph.graph import END, StateGraph
 from agentsys.graph.nodes import (
     agent_step_node,
     escalate_node,
+    quick_reply_node,
     route_after,
     route_entry,
     sketch_node,
     synthesize_node,
+    triage_node,
 )
 from agentsys.graph.state import AgentState
 
 
 def build_graph():
     graph = StateGraph(AgentState)
+    graph.add_node("triage", triage_node)
+    graph.add_node("quick_reply", quick_reply_node)
     graph.add_node("sketch", sketch_node)
     graph.add_node("agent_step", agent_step_node)
     graph.add_node("escalate", escalate_node)
     graph.add_node("synthesize", synthesize_node)
 
+    # Three entry points, not two: a NEW turn goes through the front door
+    # (triage), while a resume -- mid-loop, or a human having just decided an
+    # escalation -- goes straight back into the loop and is never
+    # re-classified. See route_entry.
     graph.set_conditional_entry_point(
-        route_entry, {"sketch": "sketch", "agent_step": "agent_step"}
+        route_entry,
+        {"triage": "triage", "sketch": "sketch", "agent_step": "agent_step"},
     )
+
+    # The fast path exists so a turn that needs no tools and no new work
+    # doesn't pay sketch + agent_step + synthesize to say "you're welcome".
+    # Every failure inside it routes to "sketch" instead, so triage can only
+    # ever cost latency, never capability.
+    graph.add_conditional_edges(
+        "triage",
+        route_after,
+        {"quick_reply": "quick_reply", "sketch": "sketch", "agent_step": "agent_step"},
+    )
+    graph.add_conditional_edges("quick_reply", route_after, {"end": END, "sketch": "sketch"})
 
     graph.add_conditional_edges(
         "sketch", route_after, {"escalate": "escalate", "agent_step": "agent_step"}
