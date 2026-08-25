@@ -330,6 +330,29 @@ def _save_plan(task_id: str, plan: list[str], steps_taken: int) -> None:
         s["output"] = {"plan": plan}
 
 
+def _is_artifact_read(tool_name: str, kwargs: dict) -> bool:
+    """Is this call following a spill pointer? Matched on the artifact
+    directory rather than "any file_io read", so reading a normal workspace
+    file still gets the usual size discipline."""
+    if tool_name != "file_io" or kwargs.get("action") != "read":
+        return False
+    return str(kwargs.get("path", "")).replace("\\", "/").startswith(f"{artifacts.ARTIFACT_DIRNAME}/")
+
+
+def _capped(text: str) -> str:
+    """A hard ceiling for the one path that skips spilling. Generous enough
+    that a real document arrives whole, small enough that a pathological file
+    can't blow the context window."""
+    limit = settings.max_dereference_chars
+    if len(text) <= limit:
+        return text
+    return (
+        text[:limit]
+        + f'… [truncated: {len(text)} chars total, showing the first {limit}. '
+        f"This is the full stored result; there is no further pointer to follow.]"
+    )
+
+
 def _run_tool_call(task_id: str, subtask_id: str, tool_name: str, kwargs: dict) -> tuple[bool, str]:
     """Actually invokes a tool and records the ToolCall row + tool_call
     TraceSpan. Returns (tool_success, output_text) for the caller to fold
@@ -379,6 +402,25 @@ def _run_tool_call(task_id: str, subtask_id: str, tool_name: str, kwargs: dict) 
         return False, f"Tool call failed: {result.error}"
 
     output_text = json.dumps(result.output)
+    if _is_artifact_read(tool_name, kwargs):
+        # THE DEREFERENCE PATH IS EXEMPT FROM SPILLING.
+        #
+        # Spilling parks an oversized result in a file and hands the model a
+        # pointer, on the promise that it can read the file back when the
+        # preview isn't enough (see artifacts.py). But the read is itself a
+        # tool call, so it was spilled too -- the escape hatch sat behind the
+        # very door it exists to open, and following a pointer could never
+        # succeed for anything above the threshold.
+        #
+        # Observed: a 28KB Drive file spilled, then re-read and re-spilled 13
+        # times, growing to 2.6MB, until the step budget ran out. Drive worked
+        # perfectly; the pointer was simply un-followable.
+        #
+        # Reading the whole thing is the POINT here -- artifacts.py calls it
+        # "one deliberate step rather than a permanent tax on every step", and
+        # _gather_prior_context truncates it back down on later steps. The cap
+        # below only stops a pathological file from blowing the context window.
+        return True, _capped(output_text)
     if len(output_text) > settings.max_tool_output_chars:
         # Spill the payload to the workspace and keep only a preview +
         # pointer in what goes back into the prompt. The ToolCall row above
@@ -516,7 +558,18 @@ def _execute_subtask(
         else:
             tool_success, output_text = _run_tool_call(task_id, subtask_id, choice.tool_name, kwargs)
 
-        _record_step_productivity(task_id, productive=tool_success)
+        # A step is unproductive when it errored OR when it succeeded at
+        # something already done. The second half used to be invisible: one
+        # real task made 13 successful, near-identical file_io reads and only
+        # the step budget stopped it, because every guard keyed on failure.
+        repeated = tool_success and deadcalls.record_success(task_id, choice.tool_name, kwargs)
+        if repeated:
+            output_text = (
+                f"{output_text}\n\n[Note: this exact {choice.tool_name} call was already made "
+                f"earlier in this task and returned the same result. Use what you already have "
+                f"rather than fetching it again.]"
+            )
+        _record_step_productivity(task_id, productive=tool_success and not repeated)
     else:
         with span(task_id, "reasoning", "specialist_reason", subtask_id=subtask_id, input={"description": description}) as s:
             prompt = REASONING_ONLY_PROMPT.format(

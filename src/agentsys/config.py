@@ -161,6 +161,13 @@ class Settings(BaseSettings):
     """How much of a spilled result stays inline. Enough for the model to
     tell whether it needs the rest (and to answer outright when the head of
     a document is all that was needed) without carrying the whole payload."""
+    max_dereference_chars: int = 60_000
+    """Ceiling on a read that FOLLOWS a spill pointer (see nodes._capped).
+    That one path skips spilling on purpose -- otherwise the escape hatch
+    sits behind the door it exists to open, and a pointer can never be
+    followed for anything above max_tool_output_chars. Generous enough for a
+    real document to arrive whole; small enough that a pathological file
+    can't blow the context window."""
     context_recent_steps_full: int = 3
     """Recent steps whose output stays in the prompt verbatim. Older steps
     are truncated -- recency is the cheapest useful relevance heuristic
