@@ -9,6 +9,7 @@ from sqlmodel import select
 from agentsys import artifacts, audit, cost, deadcalls, events, execution, policy, verification
 from agentsys.cancellation import TaskCancelled, is_cancel_requested
 from agentsys.config import settings
+from agentsys.context import build_agent_step_context
 from agentsys.db.models import (
     Escalation,
     EscalationStatus,
@@ -1484,6 +1485,19 @@ def agent_step_node(state: AgentState) -> AgentState:
     plan_text = _load_current_plan(task_id)
     prior_context = _gather_prior_context(task_id)
     conversation = _gather_conversation_history(task_id, task)
+    tool_descriptions = _tool_descriptions()
+    step_context = build_agent_step_context(
+        task_id=task_id,
+        owner_id=task.owner_id,
+        request_text=request_text,
+        conversation=conversation,
+        plan=plan_text,
+        prior_context=prior_context,
+        dead_calls=deadcalls.describe(task_id),
+        tool_descriptions=tool_descriptions,
+        steps_taken=steps_taken_this_turn,
+        steps_remaining=settings.max_task_steps - steps_taken_this_turn,
+    )
 
     with span(
         task_id, "agent_step", f"decide_step_{steps_taken + 1}",
@@ -1491,16 +1505,17 @@ def agent_step_node(state: AgentState) -> AgentState:
     ) as s:
         prompt = AGENT_STEP_PROMPT.format(
             request=request_text,
-            conversation=conversation,
-            plan=plan_text,
-            tool_descriptions=_tool_descriptions(),
-            prior_context=prior_context,
-            dead_calls=deadcalls.describe(task_id),
+            conversation=step_context.conversation,
+            memory_context=step_context.memory_context,
+            plan=step_context.plan,
+            tool_descriptions=tool_descriptions,
+            prior_context=step_context.prior_context,
+            dead_calls=step_context.dead_calls,
             steps_taken=steps_taken_this_turn,
             steps_remaining=settings.max_task_steps - steps_taken_this_turn,
         )
         decision, completion = structured_complete(prompt, NextStepDecision, model=settings.llm_model)
-        s["output"] = decision.model_dump()
+        s["output"] = {**decision.model_dump(), "context": step_context.metrics}
     cost.record_llm_call(task_id, None, "agent_step", completion)
 
     # Persist the living to-do list whenever the agent revised it, so the next

@@ -272,6 +272,19 @@ class Settings(BaseSettings):
     memory_semantic_merge_similarity: float = 0.9
     """High-confidence near-duplicate threshold. False merges are worse than
     duplicate memories, so this stays conservative."""
+    agent_step_context_budget_tokens: int = 24_000
+    """Approximate context-window ceiling for one agent_step call. Phase 6C
+    subtracts agent_step_reserved_output_tokens to get the usable pre-call
+    input budget; provider reported LlmCall.prompt_tokens remains the ground
+    truth afterward."""
+    agent_step_reserved_output_tokens: int = 2_000
+    """Output headroom reserved when selecting agent_step input context."""
+    agent_step_memory_budget_tokens: int = 900
+    """Maximum approximate tokens of durable memory injected into one
+    agent_step prompt. Low-relevance memory is dropped before recent
+    conversation or task evidence."""
+    agent_step_memory_max_items: int = 6
+    """Hard cap on memory rows selected for one agent_step prompt."""
 
     enable_triage: bool = True
     """The front door (graph/nodes.py's triage_node). Every turn used to pay

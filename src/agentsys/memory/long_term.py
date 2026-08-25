@@ -114,6 +114,11 @@ def add_memory(
     return memory_id
 
 
+def _is_active(entry: MemoryEntry) -> bool:
+    status = (entry.meta or {}).get("status")
+    return status in (None, "", "active")
+
+
 def retrieve_relevant(
     query: str, *, owner_id: str, k: int = 3, kind: str | None = None, similarity_floor: float = 0.3
 ) -> list[RetrievedMemory]:
@@ -157,6 +162,8 @@ def retrieve_relevant(
     for mid, doc, meta, distance in zip(ids, documents, metadatas, distances):
         entry = by_id.get(mid)
         if not entry:
+            continue
+        if not _is_active(entry):
             continue
         if kind and entry.kind != kind:
             continue

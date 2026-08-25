@@ -53,6 +53,9 @@ needs a connection that isn't set up, calling it says so — that is one step, n
 
 Original request: {request}
 {conversation}
+Selected durable memory and constraints (use only when relevant; current task evidence wins):
+{memory_context}
+
 Your current working plan (started from your initial sketch; keep it up to date via updated_plan \
 as you learn — this is the living to-do list, not a fixed script):
 {plan}
