@@ -20,13 +20,18 @@ Nothing should `SELECT SUM(cost_usd)`. That is the thing this module exists
 to stop.
 """
 
+import logging
 from collections import defaultdict
 
 from sqlmodel import select
 
+from agentsys import otel
 from agentsys import pricing
 from agentsys.db.models import LlmCall
 from agentsys.db.session import get_session
+from agentsys.telemetry import exception_category
+
+logger = logging.getLogger(__name__)
 
 
 def record_llm_call(task_id: str, subtask_id: str | None, purpose: str, completion) -> None:
@@ -43,26 +48,41 @@ def record_llm_call(task_id: str, subtask_id: str | None, purpose: str, completi
         cached_tokens = details.get("cached_tokens")
     cached_tokens = int(cached_tokens or 0)
 
+    cost_usd = pricing.cost_for(model, prompt_tokens, completion_tokens, cached_tokens)
+
     with get_session() as session:
-        session.add(
-            LlmCall(
-                task_id=task_id,
-                subtask_id=subtask_id,
-                purpose=purpose,
-                model=model,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                cached_tokens=cached_tokens,
-                # Kept for continuity and for anything reading rows directly,
-                # but derived the same way a read would derive it -- so the
-                # cached value and the live one agree at write time and
-                # diverge only when a rate is later corrected.
-                cost_usd=pricing.cost_for(
-                    model, prompt_tokens, completion_tokens, cached_tokens
-                ),
-            )
+        row = LlmCall(
+            task_id=task_id,
+            subtask_id=subtask_id,
+            purpose=purpose,
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cached_tokens=cached_tokens,
+            # Kept for continuity and for anything reading rows directly,
+            # but derived the same way a read would derive it -- so the
+            # cached value and the live one agree at write time and diverge
+            # only when a rate is later corrected.
+            cost_usd=cost_usd,
         )
+        session.add(row)
         session.commit()
+        session.refresh(row)
+        llm_call_id = row.id
+    try:
+        otel.record_llm_usage(
+            task_id=task_id,
+            subtask_id=subtask_id,
+            llm_call_id=llm_call_id,
+            purpose=purpose,
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cached_tokens=cached_tokens,
+            cost_usd=cost_usd,
+        )
+    except Exception as exc:  # noqa: BLE001 -- external telemetry is fail-open
+        logger.debug("LLM usage telemetry export failed (category=%s)", exception_category(exc))
 
 
 def spend_from_rows(rows) -> dict:

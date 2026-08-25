@@ -5,6 +5,7 @@ from agentsys import events, otel
 from agentsys.db.models import TraceSpan
 from agentsys.db.session import get_session
 from agentsys.sanitize import scrub_nul
+from agentsys.telemetry import span_attributes
 
 
 @contextmanager
@@ -62,12 +63,30 @@ def span(task_id: str, span_type: str, name: str, *, subtask_id: str | None = No
             # A node can report failure by setting box["status"] without
             # raising (see nodes.py), so the OTel status is set from the box,
             # not only from the exception path.
-            if box["status"] != "ok":
-                otel.set_error(otel_span, str(box["output"].get("error", "failed")))
-            _finish(span_id, task_id, span_type, name, subtask_id, box, started)
+            duration_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+            try:
+                otel.set_attributes(
+                    otel_span,
+                    span_attributes(
+                        span_id=span_id,
+                        task_id=task_id,
+                        subtask_id=subtask_id,
+                        span_type=span_type,
+                        name=name,
+                        status=box["status"],
+                        duration_ms=duration_ms,
+                        input=input or {},
+                        output=box["output"],
+                    ),
+                )
+                if box["status"] != "ok":
+                    otel.set_error(otel_span, str(box["output"].get("error", "failed")))
+            except Exception:  # noqa: BLE001 -- telemetry must never block TraceSpan closeout
+                pass
+            _finish(span_id, task_id, span_type, name, subtask_id, box, duration_ms)
 
 
-def _finish(span_id, task_id, span_type, name, subtask_id, box, started) -> None:
+def _finish(span_id, task_id, span_type, name, subtask_id, box, duration_ms) -> None:
     """Close out the durable row and emit span_end. Split out of span() only
     so the context managers above stay readable."""
     with get_session() as session:
@@ -91,7 +110,7 @@ def _finish(span_id, task_id, span_type, name, subtask_id, box, started) -> None
             "name": name,
             "subtask_id": subtask_id,
             "status": box["status"],
-            "duration_ms": int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+            "duration_ms": duration_ms,
             "output": events.truncate(box["output"]),
         },
     )

@@ -269,7 +269,16 @@ def _create_escalation(
         )
         session.commit()
     trace_reason = _trace_safe_escalation_reason(kind, reason, context)
-    with span(task_id, "escalation", "escalation_created", subtask_id=subtask_id, input={"reason": trace_reason}) as s:
+    trace_input = {"reason": trace_reason, "kind": kind}
+    if context:
+        if context.get("tool_name"):
+            trace_input["tool_name"] = context["tool_name"]
+        policy_context = context.get("policy") or {}
+        if policy_context:
+            trace_input["policy_decision"] = policy_context.get("decision")
+            trace_input["action_type"] = policy_context.get("action_type")
+            trace_input["risk"] = policy_context.get("risk")
+    with span(task_id, "escalation", "escalation_created", subtask_id=subtask_id, input=trace_input) as s:
         s["output"] = {"reason": trace_reason}
 
 

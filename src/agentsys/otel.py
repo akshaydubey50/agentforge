@@ -35,6 +35,7 @@ import logging
 from contextlib import contextmanager
 
 from agentsys.config import settings
+from agentsys.telemetry import exception_category, llm_attributes, safe_error_attributes, sanitize_text
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +50,15 @@ _KIND_FOR = {
     "reasoning": "LLM",
     "review": "LLM",
     "synthesize": "LLM",
+    "triage": "LLM",
+    "quick_reply": "LLM",
+    "goal_verification": "LLM",
     "tool_call": "TOOL",
     "memory": "RETRIEVER",
     "escalation": "CHAIN",
+    "verification": "CHAIN",
+    "plan": "CHAIN",
+    "agent": "AGENT",
 }
 
 
@@ -92,7 +99,10 @@ def _get_tracer():
         _tracer = provider.get_tracer("agentsys")
         logger.info("OTel export enabled -> %s", settings.otel_exporter_otlp_endpoint)
     except Exception as exc:  # noqa: BLE001 -- telemetry must not fail a run
-        logger.warning("OTel export unavailable, continuing without it: %s", exc)
+        logger.warning(
+            "OTel export unavailable, continuing without it (category=%s)",
+            exception_category(exc),
+        )
         _tracer = None
     return _tracer
 
@@ -117,13 +127,13 @@ def span(name: str, *, span_type: str, task_id: str, subtask_id: str | None = No
                 otel_span.set_attribute("agentsys.subtask_id", subtask_id)
             for key, value in attributes.items():
                 if value is not None:
-                    otel_span.set_attribute(f"agentsys.{key}", str(value)[:4096])
+                    otel_span.set_attribute(f"agentsys.{key}", sanitize_text(value))
             yield otel_span
     except Exception as exc:  # noqa: BLE001
         # A failure INSIDE the wrapped body is re-raised by the with-block
         # above before reaching here; this only catches the SDK itself
         # misbehaving, which must not take the run down with it.
-        logger.debug("OTel span failed: %s", exc)
+        logger.debug("OTel span failed (category=%s)", exception_category(exc))
         yield None
 
 
@@ -135,6 +145,62 @@ def set_error(otel_span, message: str) -> None:
     try:
         from opentelemetry.trace import Status, StatusCode
 
-        otel_span.set_status(Status(StatusCode.ERROR, message))
+        for key, value in safe_error_attributes(message).items():
+            otel_span.set_attribute(key, value)
+        otel_span.set_status(Status(StatusCode.ERROR, "agentsys.telemetry.error"))
     except Exception:  # noqa: BLE001
         pass
+
+
+def set_attributes(otel_span, attributes: dict) -> None:
+    """Attach already-sanitized attributes. Exporter failures stay fail-open."""
+    if otel_span is None:
+        return
+    try:
+        for key, value in attributes.items():
+            if value is not None:
+                otel_span.set_attribute(key, value)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def record_llm_usage(
+    *,
+    task_id: str,
+    subtask_id: str | None,
+    llm_call_id: str | None = None,
+    purpose: str,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    cached_tokens: int,
+    cost_usd: float,
+) -> None:
+    """Emit token/cost metadata from the same seam that writes LlmCall rows.
+
+    This is observability only. It is deliberately a fail-open sidecar to the
+    durable LlmCall insert, and it never exports raw prompts or responses.
+    """
+    tracer = _get_tracer()
+    if tracer is None:
+        return
+    provider = model.split("/", 1)[0] if "/" in model else None
+    attrs = llm_attributes(
+        task_id=task_id,
+        subtask_id=subtask_id,
+        llm_call_id=llm_call_id,
+        purpose=purpose,
+        model=model,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cached_tokens=cached_tokens,
+        cost_usd=cost_usd,
+        provider=provider,
+    )
+    try:
+        with tracer.start_as_current_span(f"llm_usage.{purpose}") as otel_span:
+            otel_span.set_attribute("openinference.span.kind", "LLM")
+            for key, value in attrs.items():
+                otel_span.set_attribute(key, value)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("OTel LLM usage export failed (category=%s)", exception_category(exc))
