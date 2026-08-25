@@ -89,11 +89,13 @@ from agentsys.auth_router import router as auth_router  # noqa: E402
 from agentsys.integrations.router import router as google_router  # noqa: E402
 from agentsys.system_api import router as system_router  # noqa: E402
 from agentsys.events_api import router as events_router  # noqa: E402
+from agentsys.artifacts_api import router as artifacts_router  # noqa: E402
 
 app.include_router(auth_router)
 app.include_router(google_router)
 app.include_router(system_router)
 app.include_router(events_router)
+app.include_router(artifacts_router)
 
 
 @app.get("/health")

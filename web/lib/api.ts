@@ -204,6 +204,31 @@ export interface SystemSummary {
   activity_24h: Record<string, { runs: number; errors: number }>;
 }
 
+// --- Task artifacts (mirrors src/agentsys/artifacts_api.py) ----------------
+
+export interface TaskArtifact {
+  path: string;
+  bytes: number;
+  modified_at: string;
+  /** "deliverable" = the agent chose to write it via file_io; "spillover" =
+   *  the harness parked an oversized tool result under _artifacts/. */
+  kind: "deliverable" | "spillover";
+}
+
+export interface TaskArtifactList {
+  task_id: string;
+  files: TaskArtifact[];
+  total_bytes: number;
+}
+
+export interface TaskArtifactContent {
+  path: string;
+  bytes: number;
+  binary: boolean;
+  content: string | null;
+  truncated: boolean;
+}
+
 // A 401 here means the session cookie is missing/expired -- every caller
 // bounces to /login instead of each page having to check response.status
 // itself. window.location (not next/navigation's router) because api.ts is
@@ -270,6 +295,13 @@ export const api = {
     }),
 
   getTrace: (taskId: string) => request<TraceSpanOut[]>(`/v1/tasks/${taskId}/trace`),
+
+  listArtifacts: (taskId: string) => request<TaskArtifactList>(`/v1/tasks/${taskId}/artifacts`),
+
+  readArtifact: (taskId: string, path: string) =>
+    request<TaskArtifactContent>(
+      `/v1/tasks/${taskId}/artifacts/content?path=${encodeURIComponent(path)}`
+    ),
 
   listEscalations: (status: "pending" | "all" = "pending", limit = 25, offset = 0, taskId?: string) =>
     request<Page<EscalationOut>>(

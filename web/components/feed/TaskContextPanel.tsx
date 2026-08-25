@@ -1,5 +1,6 @@
 import type { TaskDetailOut, TraceSpanOut } from "@/lib/api";
 import { SUBTASK_STATUS_META, TASK_STATUS_META } from "@/lib/agentStatus";
+import { TaskArtifacts } from "@/components/feed/TaskArtifacts";
 import { cn } from "@/lib/utils";
 
 function elapsedLabel(createdAt: string, updatedAt: string, running: boolean) {
@@ -86,6 +87,9 @@ export function TaskContextPanel({ task, spans }: { task: TaskDetailOut; spans: 
         <Row k="trace spans">{spans.length}</Row>
         <Row k="tool calls">{toolCalls}</Row>
       </Section>
+      {/* Renders nothing when the task wrote no files, which is most of
+          them -- see TaskArtifacts. */}
+      <TaskArtifacts taskId={task.id} />
     </div>
   );
 }
