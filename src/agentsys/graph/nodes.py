@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 from sqlmodel import select
 
-from agentsys import artifacts, cost, deadcalls
+from agentsys import artifacts, cost, deadcalls, events
 from agentsys.cancellation import TaskCancelled, is_cancel_requested
 from agentsys.config import settings
 from agentsys.db.models import (
@@ -72,9 +72,15 @@ def _set_task_status(session, task: Task, status: TaskStatus) -> None:
     'running' when sketch_node finished the step it was already inside)."""
     if task.status == TaskStatus.CANCELLED:
         return
+    previous = task.status
     task.status = status
     task.updated_at = datetime.now(timezone.utc)
     session.add(task)
+    # The other half of the event seam (see events.py). Spans say what the
+    # agent is doing; this says what state the task is in, which is what a
+    # live view needs to stop spinning and show a result.
+    if previous != status:
+        events.publish(task.id, "task_status", {"status": status.value, "previous": previous.value})
 
 
 _UNPRODUCTIVE_FIELD = "unproductive_streak"
