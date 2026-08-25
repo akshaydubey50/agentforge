@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
 from agentsys.llm import complete
+from agentsys.execution import ExecutionSafety
 from agentsys.policy import ActionType, Risk
 from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.base import Tool, ToolResult
@@ -247,6 +248,9 @@ class WebSearchTool(Tool):
     sanitize.wrap_untrusted) precisely because a search result can carry a
     prompt injection. Reading attacker-influenceable text is a LOW-risk read;
     what the agent then proposes on the strength of it gets its own decision."""
+    execution_safety = ExecutionSafety.IDEMPOTENT
+    """A stateless query against a search API or an HTML endpoint. Nothing
+    changes at either end, so a retry after any outcome is safe."""
     description = (
         "Searches the web and returns a list of titles, URLs, and snippets: "
         "{results: [{title, url, snippet}, ...]}. "

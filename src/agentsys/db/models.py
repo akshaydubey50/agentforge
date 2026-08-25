@@ -160,13 +160,44 @@ class Subtask(SQLModel, table=True):
 
 
 class ToolCall(SQLModel, table=True):
+    """One tool invocation. Since Phase 3 this is also the durable EXECUTION
+    LEDGER -- the record that survives a worker being killed mid-call, and the
+    only thing that can answer "did this effect already happen?" after one
+    (see agentsys/execution.py, docs/PHASE3_EXECUTION_NOTE.md)."""
+
     id: str = Field(default_factory=_uuid, primary_key=True)
     subtask_id: str = Field(foreign_key="subtask.id", index=True)
     tool_name: str
     input: dict = Field(default_factory=dict, sa_column=Column(JSONB))
     output: dict = Field(default_factory=dict, sa_column=Column(JSONB))
-    success: bool
+    success: bool | None
+    """THREE states, not two, and the third one is the honest one:
+
+        True   the tool ran and reported success
+        False  the tool ran and reported failure, OR recovery resolved an
+               ambiguous row for a tool that is safe to repeat
+        NULL   AMBIGUOUS -- the row was written BEFORE the call and never
+               resolved, so a worker died while the tool was running and
+               nothing here knows whether the effect landed
+
+    Nullable rather than a second `status` column: two columns that can
+    disagree is worse than one column with a documented NULL, and this is the
+    same convention LlmCall.cached_tokens already uses deliberately ("NULL
+    means not recorded, not none"). Readers that treat NULL as falsy are
+    treating "unknown" as "not a success", which is correct."""
+
     latency_ms: int
+    effect_key: str | None = Field(default=None, index=True)
+    """Stable identity of the logical EFFECT this call performs -- see
+    execution.effect_key. Set only for calls that have an effect (anything
+    policy classifies above READ); NULL for reads, which are deliberately
+    never deduplicated because re-reading is legitimate and sometimes required
+    (google_photos_pick's resume is the concrete case).
+
+    Indexed because it is looked up once before every effectful call, to ask
+    whether this exact effect already succeeded. Not unique: several attempt
+    rows can share a key, and the ledger is what makes them countable."""
+
     created_at: datetime = Field(default_factory=_now)
 
 

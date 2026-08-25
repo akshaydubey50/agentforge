@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 from sqlmodel import select
 
-from agentsys import artifacts, audit, cost, deadcalls, events, policy
+from agentsys import artifacts, audit, cost, deadcalls, events, execution, policy
 from agentsys.cancellation import TaskCancelled, is_cancel_requested
 from agentsys.config import settings
 from agentsys.db.models import (
@@ -18,7 +18,6 @@ from agentsys.db.models import (
     Task,
     TaskMessage,
     TaskStatus,
-    ToolCall,
     TraceSpan,
 )
 from agentsys.db.session import get_session
@@ -45,9 +44,9 @@ from agentsys.graph.state import AgentState
 from agentsys.graph.tracing import span
 from agentsys.llm import complete, structured_complete
 from agentsys.memory import long_term, short_term
-from agentsys.policy import PolicyDecision, PolicyDecisionType
+from agentsys.policy import ActionType, PolicyDecision, PolicyDecisionType
 from agentsys.sanitize import scrub_nul
-from agentsys.tools.base import ToolResult, ToolValidationError, validated_kwargs
+from agentsys.tools.base import ToolValidationError, validated_kwargs
 from agentsys.tools.registry import get_registry
 
 logger = logging.getLogger(__name__)
@@ -546,50 +545,82 @@ def _capped(text: str) -> str:
     )
 
 
-def _run_tool_call(task_id: str, subtask_id: str, tool_name: str, kwargs: dict) -> tuple[bool, str]:
+def _execution_meta(outcome: execution.ToolOutcome) -> dict:
+    """What Phase 3 did with this call, for the tool_call span.
+
+    Enough to diagnose a duplicate-effect or retry incident from the trace
+    alone: which logical effect this was (shortened -- the full hash is in the
+    ToolCall row and a 12-hex prefix is what a human actually reads), what the
+    tool's retry semantics are, how many attempts it took, and whether it was
+    reused or refused instead of run. Deliberately no arguments and no output:
+    both are already on the span's input/output, and a third copy is a third
+    place a credential could land."""
+    meta: dict = {"safety": outcome.safety.value, "attempts": outcome.attempts}
+    if outcome.effect_key:
+        meta["effect"] = outcome.effect_key[:12]
+    if outcome.failure:
+        meta["failure_kind"] = outcome.failure.value
+    if outcome.retry_reason:
+        # Kept even when the retry worked: without it, a call that failed and
+        # recovered is indistinguishable in the trace from one that worked
+        # first time.
+        meta["retry_reason"] = outcome.retry_reason.value
+    if outcome.deduped:
+        meta["deduped"] = True
+    if outcome.refused:
+        meta["refused_ambiguous"] = True
+    return meta
+
+
+def _run_tool_call(
+    task_id: str,
+    subtask_id: str,
+    tool_name: str,
+    kwargs: dict,
+    action_type: ActionType,
+) -> tuple[bool, str]:
     """Actually invokes a tool and records the ToolCall row + tool_call
     TraceSpan. Returns (tool_success, output_text) for the caller to fold
     into the subtask's output. Shared by _execute_subtask's normal path and
     run_gated_tool_call's post-approval resume path -- same recording,
     scrubbing, spillover, and dead-call bookkeeping either way, so a gated
     call that gets approved looks identical in the trace to one that never
-    needed gating."""
+    needed gating.
+
+    The invocation itself, and the ToolCall row that used to be written here,
+    now belong to execution.execute_tool (Phase 3): dedupe against the durable
+    ledger, an in-flight row committed BEFORE the effect, bounded retry of
+    known-retryable failures, and the resolution afterwards. What stays here is
+    what was always here -- the span, NUL scrubbing, spilling, and the
+    observation text the loop reasons about.
+
+    action_type is the EFFECTIVE classification policy just produced for this
+    call, not the tool's baseline: it is what decides whether this call has an
+    effect worth deduplicating (file_io is a READ to list a directory and a
+    LOCAL_WRITE to write a file, and only the second may be deduped). Passed in
+    rather than re-derived, for the same reason PolicyDecision carries it.
+    """
     registry = get_registry()
-    start = datetime.now(timezone.utc)
     with span(task_id, "tool_call", tool_name, subtask_id=subtask_id, input=kwargs) as s:
-        try:
-            result = registry.get(tool_name).run(**kwargs)
-        except TypeError as exc:
-            # A backstop now, not the primary guard: every proposed call is
-            # validated against the tool's args_model before reaching here
-            # (see validated_kwargs), so a plain kwarg mismatch can no longer
-            # get this far. What still can is a **kwargs tool whose contract
-            # isn't a local pydantic model -- an MCP tool trusting a third
-            # party's schema, or generate_tweet's deliberate extra="allow".
-            # Surface it as a failed ToolResult so the reviewer can
-            # reject-and-retry, instead of crashing the graph.
-            result = ToolResult(success=False, error=f"invalid arguments for {tool_name}: {exc}")
+        outcome = execution.execute_tool(
+            registry.get(tool_name),
+            kwargs,
+            task_id=task_id,
+            subtask_id=subtask_id,
+            action_type=action_type,
+            # Only looked up when it is part of the effect's identity. A read
+            # is never deduped, so it needs no owner, and paying a query per
+            # read to compute a key nothing will use is a cost with no buyer.
+            user_id=_task_owner_id(task_id) if action_type is not ActionType.READ else None,
+        )
+        result = outcome.result
         # A tool result can carry a NUL byte from a scraped page or a read
         # file; scrub before any of it reaches a JSONB/text column below.
         result.output = scrub_nul(result.output)
         if result.error:
             result.error = scrub_nul(result.error)
-        s["output"] = result.model_dump()
+        s["output"] = {**result.model_dump(), "execution": _execution_meta(outcome)}
         s["status"] = "ok" if result.success else "error"
-    latency_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
-
-    with get_session() as session:
-        session.add(
-            ToolCall(
-                subtask_id=subtask_id,
-                tool_name=tool_name,
-                input=kwargs,
-                output=result.output if result.success else {"error": result.error},
-                success=result.success,
-                latency_ms=latency_ms,
-            )
-        )
-        session.commit()
 
     if not result.success:
         # Remembered for the rest of this task so a later step can't
@@ -598,6 +629,16 @@ def _run_tool_call(task_id: str, subtask_id: str, tool_name: str, kwargs: dict) 
         return False, f"Tool call failed: {result.error}"
 
     output_text = json.dumps(result.output)
+    if outcome.deduped:
+        # The effect had already succeeded, so nothing ran and this is the
+        # stored result. Said out loud rather than passed silently: the model
+        # is looking at an outcome it did not just cause, and a step that
+        # believes it re-sent something it did not is the confusion this
+        # whole phase exists to prevent.
+        output_text = json.dumps(
+            {**result.output, "_reused": "This exact action had already completed in this task; "
+             "it was not performed again. The result below is the original one."}
+        )
     if _is_artifact_read(tool_name, kwargs):
         # THE DEREFERENCE PATH IS EXEMPT FROM SPILLING.
         #
@@ -741,7 +782,19 @@ def run_gated_tool_call(
             s["status"] = "error"
         return False, refusal
 
-    return _run_tool_call(task_id, subtask_id, tool_name, kwargs)
+    # The classification policy made when the call was GATED, not one derived
+    # now: it is part of the snapshot the human approved (policy.snapshot), and
+    # re-deriving it here would silently substitute today's answer for the one
+    # that was actually shown. Falls back to the fail-closed EXTERNAL_WRITE for
+    # a pre-Phase-2 escalation row with no policy block -- which only means the
+    # call is treated as an effect and therefore deduped, never the reverse.
+    recorded = (context.get("policy") or {}).get("action_type")
+    try:
+        action_type = ActionType(recorded) if recorded else ActionType.EXTERNAL_WRITE
+    except ValueError:
+        action_type = ActionType.EXTERNAL_WRITE
+
+    return _run_tool_call(task_id, subtask_id, tool_name, kwargs, action_type)
 
 
 def _execute_subtask(
@@ -898,7 +951,9 @@ def _execute_subtask(
                     f"repeating it will not produce a different result."
                 )
             else:
-                tool_success, output_text = _run_tool_call(task_id, subtask_id, choice.tool_name, kwargs)
+                tool_success, output_text = _run_tool_call(
+                    task_id, subtask_id, choice.tool_name, kwargs, decision.action_type
+                )
 
                 # A tool can ask for a human MID-CALL, which the approval gate
                 # above cannot express: that one pauses BEFORE running, on the

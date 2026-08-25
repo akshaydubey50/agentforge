@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.integrations import google_photos as api
 from agentsys.memory import short_term
+from agentsys.execution import ExecutionSafety
 from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult
 
@@ -50,6 +51,13 @@ class GooglePhotosPickTool(Tool):
     is why it is not LOW -- but nothing in the user's library changes, and the
     call already pauses for a human via the _awaiting_human seam, so gating it
     would ask for approval to ask for approval."""
+    execution_safety = ExecutionSafety.IDEMPOTENT
+    """Idempotent ON THE SESSION, which is this tool's whole design (see
+    the module docstring): the picker session id is written to the task
+    short-term memory BEFORE this returns, so a second call finds the first
+    picker rather than opening a second one. It must also never be deduped
+    -- the resume call is the one that collects what the human picked --
+    and it is not, because it is a READ."""
     description = (
         "Asks the user to choose photos or videos from their Google Photos library, then "
         "returns what they chose. Arguments: reason (str, required) -- a short, specific "

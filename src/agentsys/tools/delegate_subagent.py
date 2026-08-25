@@ -23,6 +23,7 @@ from agentsys import cost
 from agentsys.config import settings
 from agentsys.db.models import SubAgentRun, SubAgentRunStatus
 from agentsys.db.session import get_session
+from agentsys.execution import ExecutionSafety, run_with_retry
 from agentsys.graph.prompts import SUBAGENT_STEP_PROMPT
 from agentsys.graph.schemas import SubAgentStep
 from agentsys.graph.tracing import span
@@ -51,6 +52,11 @@ class DelegateSubagentTool(Tool):
     delegation as well would ask for approval twice for one action and once for
     none. MEDIUM rather than LOW because it spends real budget and its inner
     calls are chosen from a wider set than any single step."""
+    execution_safety = ExecutionSafety.NON_RETRYABLE_SIDE_EFFECT
+    """Never repeated automatically. A delegation is a whole nested loop with
+    its own model spend and its own tool calls; replaying it after an ambiguous
+    outcome re-runs everything it already did, and none of that is visible from
+    out here."""
     description = (
         "Hands this subtask's goal to a sub-agent that can make several tool calls in "
         "sequence, inspecting each result before deciding what to do next -- unlike a normal "
@@ -170,13 +176,24 @@ class DelegateSubagentTool(Tool):
                 )
                 continue
 
-            try:
-                result = registry.get(tool_name).run(**kwargs)
-            except TypeError as exc:
-                result = ToolResult(success=False, error=f"invalid arguments for {tool_name}: {exc}")
+            # THE SAME EXECUTION SAFETY AS THE MAIN LOOP (Phase 3), which this
+            # seam also did not have: it called run() bare, so a transient
+            # failure ended the step and the TypeError guard was a second copy
+            # of _run_tool_call's.
+            #
+            # run_with_retry, not execute_tool: the ledger and its dedupe are
+            # for EFFECTS, and a sub-agent cannot produce one. Everything above
+            # a READ is REQUIRE_APPROVAL, and a sub-agent refuses anything that
+            # is not ALLOW (just above), so every call reaching this line is a
+            # read -- the one class that is deliberately never deduped (see
+            # execution.execute_tool). If that ever loosens, this must become
+            # execute_tool.
+            attempt = run_with_retry(registry.get(tool_name), kwargs)
+            result = attempt.result
 
-            outcome = json.dumps(result.output) if result.success else f"FAILED: {result.error}"
-            step_lines.append(f"{step_num}. called {tool_name} -> {outcome[:300]}")
+            summary = json.dumps(result.output) if result.success else f"FAILED: {result.error}"
+            retried = f" (after {attempt.attempts} attempts)" if attempt.attempts > 1 else ""
+            step_lines.append(f"{step_num}. called {tool_name}{retried} -> {summary[:300]}")
 
         with get_session() as session:
             run_row = session.get(SubAgentRun, run_id)

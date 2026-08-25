@@ -53,12 +53,21 @@ import jsonschema
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from agentsys.execution import ExecutionSafety
 from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult, ToolValidationError
 
 logger = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT_S = 30.0
+CALL_TIMEOUT_S = 120.0
+DISCOVERY_TIMEOUT_S = 30.0
+"""Bound on one remote tool CALL, which had none: initialize() was wrapped
+in wait_for and call_tool was not, so a server that accepted the connection
+and then never answered held the worker until Celery's own wall clock -- the
+exact hang every first-party tool already bounds with an httpx timeout.
+Generous, because a third party's tool may legitimately be slow; the point is
+that it ends."""
 
 
 def _server_params(server_config: dict) -> StdioServerParameters:
@@ -203,6 +212,20 @@ class MCPTool(Tool):
         # stop the app from starting, and must not open the gate either.
         self.action_type = _declared(server_config.get("action_type"), ActionType, Tool.action_type)
         self.risk = _declared(server_config.get("risk"), Risk, Tool.risk)
+        # Retry/effect semantics, declared the same way and defaulting the
+        # same way (Phase 3, see execution.py). An operator who knows a
+        # server's tools are safe to repeat says so:
+        #
+        #     {"name": "company_internal", ..., "execution_safety": "idempotent"}
+        #
+        # Undeclared means NON_RETRYABLE_SIDE_EFFECT: a tool this repo has
+        # never seen is never auto-retried and is never repeated after an
+        # ambiguous outcome. "The operator did not say" and "repeating this is
+        # harmless" must not look the same, for the same reason they must not
+        # for action_type/risk above.
+        self.execution_safety = _declared(
+            server_config.get("execution_safety"), ExecutionSafety, Tool.execution_safety
+        )
         # The argument contract, straight from the server. An MCP tool already
         # ships machine-readable JSON Schema, so there is nothing to translate:
         # wrapping every discovered tool in a hand-written pydantic model would
@@ -280,6 +303,14 @@ class MCPTool(Tool):
             # call the reviewer can reject and retry, never as a crashed graph
             # run -- same reasoning as the TypeError guard in _execute_subtask.
             logger.warning("MCP call %s failed: %s", self.name, exc)
+            if isinstance(exc, asyncio.TimeoutError):
+                # Named, not folded into the generic message: a bare
+                # TimeoutError stringifies to "" and execution.classify_failure
+                # would read the result as UNKNOWN rather than a timeout.
+                return ToolResult(
+                    success=False,
+                    error=f"MCP call {self.name} timed out after {CALL_TIMEOUT_S:.0f}s",
+                )
             return ToolResult(success=False, error=f"MCP call failed: {exc}")
 
     async def _call(self, arguments: dict) -> ToolResult:
@@ -287,7 +318,9 @@ class MCPTool(Tool):
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await asyncio.wait_for(session.initialize(), timeout=CONNECT_TIMEOUT_S)
-                result = await session.call_tool(self.remote_tool_name, arguments)
+                result = await asyncio.wait_for(
+                    session.call_tool(self.remote_tool_name, arguments), timeout=CALL_TIMEOUT_S
+                )
 
         if getattr(result, "is_error", False):
             return ToolResult(success=False, error=_error_text(result))
@@ -299,7 +332,7 @@ async def _list_remote_tools(server_config: dict) -> list[Any]:
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await asyncio.wait_for(session.initialize(), timeout=CONNECT_TIMEOUT_S)
-            listed = await session.list_tools()
+            listed = await asyncio.wait_for(session.list_tools(), timeout=DISCOVERY_TIMEOUT_S)
             return list(listed.tools)
 
 
@@ -308,5 +341,10 @@ def discover_mcp_tools(server_config: dict) -> list[MCPTool]:
     advertises. Raises on connection failure; the registry decides whether an
     unreachable server is fatal (it isn't -- see registry._build_registry)."""
     server_name = server_config["name"]
-    remote_tools = asyncio.run(_list_remote_tools(server_config))
+    try:
+        remote_tools = asyncio.run(_list_remote_tools(server_config))
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError(
+            f"MCP discovery for server '{server_name}' timed out after {DISCOVERY_TIMEOUT_S:g}s"
+        ) from exc
     return [MCPTool(server_name, server_config, t) for t in remote_tools]

@@ -14,6 +14,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.integrations.google_oauth import GoogleOAuthError, get_valid_access_token
+from agentsys.execution import ExecutionSafety
 from agentsys.policy import ActionType, Risk
 from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.base import Tool, ToolResult
@@ -69,6 +70,9 @@ class GmailSearchTool(Tool):
     is the injected user_id (graph/nodes.py's _injected_kwargs), not anything
     policy can see in the arguments -- so the READ/MEDIUM rule allows the call
     and that injection remains the whole of the access control, unchanged."""
+    execution_safety = ExecutionSafety.IDEMPOTENT
+    """users.messages.list. A search neither marks anything read nor
+    changes a label, so repeating it is safe."""
     description = (
         "Searches the connected Gmail account and returns matching messages' senders, "
         "subjects, dates, snippets, and ids -- read-only, cannot send, reply, or "
@@ -146,6 +150,9 @@ class GmailReadTool(Tool):
     args_model = GmailReadArgs
     action_type = ActionType.READ
     risk = Risk.MEDIUM
+    execution_safety = ExecutionSafety.IDEMPOTENT
+    """users.messages.get with format=full. Read-only at Gmail's end too:
+    fetching a message does not mark it read."""
     description = (
         "Reads one full email message from the connected Gmail account by its id (get "
         "ids from gmail_search first). Read-only. Arguments: message_id (str, required). "

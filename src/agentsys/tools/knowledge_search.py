@@ -10,6 +10,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
+from agentsys.execution import ExecutionSafety
 from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult
 
@@ -25,6 +26,10 @@ class KnowledgeSearchTool(Tool):
     args_model = KnowledgeSearchArgs
     action_type = ActionType.READ
     risk = Risk.LOW
+    execution_safety = ExecutionSafety.IDEMPOTENT
+    """An HTTP POST, but a read: rag-api's /v1/ask retrieves and generates an
+    answer and stores nothing, so asking the same question twice changes
+    nothing at either end."""
     description = (
         "Answers a question using documents uploaded to Knowledge -- runs real hybrid "
         "search (not a keyword match) plus grounded generation with citations. Use this "

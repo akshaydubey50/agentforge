@@ -52,6 +52,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentsys.config import settings
 from agentsys.db.session import get_engine
+from agentsys.execution import ExecutionSafety
 from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult
 
@@ -135,6 +136,11 @@ class DbQueryTool(Tool):
     args_model = DbQueryArgs
     action_type = ActionType.READ
     risk = Risk.MEDIUM
+    execution_safety = ExecutionSafety.IDEMPOTENT
+    """SELECT-only, and not on trust: the statement shape, an
+    EXPLAIN-resolved relation allowlist and a read-only Postgres role all
+    have to agree before a query runs (Phase 0). Re-running one changes
+    nothing."""
     """MEDIUM, not LOW: this is arbitrary SQL against the application's own
     engine, and the thing that keeps it to one sample table is the three-layer
     guard in run() (Phase 0), not the shape of the argument. Policy must not

@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
+from agentsys.execution import ExecutionSafety
 from agentsys.policy import ActionType, Risk
 from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.base import Tool, ToolResult
@@ -40,6 +41,15 @@ class FileIOTool(Tool):
     Sandbox escapes are NOT policy's call: _resolve_within_sandbox below
     refuses any path outside the task directory, and a second copy of that
     check in policy would be the weaker one."""
+    execution_safety = ExecutionSafety.IDEMPOTENT
+    """Idempotent in all three actions, and genuinely so rather than
+    conveniently: _write below is mkdir(exist_ok) + write_text, which
+    TRUNCATES, so the same path and the same content produce the same file
+    whether it runs once or five times. read/list are trivially idempotent.
+
+    A write is still DEDUPED by execute_tool -- being safe to repeat and
+    being worth repeating are different things, and the ledger is what
+    makes the result stable across an approval resume or a crash."""
     description = (
         "Reads, writes, or lists files inside this task's sandboxed workspace directory. "
         "Arguments: action (str, required, one of 'read'/'write'/'list'), "

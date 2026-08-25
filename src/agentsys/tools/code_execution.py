@@ -46,6 +46,7 @@ import docker.errors
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
+from agentsys.execution import ExecutionSafety
 from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult
 
@@ -77,6 +78,16 @@ class CodeExecutionTool(Tool):
     guard against accidents rather than a boundary against a determined
     attacker (see the description). HIGH => REQUIRE_APPROVAL, which preserves
     exactly the gating the deleted `requires_approval = True` provided."""
+    execution_safety = ExecutionSafety.NON_RETRYABLE_SIDE_EFFECT
+    """Never repeated automatically after an ambiguous outcome.
+
+    Worth being precise about WHY, because the obvious reason is wrong: the
+    container is detached, network-disabled and has NO volume mount, so this
+    tool cannot touch the task workspace and cannot reach anything external
+    -- its durable effect is nil and re-running it would in fact be
+    harmless. The classification is about the approval, not the filesystem:
+    arbitrary code a human approved once must not be silently replayed by a
+    crash recovery nobody watched."""
     description = (
         "Runs untrusted Python code in an ephemeral, network-isolated Docker container "
         "(no network, memory/process caps, hard timeout). A real sandbox against "

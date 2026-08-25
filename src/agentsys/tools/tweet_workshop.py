@@ -29,6 +29,7 @@ from agentsys import cost
 from agentsys.config import settings
 from agentsys.graph.tracing import span
 from agentsys.llm import structured_complete
+from agentsys.execution import ExecutionSafety
 from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult
 
@@ -141,6 +142,9 @@ class TweetWorkshopTool(Tool):
     args_model = TweetWorkshopArgs
     action_type = ActionType.READ
     risk = Risk.LOW
+    execution_safety = ExecutionSafety.IDEMPOTENT
+    """Text in, text out. Repeating spends real LLM budget, which
+    max_task_cost_usd already caps, but has no effect on anything."""
     """Writes text and returns it -- it does not post anything, and there is
     no Twitter/X client in this repo. READ is the honest fit in policy's
     four-value taxonomy for "no external effect"; the day this tool gains a

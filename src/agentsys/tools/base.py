@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from agentsys.execution import ExecutionSafety
 from agentsys.policy import ActionType, Risk
 
 
@@ -91,6 +92,25 @@ class Tool(ABC):
     is a LOW-risk READ to list a directory and a MEDIUM-risk LOCAL_WRITE to
     write a file. Approval is NOT a static property here -- that was the old
     requires_approval bool this replaces (ARCHITECTURE_AUDIT 5.2)."""
+
+    execution_safety: ExecutionSafety = ExecutionSafety.NON_RETRYABLE_SIDE_EFFECT
+    """Whether repeating THIS tool is safe -- a different question from whether
+    a call was permitted, and the one that decides what happens after a crash
+    or a transient failure (see execution.py).
+
+    Fail-closed for the same reason action_type/risk are: a tool that never
+    declares its retry semantics is never auto-retried and is never repeated
+    after an ambiguous outcome, because "the author forgot" and "repeating this
+    is harmless" must not look the same to the executor.
+
+    Deterministic and NOT argument-dependent, deliberately. file_io is the one
+    tool whose POLICY decision depends on its arguments (read vs write), but
+    its safety does not: `write` is a write_text to a resolved path, which is
+    idempotent for the same path and content, and read/list are idempotent
+    trivially. If a tool ever needs per-call safety it belongs beside
+    policy._effective, not here.
+
+    The LLM cannot influence this. It is a class attribute, never an argument."""
 
     args_model: type[BaseModel] | None = None
     """The tool's argument contract: a pydantic model of exactly the arguments

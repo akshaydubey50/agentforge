@@ -332,6 +332,25 @@ class Settings(BaseSettings):
     self-heals either way: an expired approval costs one extra round trip,
     never a stuck task."""
 
+    # --- tool execution safety (see execution.py -- the ONE place a tool
+    # call is retried) ---
+    tool_max_attempts: int = 3
+    """Total attempts (not retries) for ONE tool call, and only ever for a
+    known-retryable failure of an IDEMPOTENT tool -- see
+    execution.is_retryable. A tool that is not safe to repeat is never
+    retried automatically at any count; its failure goes back to the agent
+    loop, which can re-propose and get a fresh policy evaluation.
+
+    Deliberately separate from llm_max_attempts: those attempts cost money,
+    these can cost a side effect."""
+    tool_backoff_base_seconds: float = 0.5
+    tool_backoff_max_seconds: float = 8.0
+    """Equal-jitter exponential backoff between tool attempts, the same curve
+    as llm_backoff_* and much shorter -- a tool retry is buying its way past a
+    blip, not past a provider's quota window. In-process (execution.py sleeps,
+    as llm.py does) rather than a requeue: at these delays a queue round trip
+    would cost more than the wait and would lose the step's position."""
+
     max_subtask_retries: int = 2
     plan_confidence_escalation_threshold: int = 3
     review_escalation_threshold: int = 2
@@ -384,6 +403,11 @@ class Settings(BaseSettings):
             # server says otherwise.
             "action_type": "read",
             "risk": "low",
+            # Every tool it exposes is a pure read (the time, a dice roll,
+            # an office lookup), so repeating one is safe -- see
+            # execution.ExecutionSafety. A third-party server that declares
+            # nothing is never auto-retried instead.
+            "execution_safety": "idempotent",
         }
     ]
     """External MCP servers whose tools are discovered at startup and registered

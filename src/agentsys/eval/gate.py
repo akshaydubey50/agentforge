@@ -72,6 +72,11 @@ UNIT_SUITES = [
     # flow) is NOT here: it needs Postgres and Redis, so it belongs with the
     # rest of the integration suite, not in a tier whose promise is "free".
     "tests/test_policy.py",
+    # Phase 3. Effect identity, failure classification and the retry matrix are
+    # pure functions of their inputs -- execution.py touches the database only
+    # in the ledger half, which is tests/test_execution_ledger.py and needs
+    # Postgres, so it stays out of a tier whose promise is "free".
+    "tests/test_execution_safety.py",
 ]
 
 JUDGE_THRESHOLD = 0.7
