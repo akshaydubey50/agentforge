@@ -51,6 +51,7 @@ def apply_escalation_decision(
         BUDGET_ESCALATION_KIND,
         UNPRODUCTIVE_FIELD,
         run_gated_tool_call,
+        verify_gated_tool_call,
     )
 
     # Set only on the tool_approval/approve path, where a gated tool actually
@@ -99,6 +100,12 @@ def apply_escalation_decision(
                 tool_success, output_text = run_gated_tool_call(
                     escalation.task_id, escalation.subtask_id, escalation.context, escalation.created_at
                 )
+                if tool_success:
+                    tool_success, verification_note = verify_gated_tool_call(
+                        escalation.task_id, escalation.subtask_id, tool_success
+                    )
+                    if verification_note:
+                        output_text = f"{output_text}\n{verification_note}"
                 gated_tool = (tool_name, tool_success)
                 subtask.output = output_text
                 # A failure here (bad args, tool down) doesn't retry through

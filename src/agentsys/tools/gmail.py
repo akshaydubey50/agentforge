@@ -1,19 +1,22 @@
-"""Gmail tool -- read-only search + fetch over the connected account.
+"""Gmail tools over the connected account.
 
-Same contract and same not-connected degradation as google_drive.py. The
-Gmail REST API returns message bodies as base64url-encoded MIME parts, so
-the only real work beyond the HTTP call is walking the payload tree to pull
-out the readable text part.
+Search/read are read-only. Draft creation is the first external mutation this
+system supports: it creates a Gmail draft, never sends it. All tools use the
+same runtime-owned user_id injection, so the model never chooses whose Gmail
+account is touched.
 """
 
 from __future__ import annotations
 
 import base64
+import re
+from email.message import EmailMessage
+from email.utils import getaddresses, parseaddr
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from agentsys.integrations.google_oauth import GoogleOAuthError, get_valid_access_token
+from agentsys.integrations.google_oauth import GMAIL_COMPOSE_SCOPE, GoogleOAuthError, get_valid_access_token
 from agentsys.execution import ExecutionSafety
 from agentsys.policy import ActionType, Risk
 from agentsys.sanitize import wrap_untrusted
@@ -21,6 +24,7 @@ from agentsys.tools.base import Tool, ToolResult
 
 _GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 _MAX_RESULTS = 10
+_EMAIL_RE = re.compile(r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$")
 
 
 def _header(headers: list[dict], name: str) -> str:
@@ -48,6 +52,26 @@ def _decode_body(payload: dict) -> str:
         return None
 
     return walk(payload) or ""
+
+
+def _normalised_email(value: str) -> str:
+    _display, addr = parseaddr(value)
+    return addr.strip().lower()
+
+
+def get_draft(user_id: str, draft_id: str) -> dict:
+    """Fetch one Gmail draft using the same connected-account boundary as the
+    tools. Kept small and module-local so Phase 4 verification can check a
+    created draft without inventing another tool or table."""
+    token = get_valid_access_token(user_id)
+    resp = httpx.get(
+        f"{_GMAIL_BASE}/drafts/{draft_id}",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"format": "full"},
+        timeout=20.0,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 
 class GmailSearchArgs(BaseModel):
@@ -192,5 +216,119 @@ class GmailReadTool(Tool):
                 # body from an arbitrary sender, which is exactly the shape
                 # of content a prompt-injection attempt would arrive in.
                 "body": wrap_untrusted(_decode_body(payload), "gmail"),
+            },
+        )
+
+
+class GmailCreateDraftArgs(BaseModel):
+    """Only user-authored message fields are model-controlled. user_id is
+    runtime-injected from Task.owner_id and is deliberately not a field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    to: str = Field(min_length=3, max_length=320, description="One recipient email address, e.g. jane@example.com.")
+    subject: str = Field(min_length=1, max_length=998, description="Draft subject line.")
+    body: str = Field(min_length=1, max_length=100_000, description="Plain text draft body.")
+
+    @field_validator("to")
+    @classmethod
+    def valid_recipient(cls, value: str) -> str:
+        candidate = value.strip()
+        if "\r" in candidate or "\n" in candidate:
+            raise ValueError("to must not contain line breaks")
+        if "," in candidate:
+            raise ValueError("exactly one recipient is supported")
+        if ";" in candidate:
+            raise ValueError("exactly one recipient is supported")
+        parsed = getaddresses([candidate])
+        non_empty = [(display, addr) for display, addr in parsed if addr]
+        if len(parsed) != 1 or len(non_empty) != 1:
+            raise ValueError("exactly one recipient is supported")
+        _display, addr = non_empty[0]
+        if not _EMAIL_RE.match(addr):
+            raise ValueError("to must be a valid email address")
+        return candidate
+
+    @field_validator("subject")
+    @classmethod
+    def valid_subject(cls, value: str) -> str:
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("must not be blank")
+        if "\r" in candidate or "\n" in candidate:
+            raise ValueError("subject must not contain line breaks")
+        return value
+
+    @field_validator("body")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("must not be blank")
+        return value
+
+
+class GmailCreateDraftTool(Tool):
+    name = "gmail_create_draft"
+    args_model = GmailCreateDraftArgs
+    action_type = ActionType.EXTERNAL_WRITE
+    risk = Risk.MEDIUM
+    """Creates a draft in the user's Gmail account. It does not send mail, but
+    it still mutates an external system and therefore goes through the Phase 2
+    approval gate."""
+    execution_safety = ExecutionSafety.NON_RETRYABLE_SIDE_EFFECT
+    """Gmail's drafts.create endpoint does not accept an idempotency key this
+    system can rely on. A timeout or worker crash after the request is sent may
+    have created the draft, so Phase 3 must not blindly retry it."""
+    description = (
+        "Creates a plain-text Gmail draft in the connected Gmail account. It does NOT send "
+        "email. Requires human approval because it changes Gmail. Arguments: to (str, "
+        "required, one email address), subject (str, required), body (str, required, plain "
+        "text). Example: {\"to\":\"recruiter@example.com\",\"subject\":\"AI Engineer "
+        "Follow-up\",\"body\":\"Thank you for speaking with me...\"}. Returns "
+        "{draft_id, message_id, to, subject, verified:false}; verification checks the draft "
+        "exists and matches recipient/subject after creation."
+    )
+
+    def run(self, to: str, subject: str, body: str, user_id: str) -> ToolResult:
+        try:
+            token = get_valid_access_token(
+                user_id,
+                required_scope=GMAIL_COMPOSE_SCOPE,
+                purpose="Gmail draft creation (gmail.compose)",
+            )
+        except GoogleOAuthError as e:
+            return ToolResult(success=False, error=f"Gmail not available: {e.detail}")
+
+        message = EmailMessage()
+        message["To"] = to
+        message["Subject"] = subject
+        message.set_content(body)
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")
+
+        try:
+            resp = httpx.post(
+                f"{_GMAIL_BASE}/drafts",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json={"message": {"raw": raw}},
+                timeout=20.0,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            return ToolResult(success=False, error=f"Gmail draft creation failed: {e.response.status_code} {e.response.text[:200]}")
+        except httpx.HTTPError as e:
+            return ToolResult(success=False, error=f"Gmail draft creation failed: {e}")
+
+        payload = resp.json()
+        message_payload = payload.get("message") or {}
+        return ToolResult(
+            success=True,
+            output={
+                "draft_id": payload.get("id"),
+                "message_id": message_payload.get("id"),
+                "to": to,
+                "to_normalized": _normalised_email(to),
+                "subject": subject,
+                "verified": False,
             },
         )

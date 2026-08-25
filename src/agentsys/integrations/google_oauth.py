@@ -1,9 +1,9 @@
 """Google OAuth 2.0 (Authorization Code flow) -- doubles as both 'Sign in
 with Google' (identity) and 'Connect Google Account' (Drive/Gmail access
-for the tools), because they're the same consent: a user who signs in has
-necessarily just granted the openid/email/profile + drive.readonly/
-gmail.readonly scopes in DEFAULT_SCOPES below, so there is no reason to make
-them click through a second, separate authorization.
+for the tools), because they're the same consent. A freshly connected user is
+asked for the openid/email/profile + drive.readonly/gmail.readonly/
+gmail.compose scopes in DEFAULT_SCOPES below; older connections may have only
+the pre-Phase-5 read scopes and must reconnect before draft creation.
 
 Why this exists / the shape it takes:
   The dashboard's Sign in with Google button must send the user's own
@@ -15,6 +15,9 @@ Why this exists / the shape it takes:
   the Drive/Gmail tools call get_valid_access_token(user_id), which silently
   refreshes an expired access token using the stored refresh token -- so the
   user signs in once and the agent keeps working without re-consenting.
+  Refresh preserves the grant Google already issued; it does not add scopes
+  a user never approved, so write tools can require a scope before calling an
+  API that needs it.
 
   No Google SDK dependency is added: the three HTTP calls involved (auth URL
   is just a query string, token exchange and refresh are one POST each) are
@@ -51,17 +54,20 @@ _STATE_TTL_S = 600  # a consent screen the user leaves open longer than this is 
 _REFRESH_SKEW_S = 120  # refresh a token this many seconds before it actually expires
 
 # openid/email/profile establish who's signing in; drive.readonly/
-# gmail.readonly are what the tools use. Read-only to start: the agent can
-# look things up in Drive/Gmail but cannot send mail or modify/delete files.
-# Widening this is a deliberate, reviewable change (and forces a re-consent,
-# since Google records granted scopes).
+# gmail.readonly are what the read tools use. gmail.compose is the narrowest
+# Gmail write scope for Phase 5 draft creation. This system still exposes NO
+# send tool, so sending remains impossible from the registry. Widening this is
+# a deliberate, reviewable change (and forces a re-consent, since Google
+# records granted scopes).
 DEFAULT_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",  # name + picture, for the signed-in-as UI
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.compose",
 ]
+GMAIL_COMPOSE_SCOPE = "https://www.googleapis.com/auth/gmail.compose"
 
 
 def default_scopes() -> list[str]:
@@ -304,7 +310,24 @@ def _refresh(conn: GoogleConnection) -> GoogleConnection:
         return fresh
 
 
-def get_valid_access_token(user_id: str) -> str:
+def _require_scope(conn: GoogleConnection, required_scope: str | None, purpose: str | None) -> None:
+    if not required_scope:
+        return
+    granted = set((conn.scopes or "").split())
+    if required_scope in granted:
+        return
+    raise GoogleOAuthError(
+        (
+            f"Google account must be reconnected to grant {purpose or required_scope}. "
+            "Disconnect and connect Google again, then approve the action again."
+        ),
+        status_code=401,
+    )
+
+
+def get_valid_access_token(
+    user_id: str, *, required_scope: str | None = None, purpose: str | None = None
+) -> str:
     """The one function the Drive/Gmail tools call. Returns a usable access
     token for the given user, transparently refreshing an expired/
     near-expired one. Raises GoogleOAuthError (which the tools convert into
@@ -317,6 +340,7 @@ def get_valid_access_token(user_id: str) -> str:
     conn = get_connection(user_id)
     if conn is None:
         raise GoogleOAuthError("No Google account is connected.", status_code=401)
+    _require_scope(conn, required_scope, purpose)
 
     expiry = conn.token_expiry
     if expiry is not None:

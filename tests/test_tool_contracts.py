@@ -26,7 +26,7 @@ from agentsys.tools.code_execution import CodeExecutionTool
 from agentsys.tools.db_query import DbQueryTool
 from agentsys.tools.delegate_subagent import DelegateSubagentTool
 from agentsys.tools.file_io import FileIOTool
-from agentsys.tools.gmail import GmailReadTool, GmailSearchTool
+from agentsys.tools.gmail import GmailCreateDraftTool, GmailReadTool, GmailSearchTool
 from agentsys.tools.google_drive import GoogleDriveReadTool, GoogleDriveTool
 from agentsys.tools.google_photos import GooglePhotosPickTool
 from agentsys.tools.knowledge_search import KnowledgeSearchTool
@@ -46,6 +46,7 @@ LOCAL_TOOLS = [
     TweetWorkshopTool(),
     GmailSearchTool(),
     GmailReadTool(),
+    GmailCreateDraftTool(),
     GoogleDriveTool(),
     GoogleDriveReadTool(),
     GooglePhotosPickTool(),
@@ -205,6 +206,12 @@ def test_generate_tweet_deliberately_allows_extras():
     [
         (FileIOTool(), "file_io", '{"action": "read", "path": "a.txt", "task_id": "another-task"}', "task_id"),
         (GmailSearchTool(), "gmail_search", '{"query": "invoice", "user_id": "someone-else"}', "user_id"),
+        (
+            GmailCreateDraftTool(),
+            "gmail_create_draft",
+            '{"to": "a@example.com", "subject": "hi", "body": "hello", "user_id": "someone-else"}',
+            "user_id",
+        ),
         (DelegateSubagentTool(), "delegate_subagent", '{"goal": "dig", "depth": 99}', "depth"),
     ],
 )

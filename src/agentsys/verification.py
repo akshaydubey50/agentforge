@@ -8,13 +8,16 @@ latest ToolCall, tool failure classification, and the task workspace.
 from __future__ import annotations
 
 import re
+from email.utils import getaddresses
 from enum import Enum
 from pathlib import Path
 
+import httpx
 from pydantic import BaseModel
 
 from agentsys.config import settings
 from agentsys.db.models import Subtask, SubtaskStatus, ToolCall
+from agentsys.integrations.google_oauth import GoogleOAuthError
 from agentsys.execution import FailureKind, classify_failure, is_retryable, safety_of
 from agentsys.tools import registry as registry_module
 
@@ -76,6 +79,21 @@ def _countable(output: dict) -> int | None:
         if isinstance(value, list):
             return len(value)
     return None
+
+
+def _header(headers: list[dict], name: str) -> str:
+    for h in headers:
+        if h.get("name", "").lower() == name.lower():
+            return h.get("value", "")
+    return ""
+
+
+def _normalised_email(value: str) -> str:
+    parsed = getaddresses([value or ""])
+    non_empty = [addr for _display, addr in parsed if addr]
+    if len(parsed) != 1 or len(non_empty) != 1:
+        return ""
+    return non_empty[0].strip().lower()
 
 
 def _required_count(criteria: str) -> int | None:
@@ -288,6 +306,68 @@ def _verify_code_execution(call: ToolCall, criteria: str) -> VerificationResult:
     )
 
 
+def _verify_gmail_create_draft(call: ToolCall) -> VerificationResult:
+    args = call.input or {}
+    output = call.output or {}
+    draft_id = output.get("draft_id")
+    user_id = args.get("user_id")
+    if not draft_id or not user_id:
+        return VerificationResult(
+            verified=False,
+            reason="Gmail draft creation returned no draft_id or user identity to verify",
+            needs_human=True,
+            route=VerificationRoute.REQUIRE_HUMAN,
+        )
+
+    try:
+        from agentsys.tools.gmail import get_draft
+
+        draft = get_draft(user_id, draft_id)
+    except GoogleOAuthError as exc:
+        return VerificationResult(
+            verified=False,
+            reason=f"could not verify Gmail draft because Gmail auth is unavailable: {exc.detail}",
+            needs_human=True,
+            route=VerificationRoute.REQUIRE_HUMAN,
+        )
+    except httpx.HTTPStatusError as exc:
+        return VerificationResult(
+            verified=False,
+            reason=f"could not verify Gmail draft {draft_id}: {exc.response.status_code}",
+            needs_human=True,
+            route=VerificationRoute.REQUIRE_HUMAN,
+        )
+    except httpx.HTTPError as exc:
+        return VerificationResult(
+            verified=False,
+            reason=f"could not verify Gmail draft {draft_id}: {exc}",
+            needs_human=True,
+            route=VerificationRoute.REQUIRE_HUMAN,
+        )
+
+    headers = _header(draft.get("message", {}).get("payload", {}).get("headers", []) or [], "To")
+    subject = _header(draft.get("message", {}).get("payload", {}).get("headers", []) or [], "Subject")
+    if _normalised_email(headers) != _normalised_email(str(args.get("to") or "")):
+        return VerificationResult(
+            verified=False,
+            reason="Gmail draft recipient does not match the requested recipient",
+            needs_human=True,
+            route=VerificationRoute.REQUIRE_HUMAN,
+        )
+    if subject != args.get("subject"):
+        return VerificationResult(
+            verified=False,
+            reason="Gmail draft subject does not match the requested subject",
+            needs_human=True,
+            route=VerificationRoute.REQUIRE_HUMAN,
+        )
+    return VerificationResult(
+        verified=True,
+        reason=f"verified Gmail draft exists with matching recipient and subject: {draft_id}",
+        route=VerificationRoute.PASS,
+    )
+
+
 def verify_step(task_id: str, subtask: Subtask, call: ToolCall | None, *, tool_success: bool) -> VerificationResult:
     criteria = (subtask.success_criteria or "").strip()
     if not call:
@@ -299,6 +379,9 @@ def verify_step(task_id: str, subtask: Subtask, call: ToolCall | None, *, tool_s
         )
     if not tool_success or call.success is not True:
         return _tool_failure_result(call, criteria)
+
+    if call.tool_name == "gmail_create_draft":
+        return _verify_gmail_create_draft(call)
 
     if not criteria or criteria.lower() == "semantic":
         return VerificationResult(
@@ -370,6 +453,15 @@ def verify_goal(task_id: str, request_text: str, subtasks: list[Subtask]) -> Ver
             reason=f"requested file exists: {rel_path}",
             route=VerificationRoute.PASS,
         )
+
+    if "draft" in (request_text or "").lower() and "mail" in (request_text or "").lower():
+        for subtask in done:
+            if subtask.assigned_tool == "gmail_create_draft" and "draft_id" in (subtask.output or ""):
+                return VerificationResult(
+                    verified=True,
+                    reason="verified Gmail draft creation subtask completed",
+                    route=VerificationRoute.PASS,
+                )
 
     return VerificationResult(
         verified=False,

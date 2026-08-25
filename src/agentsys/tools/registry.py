@@ -73,12 +73,13 @@ def _build_registry() -> ToolRegistry:
     if google_configured():
         try:
             from agentsys.tools.google_drive import GoogleDriveReadTool, GoogleDriveTool
-            from agentsys.tools.gmail import GmailReadTool, GmailSearchTool
+            from agentsys.tools.gmail import GmailCreateDraftTool, GmailReadTool, GmailSearchTool
 
             registry.register(GoogleDriveTool())
             registry.register(GoogleDriveReadTool())
             registry.register(GmailSearchTool())
             registry.register(GmailReadTool())
+            registry.register(GmailCreateDraftTool())
 
             # Photos is behind its own flag on top of OAuth being configured:
             # it needs an extra scope and a Cloud Console API enablement, so

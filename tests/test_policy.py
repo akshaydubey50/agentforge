@@ -35,7 +35,7 @@ from agentsys.tools.code_execution import CodeExecutionTool
 from agentsys.tools.db_query import DbQueryTool
 from agentsys.tools.delegate_subagent import DelegateSubagentTool
 from agentsys.tools.file_io import FileIOTool
-from agentsys.tools.gmail import GmailReadTool, GmailSearchTool
+from agentsys.tools.gmail import GmailCreateDraftTool, GmailReadTool, GmailSearchTool
 from agentsys.tools.google_drive import GoogleDriveReadTool, GoogleDriveTool
 from agentsys.tools.google_photos import GooglePhotosPickTool
 from agentsys.tools.knowledge_search import KnowledgeSearchTool
@@ -333,6 +333,17 @@ def test_the_two_tools_that_were_gated_before_phase_2_are_still_gated():
     assert decide(
         FileIOTool(), {"action": "write", "path": "notes.txt", "content": "hello"}
     ).decision is PolicyDecisionType.REQUIRE_APPROVAL
+
+
+def test_gmail_draft_creation_requires_approval():
+    decision = decide(
+        GmailCreateDraftTool(),
+        {"to": "recruiter@example.com", "subject": "Follow-up", "body": "Thank you."},
+    )
+
+    assert decision.decision is PolicyDecisionType.REQUIRE_APPROVAL
+    assert decision.action_type is ActionType.EXTERNAL_WRITE
+    assert decision.risk is Risk.MEDIUM
 
 
 def test_read_only_tools_stay_ungated():

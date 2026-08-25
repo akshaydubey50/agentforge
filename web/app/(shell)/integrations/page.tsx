@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 const SCOPE_LABELS: Record<string, string> = {
   "https://www.googleapis.com/auth/drive.readonly": "Drive (read-only)",
   "https://www.googleapis.com/auth/gmail.readonly": "Gmail (read-only)",
+  "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts",
   "https://www.googleapis.com/auth/userinfo.email": "Email address",
   "https://www.googleapis.com/auth/userinfo.profile": "Name & photo",
   openid: "Sign-in",

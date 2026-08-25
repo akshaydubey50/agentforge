@@ -81,6 +81,10 @@ UNIT_SUITES = [
     # local workspace evidence. The DB-backed graph seam tests stay out of
     # tier 1 for the same reason as the Phase 3 ledger tests.
     "tests/test_verification.py",
+    # Phase 5. Gmail draft validation, policy classification and conservative
+    # retry semantics with fake HTTP only. The approval/ledger flow tests are
+    # DB-backed and therefore intentionally stay out of tier 1.
+    "tests/test_gmail_draft.py",
 ]
 
 JUDGE_THRESHOLD = 0.7

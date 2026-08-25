@@ -56,7 +56,8 @@ from agentsys.verification import VerificationRoute
 logger = logging.getLogger(__name__)
 
 _GOOGLE_TOOLS = (
-    "gmail_search", "gmail_read", "google_drive_search", "google_drive_read", "google_photos_pick",
+    "gmail_search", "gmail_read", "gmail_create_draft",
+    "google_drive_search", "google_drive_read", "google_photos_pick",
 )
 
 
@@ -208,8 +209,9 @@ def _record_policy_decision(
 
     Arguments are summarised to their KEYS, not their values. The values are a
     proposal shaped by attacker-influenceable content (a web page, an email
-    body, a read file), they are already stored in full on the escalation and
-    the span, and audit.record's redact() is a key-name filter -- it would
+    body, a read file), they may already be stored in full on the escalation
+    or ToolCall row that needs them for resume/debugging, and audit.record's
+    redact() is a key-name filter -- it would
     strip a key called "token" but not a token pasted into a `sql` or `code`
     argument. Naming the fields is what an audit reader needs ("which
     arguments did this decision see?"); reproducing them is a third copy in
@@ -234,6 +236,26 @@ def _record_policy_decision(
     )
 
 
+def _trace_safe_kwargs(tool_name: str | None, kwargs: dict | None) -> dict:
+    """Arguments safe for TraceSpan input.
+
+    Approval context and ToolCall.input keep the exact Gmail draft body because
+    exact approval/resume binding needs it. Trace spans do not; they only need
+    enough to explain what happened without adding another durable copy of the
+    outbound message body.
+    """
+    safe = dict(kwargs or {})
+    if tool_name == "gmail_create_draft" and "body" in safe:
+        safe["body"] = f"[redacted from trace; {len(str(safe['body']))} chars stored in approval/ToolCall input]"
+    return safe
+
+
+def _trace_safe_escalation_reason(kind: str, reason: str, context: dict | None) -> str:
+    if kind == "tool_approval" and (context or {}).get("tool_name") == "gmail_create_draft":
+        return "Tool 'gmail_create_draft' requires approval before it runs. Full body is stored in Escalation.context."
+    return reason
+
+
 def _create_escalation(
     task_id: str, subtask_id: str | None, reason: str, *, kind: str = "plan", context: dict | None = None
 ) -> None:
@@ -242,8 +264,9 @@ def _create_escalation(
             Escalation(task_id=task_id, subtask_id=subtask_id, reason=reason, kind=kind, context=context or {})
         )
         session.commit()
-    with span(task_id, "escalation", "escalation_created", subtask_id=subtask_id, input={"reason": reason}) as s:
-        s["output"] = {"reason": reason}
+    trace_reason = _trace_safe_escalation_reason(kind, reason, context)
+    with span(task_id, "escalation", "escalation_created", subtask_id=subtask_id, input={"reason": trace_reason}) as s:
+        s["output"] = {"reason": trace_reason}
 
 
 def _revision_feedback(subtask_id: str, attempt_count: int) -> str:
@@ -614,7 +637,7 @@ def _run_tool_call(
     rather than re-derived, for the same reason PolicyDecision carries it.
     """
     registry = get_registry()
-    with span(task_id, "tool_call", tool_name, subtask_id=subtask_id, input=kwargs) as s:
+    with span(task_id, "tool_call", tool_name, subtask_id=subtask_id, input=_trace_safe_kwargs(tool_name, kwargs)) as s:
         outcome = execution.execute_tool(
             registry.get(tool_name),
             kwargs,
@@ -789,7 +812,7 @@ def run_gated_tool_call(
         )
         with span(
             task_id, "tool_call", tool_name or "unknown", subtask_id=subtask_id,
-            input={"approved_call": kwargs},
+            input={"approved_call": _trace_safe_kwargs(tool_name, kwargs)},
         ) as s:
             s["output"] = {"refused": refusal}
             s["status"] = "error"
@@ -1076,6 +1099,26 @@ def _append_verification_failure(output: str | None, result: verification.Verifi
     base = output or ""
     note = f"[verification] {result.route.value}: {result.reason}"
     return f"{base}\n{note}" if base else note
+
+
+def verify_gated_tool_call(task_id: str, subtask_id: str, tool_success: bool) -> tuple[bool, str | None]:
+    """Post-approval deterministic verification for a gated tool call.
+
+    The normal in-loop path executes then immediately calls _review_subtask,
+    which now starts with Phase 4 verification. A tool_approval escalation is
+    different: the human decision itself executes the held call, outside the
+    self-loop. This hook gives deterministic verifiers the same chance to
+    refuse a false success without forcing every legacy approval through an
+    LLM reviewer during the HTTP decision request.
+
+    REVIEW means "no deterministic verdict here"; preserve the pre-Phase-5
+    approval behaviour for those tools. Gmail draft creation has a
+    deterministic verifier and therefore cannot complete through REVIEW.
+    """
+    result = _verify_subtask(task_id, subtask_id, tool_success)
+    if result.route in (VerificationRoute.PASS, VerificationRoute.REVIEW):
+        return True, None
+    return False, f"[verification] {result.route.value}: {result.reason}"
 
 
 def _review_subtask(task_id: str, subtask_id: str, tool_success: bool) -> str:
