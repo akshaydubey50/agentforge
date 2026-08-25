@@ -51,6 +51,7 @@ from agentsys.eval.battery import BatteryCase, CaseVerdict, check_case, load_bat
 # those. A new pure test file has to be added here on purpose.
 UNIT_SUITES = [
     "tests/test_eval_battery.py",
+    "tests/test_eval_grounding.py",
     "tests/test_graph_routing.py",
 ]
 
