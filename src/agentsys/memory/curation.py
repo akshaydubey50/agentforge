@@ -108,6 +108,15 @@ def _safe_source(source: dict) -> dict:
     return safe
 
 
+def _candidate_source_dict(candidate: MemoryCandidate) -> dict:
+    source = candidate.source
+    if hasattr(source, "as_dict"):
+        return source.as_dict()
+    if hasattr(source, "model_dump"):
+        return source.model_dump(exclude_none=True, exclude_defaults=True)
+    return dict(source or {})
+
+
 def _validate_candidate(candidate: MemoryCandidate, *, task: Task, known_subtask_ids: set[str]) -> tuple[_ValidatedCandidate | None, str]:
     kind = _canonical_kind(candidate.kind)
     if candidate.kind not in SUPPORTED_KINDS or kind not in SUPPORTED_KINDS:
@@ -128,7 +137,7 @@ def _validate_candidate(candidate: MemoryCandidate, *, task: Task, known_subtask
     if guard.decision is GuardrailDecision.FLAG:
         return None, f"guardrail_flagged_{guard.risk_type.value}"
 
-    source = dict(candidate.source or {})
+    source = _candidate_source_dict(candidate)
     source["source_task_id"] = task.id
     source["owner_id"] = task.owner_id
 

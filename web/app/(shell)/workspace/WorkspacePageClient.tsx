@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { ArrowRight, Clock3, GitBranch, ShieldAlert, Sparkles } from "lucide-react";
-import { api } from "@/lib/api";
+import { API_BASE_URL, api } from "@/lib/api";
 import { formatRelativeTime, taskStatusPill } from "@/lib/statusPill";
 import { cn } from "@/lib/utils";
 import { LAST_TASK_STORAGE_KEY } from "@/components/shell/Sidebar";
@@ -21,10 +21,11 @@ const DEMO_PROMPTS = [
 export function WorkspacePageClient() {
   const router = useRouter();
   const params = useSearchParams();
-  const taskId = params.get("run");
+  const taskId = params.get("new") === "1" ? null : params.get("run");
   const promptParam = params.get("prompt");
   const [prompt, setPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const { data: recent } = useSWR(["workspace-recent-runs"], () => api.listTasks(8, 0, "all"), {
     refreshInterval: 5000,
@@ -37,11 +38,21 @@ export function WorkspacePageClient() {
     if (promptParam && !taskId) setPrompt(promptParam);
   }, [promptParam, taskId]);
 
+  useEffect(() => {
+    if (params.get("new") !== "1") return;
+    try {
+      localStorage.removeItem(LAST_TASK_STORAGE_KEY);
+    } catch {
+      // The new-run route still works without localStorage.
+    }
+  }, [params]);
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const value = prompt.trim();
     if (!value || submitting) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const task = await api.createTask(value);
       try {
@@ -50,6 +61,8 @@ export function WorkspacePageClient() {
         // Best-effort nav recovery only.
       }
       router.push(`/workspace?run=${task.id}`);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Unable to start the run.");
     } finally {
       setSubmitting(false);
     }
@@ -94,6 +107,11 @@ export function WorkspacePageClient() {
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
+            {submitError && (
+              <div className="mt-3 rounded-[7px] border border-status-failed/45 bg-status-failed/10 px-3 py-2 text-[12px] leading-relaxed text-status-failed" role="alert">
+                Could not start the run against {API_BASE_URL}. {submitError}
+              </div>
+            )}
           </form>
 
           <div className="mt-5 grid grid-cols-2 gap-3 max-[760px]:grid-cols-1">

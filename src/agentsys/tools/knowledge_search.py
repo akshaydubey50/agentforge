@@ -15,6 +15,8 @@ from agentsys.policy import ActionType, Risk
 from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.base import Tool, ToolResult
 
+_KNOWLEDGE_STRATEGY = "semantic"
+
 
 class KnowledgeSearchArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -69,7 +71,17 @@ class KnowledgeSearchTool(Tool):
         try:
             response = httpx.post(
                 f"{settings.rag_api_url}/v1/ask",
-                json={"question": question},
+                json={
+                    "question": question,
+                    # Keep this in lockstep with the Knowledge page's
+                    # reindex/query strategy. Otherwise a freshly uploaded
+                    # document can work in the playground but stay invisible
+                    # to the agent tool.
+                    "strategy": _KNOWLEDGE_STRATEGY,
+                    "top_k": 5,
+                    "use_reranker": True,
+                    "sparse_weight": 1.0,
+                },
                 # Bearer, not a cookie: this is a worker process with no
                 # browser session. Never logged -- httpx does not log headers,
                 # and the error paths below deliberately report only status.
@@ -94,9 +106,10 @@ class KnowledgeSearchTool(Tool):
             return ToolResult(success=False, error=f"knowledge search request failed: {e}")
 
         data = response.json()
+        cited_sources = [s for s in data.get("sources", []) if s.get("cited")]
         output = {
             "answer": wrap_untrusted(data["answer"], "knowledge_search"),
-            "sources": [s["title"] for s in data.get("sources", [])],
+            "sources": [s["title"] for s in cited_sources],
             "confidence": data.get("confidence", {}).get("overall"),
         }
         # Report, don't pre-judge -- same division of labor as every other

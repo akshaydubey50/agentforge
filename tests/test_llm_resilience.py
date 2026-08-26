@@ -16,6 +16,7 @@ from litellm import exceptions as llm_exceptions
 
 from agentsys import llm
 from agentsys.config import settings
+from agentsys.graph.schemas import MemoryCandidateBatch
 
 
 @pytest.fixture(autouse=True)
@@ -135,6 +136,28 @@ def test_bad_request_is_not_retried(monkeypatch):
         llm.complete("hello")
 
     assert fake.state["calls"] == 1
+
+
+def test_structured_complete_sends_strict_response_format(monkeypatch):
+    captured = {}
+
+    def fake_completion(*_args, **kwargs):
+        captured.update(kwargs)
+        return _Response('{"candidates":[]}')
+
+    monkeypatch.setattr(llm.litellm, "completion", fake_completion)
+
+    parsed, _ = llm.structured_complete("extract memory", MemoryCandidateBatch)
+
+    response_format = captured["response_format"]
+    schema = response_format["json_schema"]["schema"]
+    source_schema = schema["$defs"]["MemoryCandidate"]["properties"]["source"]
+
+    assert parsed.candidates == []
+    assert response_format is not MemoryCandidateBatch
+    assert schema["additionalProperties"] is False
+    assert schema["$defs"]["MemoryCandidateSource"]["additionalProperties"] is False
+    assert source_schema["additionalProperties"] is False
 
 
 def test_context_window_exceeded_is_not_retried(monkeypatch):

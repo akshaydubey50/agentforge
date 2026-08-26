@@ -35,6 +35,7 @@ from typing import Callable, TypeVar
 
 import litellm
 from litellm import exceptions as llm_exceptions
+from litellm.utils import type_to_response_format_param
 from pydantic import BaseModel
 
 from agentsys.config import settings
@@ -212,12 +213,13 @@ def structured_complete(
     That validation deliberately sits OUTSIDE the retry series: a schema
     violation is the model's output being wrong, not the transport failing,
     and callers already handle it (see `_classify_turn`'s fail-open)."""
+    response_format = type_to_response_format_param(response_model)
 
     def _call(m: str):
         return litellm.completion(
             model=m,
             messages=[{"role": "user", "content": prompt}],
-            response_format=response_model,
+            response_format=response_format,
             api_key=_api_key_for(m),
             timeout=settings.llm_timeout_seconds,
         )

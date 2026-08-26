@@ -25,6 +25,31 @@ services:
       timeout: 3s
       retries: 10
 
+  web:
+    image: node:20-alpine
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      NEXT_PUBLIC_API_BASE_URL: "${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8100}"
+      NEXT_PUBLIC_RAG_API_BASE_URL: "${NEXT_PUBLIC_RAG_API_BASE_URL:-http://localhost:8000}"
+    volumes:
+      - ./web:/app
+      - web_node_modules:/app/node_modules
+      - web_next:/app/.next
+    depends_on:
+      - api
+      - rag-api
+    command:
+      [
+        "sh",
+        "-c",
+        "npm ci && (rm -rf .next/* .next/.[!.]* .next/..?* 2>/dev/null || true) && npm run dev -- --hostname 0.0.0.0",
+      ]
+
   chroma:
     image: chromadb/chroma:0.5.11
     ports:
@@ -45,7 +70,9 @@ services:
   # on -- here, by the time api starts, this has already finished, so that
   # second run is just a fast idempotent no-op, not a second real migration.
   migrate:
-    build: .
+    build:
+      context: .
+      target: runtime
     env_file:
       - .env
     environment:
@@ -56,7 +83,9 @@ services:
     command: ["alembic", "upgrade", "head"]
 
   api:
-    build: .
+    build:
+      context: .
+      target: runtime
     ports:
       - "8100:8000"
     env_file:
@@ -79,7 +108,9 @@ services:
         condition: service_completed_successfully
 
   worker:
-    build: .
+    build:
+      context: .
+      target: runtime
     env_file:
       - .env
     environment:
@@ -112,7 +143,9 @@ services:
     command: ["sh", "-c", "celery -A agentsys.worker.celery_app worker --loglevel=info --pool=prefork --concurrency=${WORKER_CONCURRENCY:-4}"]
 
   dashboard:
-    build: .
+    build:
+      context: .
+      target: dashboard
     ports:
       - "8601:8501"
     env_file:
@@ -135,7 +168,9 @@ services:
   # One-shot: builds the three chunking-strategy indexes from data/raw.
   # rag-api waits for this to finish successfully before starting.
   rag-seed:
-    build: .
+    build:
+      context: .
+      target: runtime
     env_file:
       - .env
     environment:
@@ -145,7 +180,9 @@ services:
     command: ["python", "scripts/run_ingest.py", "--strategy", "all"]
 
   rag-api:
-    build: .
+    build:
+      context: .
+      target: runtime
     ports:
       - "8000:8000"
     env_file:
@@ -171,7 +208,9 @@ services:
     command: ["uvicorn", "rag.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   rag-dashboard:
-    build: .
+    build:
+      context: .
+      target: dashboard
     ports:
       - "8501:8501"
     env_file:
@@ -188,3 +227,5 @@ services:
 volumes:
   pgdata:
   chromadata:
+  web_node_modules:
+  web_next:

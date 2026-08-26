@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock3 } from "lucide-react";
+import { ChevronDown, ChevronUp, Clock3 } from "lucide-react";
 import type { RunEvent } from "@/lib/execution/types";
 import { cn } from "@/lib/utils";
 import { statusLabel } from "./ExecutionNodeView";
@@ -15,24 +15,44 @@ export function RunTimeline({
   runStartedAt,
   selectedEventId,
   selectedNodeId,
+  collapsed,
   onSelectEvent,
   onSelectNode,
+  onToggle,
 }: {
   events: RunEvent[];
   runStartedAt: string;
   selectedEventId: string | null;
   selectedNodeId: string | null;
+  collapsed: boolean;
   onSelectEvent: (eventId: string | null) => void;
   onSelectNode: (nodeId: string | null) => void;
+  onToggle: () => void;
 }) {
+  const selectedEvent = events.find((event) => event.id === selectedEventId || Boolean(event.nodeId && event.nodeId === selectedNodeId));
+
   return (
-    <section className="h-full border-t border-border bg-rail">
-      <div className="flex h-[38px] items-center gap-2 border-b border-border px-4">
+    <section className="h-full min-w-0 overflow-hidden border-t border-border bg-rail">
+      <button
+        type="button"
+        onClick={onToggle}
+        className={cn(
+          "flex h-[38px] w-full items-center gap-2 px-4 text-left transition hover:bg-surface-2",
+          !collapsed && "border-b border-border"
+        )}
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? "Expand timeline" : "Collapse timeline"}
+      >
         <Clock3 className="h-3.5 w-3.5 text-text-muted" />
         <div className="text-[12px] font-semibold text-text">Timeline</div>
-        <div className="text-[11px] text-text-faint">Chronology, not topology</div>
-      </div>
-      <div className="flex h-[calc(100%-38px)] gap-2 overflow-x-auto px-4 py-3">
+        <div className="truncate text-[11px] text-text-faint">
+          {selectedEvent ? selectedEvent.label : `${events.length} events`}
+        </div>
+        <div className="ml-auto text-[11px] uppercase tracking-[0.08em] text-text-faint">{events.length}</div>
+        {collapsed ? <ChevronUp className="h-3.5 w-3.5 text-text-muted" /> : <ChevronDown className="h-3.5 w-3.5 text-text-muted" />}
+      </button>
+      {!collapsed && (
+      <div className="flex h-[calc(100%-38px)] min-w-0 gap-2 overflow-x-auto px-4 py-3">
         {events.map((event) => {
           const active = event.id === selectedEventId || Boolean(event.nodeId && event.nodeId === selectedNodeId);
           return (
@@ -57,6 +77,7 @@ export function RunTimeline({
         })}
         {events.length === 0 && <div className="py-4 text-[12px] text-text-faint">No timeline events available.</div>}
       </div>
+      )}
     </section>
   );
 }

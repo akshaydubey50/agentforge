@@ -95,8 +95,12 @@ If you're evaluating system direction, also see
 north-star definition as a goal-execution agent (not just a chat loop).
 
 ```bash
-docker compose up -d --build   # both stacks: agentsys on 8100/8601, rag on 8000/8501
+docker compose up -d --build
 ```
+
+Docker now manages the full local stack: Execution Studio on `3000`, agentsys API on
+`8100`, RAG API on `8000`, Streamlit dashboards on `8601`/`8501`, plus Postgres,
+Redis, Chroma, and the Celery worker.
 
 ## Proof it actually works
 
@@ -345,8 +349,11 @@ cp .env.example .env   # fill in OPENAI_API_KEY
 docker compose up -d --build
 ```
 
-Services: `postgres` (5432), `redis` (6379), `chroma` (8001), `api` (8100), `dashboard` (8601),
-`worker` (Celery, no exposed port). The `worker` container needs the Docker socket mounted
+Services: `web` (3000), `postgres` (5432), `redis` (6379), `chroma` (8001), `api` (8100),
+`rag-api` (8000), `dashboard` (8601), `rag-dashboard` (8501), and `worker` (Celery, no
+exposed port). The `web` service runs Next.js from `web/` with Docker-owned `node_modules`
+and `.next` volumes, so host-side `.next` cache corruption does not affect the browser UI.
+The `worker` container needs the Docker socket mounted
 (`/var/run/docker.sock`) to run the `code_execution` tool's sandboxed containers — a known,
 documented pattern (Docker-in-Docker via socket sharing) with its own security tradeoff: a
 process that can launch sibling containers has a wider blast radius than one that can't. Fine for

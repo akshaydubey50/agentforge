@@ -50,12 +50,15 @@ def _build_registry() -> ToolRegistry:
     except ImportError:
         logger.warning("delegate_subagent tool not available")
 
-    try:
-        from agentsys.tools.knowledge_search import KnowledgeSearchTool
+    if settings.service_token:
+        try:
+            from agentsys.tools.knowledge_search import KnowledgeSearchTool
 
-        registry.register(KnowledgeSearchTool())
-    except ImportError:
-        logger.warning("knowledge_search tool not available")
+            registry.register(KnowledgeSearchTool())
+        except ImportError:
+            logger.warning("knowledge_search tool not available")
+    else:
+        logger.info("knowledge_search tool disabled (SERVICE_TOKEN unset)")
 
     try:
         from agentsys.tools.tweet_workshop import TweetWorkshopTool

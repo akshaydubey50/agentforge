@@ -1,9 +1,59 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class MemoryCandidate(BaseModel):
+class StrictSchemaModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class MemoryArtifactRef(StrictSchemaModel):
+    task_id: str | None = Field(default=None, description="Task that produced the artifact, if known.")
+    path: str | None = Field(default=None, description="Path or stable reference to the artifact.")
+    kind: str | None = Field(default=None, description="Short artifact type, if useful.")
+    bytes: int | None = Field(default=None, ge=0, description="Artifact size in bytes, if known.")
+    content_hash: str | None = Field(default=None, description="Content hash, if already known.")
+    summary: str | None = Field(default=None, description="Compact metadata summary, not artifact content.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def drop_artifact_body_fields(cls, value):
+        if isinstance(value, dict):
+            blocked = {"body", "content", "raw", "output", "full_text", "artifact_body"}
+            return {key: item for key, item in value.items() if key not in blocked}
+        return value
+
+
+class MemoryCandidateSource(StrictSchemaModel):
+    subtask_ids: list[str] = Field(
+        default_factory=list,
+        description="IDs of completed subtasks that support this candidate.",
+    )
+    artifact_refs: list[MemoryArtifactRef] = Field(
+        default_factory=list,
+        description="Metadata-only artifact pointers. Do not include artifact body/content.",
+    )
+    supersedes_memory_id: str | None = Field(
+        default=None,
+        description="Existing same-owner memory this candidate explicitly replaces, if applicable.",
+    )
+
+    def as_dict(self) -> dict:
+        return self.model_dump(exclude_none=True, exclude_defaults=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_artifact_key(cls, value):
+        if isinstance(value, dict):
+            normalized = dict(value)
+            if "artifact_refs" not in normalized and "artifacts" in normalized:
+                normalized["artifact_refs"] = normalized["artifacts"]
+            normalized.pop("artifacts", None)
+            return normalized
+        return value
+
+
+class MemoryCandidate(StrictSchemaModel):
     """One proposed durable memory. The LLM proposes this shape; deterministic
     code still validates source ownership, supported kind/scope, size,
     confidence, dedupe, and merge before anything is persisted."""
@@ -23,17 +73,17 @@ class MemoryCandidate(BaseModel):
     )
     importance: int = Field(default=3, ge=1, le=5)
     confidence: float = Field(default=0.7, ge=0.0, le=1.0)
-    source: dict = Field(
-        default_factory=dict,
+    source: MemoryCandidateSource = Field(
+        default_factory=MemoryCandidateSource,
         description="Optional evidence hints such as subtask ids or artifact refs. The server validates ownership.",
     )
 
 
-class MemoryCandidateBatch(BaseModel):
+class MemoryCandidateBatch(StrictSchemaModel):
     candidates: list[MemoryCandidate] = Field(default_factory=list)
 
 
-class RollingConversationSummary(BaseModel):
+class RollingConversationSummary(StrictSchemaModel):
     current_goal: str = ""
     important_decisions: list[str] = Field(default_factory=list)
     completed_work: list[str] = Field(default_factory=list)
@@ -56,7 +106,7 @@ class RollingConversationSummary(BaseModel):
         )
 
 
-class SketchOutput(BaseModel):
+class SketchOutput(StrictSchemaModel):
     outline: list[str] = Field(
         default_factory=list,
         description="A rough, ordered list of steps you currently expect this request to need. "
@@ -67,7 +117,7 @@ class SketchOutput(BaseModel):
     reasoning: str
 
 
-class NextStepDecision(BaseModel):
+class NextStepDecision(StrictSchemaModel):
     next_action: Literal["act", "finish"]
     subtask_description: str | None = Field(
         default=None,
@@ -106,7 +156,7 @@ class NextStepDecision(BaseModel):
     rationale: str
 
 
-class ToolChoice(BaseModel):
+class ToolChoice(StrictSchemaModel):
     tool_name: str
     tool_input_json: str = Field(
         description="A JSON object (as a string) satisfying the chosen tool's argument schema."
@@ -114,13 +164,13 @@ class ToolChoice(BaseModel):
     rationale: str
 
 
-class ReviewOutput(BaseModel):
+class ReviewOutput(StrictSchemaModel):
     score: int = Field(ge=1, le=5)
     verdict: Literal["pass", "reject", "escalate"]
     feedback: str
 
 
-class GoalVerificationOutput(BaseModel):
+class GoalVerificationOutput(StrictSchemaModel):
     verified: bool = Field(description="True only if the completed subtasks satisfy the user's goal.")
     reason: str = Field(description="One or two sentences explaining what is satisfied or missing.")
     needs_replan: bool = Field(
@@ -133,7 +183,7 @@ class GoalVerificationOutput(BaseModel):
     )
 
 
-class SubAgentStep(BaseModel):
+class SubAgentStep(StrictSchemaModel):
     next_action: Literal["call_tool", "finish"]
     tool_name: str | None = Field(
         default=None, description="Required when next_action is 'call_tool'."
@@ -149,7 +199,7 @@ class SubAgentStep(BaseModel):
     rationale: str
 
 
-class TriageDecision(BaseModel):
+class TriageDecision(StrictSchemaModel):
     """The front-door decision: does this turn need the machine, or just an
     answer? Deliberately only two routes -- a classifier with more options is
     a classifier with more ways to be wrong, and everything that isn't

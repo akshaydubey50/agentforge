@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { api, type EscalationDecision } from "@/lib/api";
 import { isActiveTaskStatus } from "@/lib/agentStatus";
@@ -14,9 +14,12 @@ function shouldPoll(status: string | undefined) {
   return status === "pending" || status === "running" || status === "awaiting_approval";
 }
 
+type RefreshScope = "all" | "task" | "trace" | "escalations" | "artifacts";
+
 export function RunWorkspaceClient({ taskId, mode }: { taskId: string; mode: "live" | "history" }) {
   const [sending, setSending] = useState(false);
   const [deciding, setDeciding] = useState(false);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const taskSWR = useSWR(["task", taskId], () => api.getTask(taskId), {
     refreshInterval: (data) => (shouldPoll(data?.status) ? 1800 : 0),
@@ -39,21 +42,46 @@ export function RunWorkspaceClient({ taskId, mode }: { taskId: string; mode: "li
     }
   }, [taskId]);
 
-  const refreshDurableState = useCallback(() => {
-    taskSWR.mutate();
-    traceSWR.mutate();
-    escalationSWR.mutate();
-    artifactSWR.mutate();
+  const refreshDurableStateNow = useCallback((scope: RefreshScope = "all") => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+    if (scope === "all" || scope === "task") taskSWR.mutate();
+    if (scope === "all" || scope === "trace") traceSWR.mutate();
+    if (scope === "all" || scope === "escalations") escalationSWR.mutate();
+    if (scope === "all" || scope === "artifacts") artifactSWR.mutate();
   }, [artifactSWR, escalationSWR, taskSWR, traceSWR]);
+
+  const refreshDurableState = useCallback(
+    (scope: RefreshScope = "all") => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(() => refreshDurableStateNow(scope), 300);
+    },
+    [refreshDurableStateNow]
+  );
 
   const stream = useTaskEvents(taskId, {
     enabled: mode === "live" && shouldPoll(taskSWR.data?.status),
-    onEvent: refreshDurableState,
+    onEvent: (event) => {
+      if (event.kind === "span_start") return;
+      if (event.kind === "span_end") {
+        refreshDurableState("trace");
+        return;
+      }
+      refreshDurableState("all");
+    },
   });
 
   useEffect(() => {
-    if (stream.state === "open" || stream.state === "error") refreshDurableState();
+    if (stream.state === "open" || stream.state === "error") refreshDurableState("all");
   }, [stream.state, refreshDurableState]);
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
+  }, []);
 
   const model = useMemo(() => {
     if (!taskSWR.data) return null;
@@ -70,7 +98,7 @@ export function RunWorkspaceClient({ taskId, mode }: { taskId: string; mode: "li
     setSending(true);
     try {
       await api.sendTaskMessage(taskId, content);
-      refreshDurableState();
+      refreshDurableStateNow("all");
     } finally {
       setSending(false);
     }
@@ -80,7 +108,7 @@ export function RunWorkspaceClient({ taskId, mode }: { taskId: string; mode: "li
     setDeciding(true);
     try {
       await api.decideEscalation(escalationId, decision);
-      refreshDurableState();
+      refreshDurableStateNow("all");
     } finally {
       setDeciding(false);
     }

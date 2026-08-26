@@ -1,9 +1,13 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+COPY requirements-runtime.txt .
+RUN pip install --no-cache-dir -r requirements-runtime.txt
 
 COPY pyproject.toml .
 COPY src/ src/
@@ -16,7 +20,7 @@ COPY alembic/ alembic/
 # build -- which is exactly how it was found.
 COPY tests/ tests/
 
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir --no-deps -e .
 
 EXPOSE 8000
 # Shell form (not exec form) so $PORT expands -- Railway injects a dynamic
@@ -39,3 +43,8 @@ EXPOSE 8000
 # real CREATE TABLE alembic_version collision, not a benign no-op). This
 # run is then just a fast, already-at-head no-op in that case.
 CMD alembic upgrade head && uvicorn agentsys.main:app --host 0.0.0.0 --port ${PORT:-8000}
+
+FROM runtime AS dashboard
+
+COPY requirements-dashboard.txt .
+RUN pip install --no-cache-dir -r requirements-dashboard.txt

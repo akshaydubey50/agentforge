@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, KeyboardEvent, MouseEvent, useState } from "react";
 import type { ComponentType } from "react";
 import {
   AlertTriangle,
@@ -14,6 +14,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { RuntimeCard } from "@/lib/execution/types";
+import { Markdown } from "@/components/ui/Markdown";
 import { cn } from "@/lib/utils";
 import { statusLabel } from "./ExecutionNodeView";
 
@@ -55,11 +56,27 @@ export function ConversationPanel({
     await onSend(value);
   };
 
+  const selectCard = (card: RuntimeCard) => {
+    onSelectNode(card.nodeId ?? null);
+  };
+
+  const clickCard = (event: MouseEvent<HTMLElement>, card: RuntimeCard) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("a")) return;
+    selectCard(card);
+  };
+
+  const keyCard = (event: KeyboardEvent<HTMLElement>, card: RuntimeCard) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    selectCard(card);
+  };
+
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-rail">
+    <section className="flex h-full min-h-0 flex-1 flex-col bg-rail">
       <div className="border-b border-border px-4 py-3">
         <div className="text-[13px] font-semibold text-text">Conversation</div>
-        <div className="mt-0.5 text-[11.5px] text-text-faint">Readable goal, answer, and high-signal runtime cards.</div>
+        <div className="mt-0.5 text-[11.5px] text-text-faint">Goal, follow-ups, approvals, and final answer.</div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
@@ -69,12 +86,14 @@ export function ConversationPanel({
             const Icon = meta.icon;
             const active = card.nodeId && card.nodeId === selectedNodeId;
             return (
-              <button
+              <article
                 key={card.id}
-                type="button"
-                onClick={() => onSelectNode(card.nodeId ?? null)}
+                role="button"
+                tabIndex={0}
+                onClick={(event) => clickCard(event, card)}
+                onKeyDown={(event) => keyCard(event, card)}
                 className={cn(
-                  "w-full rounded-[8px] border px-3.5 py-3 text-left transition hover:border-border-strong",
+                  "w-full cursor-pointer rounded-[8px] border px-3.5 py-3 text-left outline-none transition hover:border-border-strong focus-visible:border-role-supervisor focus-visible:ring-2 focus-visible:ring-role-supervisor/50",
                   meta.className,
                   active && "ring-2 ring-role-supervisor/80"
                 )}
@@ -89,8 +108,8 @@ export function ConversationPanel({
                   )}
                 </div>
                 <div className="text-[13px] font-semibold text-text">{card.title}</div>
-                <div className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-text-muted">{card.body}</div>
-              </button>
+                <Markdown className="mt-1 text-[12.5px]">{card.body}</Markdown>
+              </article>
             );
           })}
           {cards.length === 0 && <div className="py-8 text-center text-[12px] text-text-faint">No run conversation loaded.</div>}
@@ -103,7 +122,7 @@ export function ConversationPanel({
           onChange={(event) => setContent(event.target.value)}
           disabled={!canSend || sending}
           placeholder={canSend ? "Continue this run..." : "Follow-up is available after the run stops."}
-          className="min-h-[84px] w-full resize-none rounded-[8px] border border-border bg-background px-3 py-2 text-[12.5px] text-text outline-none transition focus:border-role-supervisor disabled:cursor-not-allowed disabled:opacity-55"
+          className="min-h-[112px] w-full resize-none rounded-[8px] border border-border bg-background px-3 py-2 text-[12.5px] text-text outline-none transition focus:border-role-supervisor disabled:cursor-not-allowed disabled:opacity-55"
         />
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-[11px] text-text-faint">Follow-ups attach to this same run identity.</span>

@@ -146,7 +146,12 @@ body {
   padding: 0;
   height: 100%;
 }
+html {
+  background: var(--bg);
+}
 body {
+  min-height: 100%;
+  overflow: hidden;
   background: var(--bg);
   color: var(--t1);
   font-family: var(--font-sans);
@@ -292,6 +297,26 @@ a {
   top: 0;
   background: var(--s1);
   z-index: 1;
+}
+.rail-scrollbar {
+  scrollbar-color: rgba(75, 83, 100, 0.7) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.rail-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.rail-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.rail-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(75, 83, 100, 0.42);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+.rail-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(135, 146, 166, 0.56);
 }
 .tabular-nums-cell {
   font-variant-numeric: tabular-nums;

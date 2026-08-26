@@ -34,6 +34,27 @@ The current repository has two backend services:
 
 They share secrets through environment variables but do not import each other.
 
+## Local Docker Desktop Stack
+
+Use Compose for the full local development stack:
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+Compose starts the Next.js Execution Studio as `web` on `http://localhost:3000`.
+The frontend container mounts `./web` for source edits, but keeps Docker-owned
+`node_modules` and `.next` volumes. This prevents host-side `.next` output from
+mixing with the container runtime and breaking CSS/static chunks.
+
+Browser-facing frontend variables stay pointed at the published host ports:
+
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8100
+NEXT_PUBLIC_RAG_API_BASE_URL=http://localhost:8000
+```
+
 ## Recommended Free Portfolio Profile
 
 Use the existing feature flags rather than adding a new deployment mode.

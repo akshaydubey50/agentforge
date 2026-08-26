@@ -24,6 +24,7 @@ from rag.schemas import (
     IngestResultOut,
     SourceOut,
     UnsupportedClaimOut,
+    UploadDocumentResponse,
 )
 
 app = FastAPI(title="RAG Production Pipeline", version="0.1.0")
@@ -128,15 +129,15 @@ def get_document_raw(filename: str, _user_id: str = Depends(require_session)) ->
     )
 
 
-@app.post("/v1/documents/upload", response_model=DocumentOut)
-async def upload_document(file: UploadFile = File(...), _user_id: str = Depends(require_session)) -> DocumentOut:
+@app.post("/v1/documents/upload", response_model=UploadDocumentResponse)
+async def upload_document(file: UploadFile = File(...), _user_id: str = Depends(require_session)) -> UploadDocumentResponse:
     """Saves an uploaded file into the same raw-corpus directory the old
     Streamlit dashboard (simple_upload.py) writes into directly -- that
     dashboard runs server-side so it can touch the filesystem straight from
     the browser's uploaded bytes, but a real browser client can't, so this
-    is the REST equivalent of that same write. Doesn't index anything by
-    itself; call /v1/ingest afterwards (same as the old dashboard's
-    two-step Upload then Reindex flow).
+    is the REST equivalent of that same write. Upload also rebuilds the
+    production semantic index, so the normal UX is one step: upload, then ask.
+    /v1/ingest remains available for manual rebuilds and strategy comparisons.
     """
     filename = Path(file.filename or "").name  # strip any path components -- traversal guard
     suffix = Path(filename).suffix.lower()
@@ -151,7 +152,22 @@ async def upload_document(file: UploadFile = File(...), _user_id: str = Depends(
     dest.write_bytes(await file.read())
 
     doc = load_document(dest)
-    return DocumentOut(filename=doc.metadata.get("filename", filename), format=doc.format, title=doc.title)
+    try:
+        stats = run_ingest(ChunkingStrategy.SEMANTIC)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"document uploaded but automatic indexing failed: {type(exc).__name__}",
+        ) from exc
+
+    return UploadDocumentResponse(
+        document=DocumentOut(
+            filename=doc.metadata.get("filename", filename),
+            format=doc.format,
+            title=doc.title,
+        ),
+        index_result=_ingest_result_out(stats),
+    )
 
 
 @app.post("/v1/ingest", response_model=IngestResponse)
@@ -162,16 +178,18 @@ def ingest(body: IngestRequest, _user_id: str = Depends(require_session)) -> Ing
     results = []
     for strategy in strategies:
         stats = run_ingest(strategy)
-        results.append(
-            IngestResultOut(
-                strategy=stats["strategy"],
-                documents=stats["documents"],
-                input_chunks=stats["input_chunks"],
-                indexed_chunks=stats["indexed_chunks"],
-                duplicates_dropped=stats["duplicates_dropped"],
-            )
-        )
+        results.append(_ingest_result_out(stats))
     return IngestResponse(results=results)
+
+
+def _ingest_result_out(stats: dict) -> IngestResultOut:
+    return IngestResultOut(
+        strategy=stats["strategy"],
+        documents=stats["documents"],
+        input_chunks=stats["input_chunks"],
+        indexed_chunks=stats["indexed_chunks"],
+        duplicates_dropped=stats["duplicates_dropped"],
+    )
 
 
 @app.post("/v1/ask", response_model=AskResponse)

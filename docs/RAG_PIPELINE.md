@@ -164,7 +164,9 @@ in `data/eval/results/`.
 - `POST /v1/ask` — `{question, strategy, top_k, use_reranker, sparse_weight}` → answer, citations,
   confidence breakdown, flagged unsupported claims
 - `GET /v1/documents` — corpus listing
-- `POST /v1/ingest` — re-run ingestion for one or all strategies
+- `POST /v1/documents/upload` — saves one supported document and automatically rebuilds the
+  production `semantic` index so the document is searchable immediately after upload
+- `POST /v1/ingest` — manually rebuild ingestion for one or all strategies
 - `GET /v1/strategies` — available chunking strategies
 - Interactive docs at `/docs` (FastAPI's built-in OpenAPI UI)
 

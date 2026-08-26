@@ -211,7 +211,7 @@ class Settings(BaseSettings):
     """Optional category prefix for Phase 7C quality cases, e.g. normal or
     failure. Empty means all quality cases."""
 
-    cors_allowed_origins: str = "http://localhost:3000"
+    cors_allowed_origins: str = "http://localhost:3000,http://localhost:3001"
     """Comma-separated, not a JSON list -- a human typing this into a
     deployment platform's env-var UI (Railway, etc.) shouldn't have to get
     JSON-array syntax right. Split via cors_allowed_origins_list below."""

@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { googleLoginUrl } from "@/lib/api";
+import { API_BASE_URL, googleLoginUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +14,33 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const status = searchParams.get("status");
   const reason = searchParams.get("reason");
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkExistingSession() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/v1/auth/me`, {
+          credentials: "include",
+          headers: { Accept: "application/json" },
+        });
+        if (cancelled) return;
+        if (res.ok) {
+          window.location.replace("/workspace");
+          return;
+        }
+      } catch {
+        // API offline or unreachable: leave the normal sign-in UI available.
+      }
+      if (!cancelled) setAuthChecked(true);
+    }
+
+    checkExistingSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const banner =
     status === "error"
@@ -21,6 +48,8 @@ function LoginContent() {
       : status === "cancelled"
         ? { kind: "info" as const, text: "Sign-in cancelled." }
         : null;
+
+  if (!authChecked) return <div className="h-screen bg-canvas" />;
 
   return (
     <div className="flex h-screen items-center justify-center bg-canvas px-4">

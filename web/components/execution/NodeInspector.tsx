@@ -68,7 +68,7 @@ export function NodeInspector({
     <aside
       className={cn(
         "flex min-h-0 flex-col border-l border-border bg-rail transition-[width]",
-        open ? "w-[344px]" : "w-0 overflow-hidden border-l-0"
+        open ? "w-full min-w-0" : "w-0 overflow-hidden border-l-0"
       )}
     >
       <div className="flex h-[52px] flex-none items-center gap-2 border-b border-border px-4">
@@ -102,6 +102,9 @@ export function NodeInspector({
               <Row label="Family">{node.family}</Row>
               <Row label="Actor">{actorLabel(node)}</Row>
               <Row label="Type">{node.type}</Row>
+              {typeof node.metadata.spanCount === "number" && <Row label="Trace events">{String(node.metadata.spanCount)}</Row>}
+              {typeof node.metadata.subtaskCount === "number" && <Row label="Subtasks">{String(node.metadata.subtaskCount)}</Row>}
+              {typeof node.metadata.liveEventCount === "number" && <Row label="Live events">{String(node.metadata.liveEventCount)}</Row>}
               {node.toolName && <Row label="Tool">{node.toolName}</Row>}
               {node.startedAt && <Row label="Started">{new Date(node.startedAt).toLocaleString()}</Row>}
               {node.completedAt && <Row label="Ended">{new Date(node.completedAt).toLocaleString()}</Row>}

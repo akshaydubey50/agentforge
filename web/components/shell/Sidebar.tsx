@@ -8,14 +8,13 @@ import {
   Activity,
   BarChart3,
   BookOpen,
-  Brain,
-  Database,
   FileCheck2,
   GitBranch,
   Home,
   KeyRound,
   Link2,
   MemoryStick,
+  PlusCircle,
   Plug,
   SearchCheck,
   Settings,
@@ -150,6 +149,7 @@ function UserRailIcon({ collapsed }: { collapsed: boolean }) {
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [compactViewport, setCompactViewport] = useState(false);
   const [lastTaskId, setLastTaskId] = useState<string | null>(null);
 
   const { data: summary } = useSWR("system-summary", () => api.getSystemSummary(), {
@@ -165,6 +165,14 @@ export function Sidebar() {
     } catch {
       // localStorage unavailable; stay expanded.
     }
+  }, []);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 720px)");
+    const sync = () => setCompactViewport(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
   }, []);
 
   useEffect(() => {
@@ -189,12 +197,14 @@ export function Sidebar() {
 
   const workspaceHref = lastTaskId ? `/workspace?run=${lastTaskId}` : "/workspace";
   const model = topology?.subsystems.find((s) => s.id === "models")?.facts[0]?.value;
+  const effectiveCollapsed = collapsed || compactViewport;
 
   const groups: { title: string; items: NavItem[] }[] = [
     {
       title: "Work",
       items: [
         { href: "/mission", icon: Home, label: "Mission Control", match: (p) => p === "/" || p.startsWith("/mission") },
+        { href: "/workspace?new=1", icon: PlusCircle, label: "New Run", match: () => false },
         { href: workspaceHref, icon: GitBranch, label: "Workspace", badge: summary?.tasks.active, match: (p) => p.startsWith("/workspace") },
         { href: "/runs", icon: SearchCheck, label: "Runs", match: (p) => p.startsWith("/runs") },
         { href: "/approvals", icon: FileCheck2, label: "Approvals", badge: summary?.approvals_pending, tone: "attention" },
@@ -235,15 +245,15 @@ export function Sidebar() {
   return (
     <nav
       className={cn(
-        "flex flex-none flex-col border-r border-border bg-rail transition-[width]",
-        collapsed ? "w-[60px] items-center py-4" : "w-[228px] px-3 py-4"
+        "flex h-dvh min-h-0 flex-none flex-col overflow-hidden border-r border-border bg-rail transition-[width]",
+        effectiveCollapsed ? "w-[60px] items-center py-4" : "w-[228px] px-3 py-4"
       )}
     >
-      <div className={cn("flex items-center", collapsed ? "mb-3.5 justify-center" : "mb-4 gap-2.5 px-1")}>
+      <div className={cn("flex flex-none items-center", effectiveCollapsed ? "mb-3.5 justify-center" : "mb-4 gap-2.5 px-1")}>
         <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-[8px] border border-role-supervisor/45 bg-role-supervisor/15 text-[12px] font-bold text-role-supervisor">
           AF
         </span>
-        {!collapsed && (
+        {!effectiveCollapsed && (
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13.5px] font-semibold text-text">AgentForge</span>
             {model && (
@@ -258,33 +268,40 @@ export function Sidebar() {
         )}
       </div>
 
-      <div className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", collapsed ? "gap-1.5" : "gap-3.5")}>
+      <div
+        className={cn(
+          "rail-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pr-1",
+          effectiveCollapsed ? "gap-1.5" : "gap-3.5"
+        )}
+      >
         {groups.map((group) => (
-          <div key={group.title} className={cn("flex flex-col", collapsed ? "gap-1.5" : "gap-0.5")}>
-            {!collapsed && (
+          <div key={group.title} className={cn("flex flex-col", effectiveCollapsed ? "gap-1.5" : "gap-0.5")}>
+            {!effectiveCollapsed && (
               <div className="px-2.5 pb-1 text-[10px] uppercase tracking-[0.11em] text-text-faint">{group.title}</div>
             )}
             {group.items.map((item) => (
               <div key={`${group.title}-${item.label}`} className="relative">
-                <NavRow item={item} collapsed={collapsed} active={isActive(item)} />
+                <NavRow item={item} collapsed={effectiveCollapsed} active={isActive(item)} />
               </div>
             ))}
           </div>
         ))}
       </div>
 
-      <div className={cn("mt-3 flex flex-col gap-2 border-t border-border pt-3", collapsed && "items-center")}>
-        <UserRailIcon collapsed={collapsed} />
-        <button
-          onClick={toggle}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={cn(
-            "rounded-[7px] text-[12px] text-text-faint transition-colors hover:bg-surface-3/60 hover:text-text",
-            collapsed ? "h-[28px] w-[28px]" : "px-2.5 py-1 text-left"
-          )}
-        >
-          {collapsed ? <KeyRound className="mx-auto h-3.5 w-3.5" /> : "Collapse"}
-        </button>
+      <div className={cn("mt-3 flex flex-none flex-col gap-2 border-t border-border pt-3", effectiveCollapsed && "items-center")}>
+        <UserRailIcon collapsed={effectiveCollapsed} />
+        {!compactViewport && (
+          <button
+            onClick={toggle}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className={cn(
+              "rounded-[7px] text-[12px] text-text-faint transition-colors hover:bg-surface-3/60 hover:text-text",
+              collapsed ? "h-[28px] w-[28px]" : "px-2.5 py-1 text-left"
+            )}
+          >
+            {collapsed ? <KeyRound className="mx-auto h-3.5 w-3.5" /> : "Collapse"}
+          </button>
+        )}
       </div>
     </nav>
   );

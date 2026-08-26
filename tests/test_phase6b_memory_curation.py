@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime, timezone
 
+from litellm.utils import type_to_response_format_param
 from sqlmodel import select
 
 from agentsys.db.models import MemoryEntry, Subtask, SubtaskStatus, Task, User
 from agentsys.db.session import get_session, init_db
 from agentsys.graph import nodes
-from agentsys.graph.schemas import MemoryCandidate
+from agentsys.graph.schemas import MemoryCandidate, MemoryCandidateBatch
 from agentsys.memory import curation, long_term
 
 
@@ -70,6 +71,18 @@ def _stub_index_success(monkeypatch):
             session.commit()
 
     monkeypatch.setattr("agentsys.memory.long_term.index_memory", fake_index)
+
+
+def test_memory_candidate_schema_closes_nested_source_object_for_openai():
+    response_format = type_to_response_format_param(MemoryCandidateBatch)
+    schema = response_format["json_schema"]["schema"]
+    source_schema = schema["$defs"]["MemoryCandidate"]["properties"]["source"]
+
+    assert schema["additionalProperties"] is False
+    assert schema["$defs"]["MemoryCandidate"]["additionalProperties"] is False
+    assert schema["$defs"]["MemoryCandidateSource"]["additionalProperties"] is False
+    assert schema["$defs"]["MemoryArtifactRef"]["additionalProperties"] is False
+    assert source_schema["additionalProperties"] is False
 
 
 def test_valid_candidate_accepted(monkeypatch):

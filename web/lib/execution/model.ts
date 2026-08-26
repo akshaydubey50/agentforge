@@ -21,6 +21,24 @@ import type {
 } from "./types";
 
 type NodeDraft = Omit<ExecutionNode, "position">;
+type SemanticGroupId =
+  | "plan"
+  | "memory"
+  | "knowledge"
+  | "model-work"
+  | "tool-work"
+  | "subagents"
+  | "verification"
+  | "synthesis"
+  | "recovery";
+
+interface SemanticGroup {
+  id: SemanticGroupId;
+  type: ExecutionNodeType;
+  actor: ExecutionActor;
+  label: string;
+  subtitle: string;
+}
 
 const FAMILY_FOR_TYPE: Record<ExecutionNodeType, ExecutionFamily> = {
   goal: "system",
@@ -40,14 +58,101 @@ const FAMILY_FOR_TYPE: Record<ExecutionNodeType, ExecutionFamily> = {
   final: "system",
 };
 
-const COLUMN_X: Record<ExecutionFamily, number> = {
-  system: 40,
-  reasoning: 300,
-  context: 560,
-  action: 820,
-  control: 1080,
-  quality: 1340,
+const COLUMN_X: Record<ExecutionNodeType, number> = {
+  goal: 40,
+  plan: 300,
+  llm: 300,
+  router: 300,
+  memory: 560,
+  knowledge: 560,
+  tool: 820,
+  subagent: 820,
+  execution: 820,
+  policy: 1080,
+  approval: 1080,
+  verification: 1340,
+  recovery: 1340,
+  synthesis: 1340,
+  final: 1600,
 };
+
+const SEMANTIC_GROUPS: Record<SemanticGroupId, SemanticGroup> = {
+  plan: {
+    id: "plan",
+    type: "plan",
+    actor: "llm",
+    label: "Plan",
+    subtitle: "approach and step outline",
+  },
+  memory: {
+    id: "memory",
+    type: "memory",
+    actor: "memory",
+    label: "Memory",
+    subtitle: "retrieved or updated context",
+  },
+  knowledge: {
+    id: "knowledge",
+    type: "knowledge",
+    actor: "knowledge",
+    label: "Knowledge",
+    subtitle: "retrieved evidence and documents",
+  },
+  "model-work": {
+    id: "model-work",
+    type: "llm",
+    actor: "llm",
+    label: "Model work",
+    subtitle: "reasoning, routing, and tool selection",
+  },
+  "tool-work": {
+    id: "tool-work",
+    type: "tool",
+    actor: "tool",
+    label: "Tool work",
+    subtitle: "validated calls and results",
+  },
+  subagents: {
+    id: "subagents",
+    type: "subagent",
+    actor: "tool",
+    label: "Subagents",
+    subtitle: "delegated execution",
+  },
+  verification: {
+    id: "verification",
+    type: "verification",
+    actor: "llm",
+    label: "Verification",
+    subtitle: "expected vs observed checks",
+  },
+  synthesis: {
+    id: "synthesis",
+    type: "synthesis",
+    actor: "llm",
+    label: "Synthesis",
+    subtitle: "final response assembly",
+  },
+  recovery: {
+    id: "recovery",
+    type: "recovery",
+    actor: "runtime",
+    label: "Recovery",
+    subtitle: "retry or ambiguous-effect handling",
+  },
+};
+
+const SEMANTIC_GROUP_ORDER: SemanticGroupId[] = [
+  "plan",
+  "memory",
+  "knowledge",
+  "model-work",
+  "tool-work",
+  "subagents",
+  "verification",
+  "synthesis",
+  "recovery",
+];
 
 function familyFor(type: ExecutionNodeType): ExecutionFamily {
   return FAMILY_FOR_TYPE[type];
@@ -226,23 +331,156 @@ function makeNode(args: {
   };
 }
 
-function withPositions(nodes: NodeDraft[]): ExecutionNode[] {
-  const rowByFamily: Partial<Record<ExecutionFamily, number>> = {};
-  return nodes.map((node, index) => {
-    const row = rowByFamily[node.family] ?? 0;
-    rowByFamily[node.family] = row + 1;
-    return {
-      ...node,
-      position: {
-        x: COLUMN_X[node.family],
-        y: 70 + Math.max(row * 122, index * 32),
-      },
-    };
-  });
+function latestDefined<T>(items: T[], pick: (item: T) => unknown): unknown {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const value = pick(items[i]);
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
+function spanGroupId(span: TraceSpanOut): SemanticGroupId {
+  const type = typeForSpan(span);
+  if (type === "plan") return "plan";
+  if (type === "memory") return "memory";
+  if (type === "knowledge") return "knowledge";
+  if (type === "tool" || type === "execution") return "tool-work";
+  if (type === "subagent") return "subagents";
+  if (type === "verification") return "verification";
+  if (type === "synthesis") return "synthesis";
+  if (type === "recovery") return "recovery";
+  return "model-work";
+}
+
+function liveGroupId(event: TaskEvent): SemanticGroupId {
+  if (event.span_type === "tool_call") {
+    const name = event.name ?? "";
+    if (name.includes("knowledge")) return "knowledge";
+    if (name.includes("memory")) return "memory";
+    if (name.includes("delegate")) return "subagents";
+    return "tool-work";
+  }
+  if (event.span_type === "memory") return "memory";
+  if (event.span_type === "review") return "verification";
+  if (event.span_type === "synthesize") return "synthesis";
+  if (event.span_type === "sketch") return "plan";
+  return "model-work";
 }
 
 function nodeIdForSpan(span: TraceSpanOut): string {
-  return `span-${span.id}`;
+  return spanGroupId(span);
+}
+
+function aggregateStatuses(statuses: ExecutionStatus[], fallback: ExecutionStatus): ExecutionStatus {
+  if (statuses.length === 0) return fallback;
+  if (statuses.includes("approval_required")) return "approval_required";
+  if (statuses.includes("running")) return "running";
+  if (statuses.includes("failed")) return "failed";
+  if (statuses.includes("retrying")) return "retrying";
+  if (statuses.every((status) => status === "skipped")) return "skipped";
+  if (statuses.some((status) => status === "pending" || status === "waiting")) return "waiting";
+  if (statuses.includes("recovered")) return "recovered";
+  if (statuses.every((status) => status === "succeeded" || status === "recovered")) return "succeeded";
+  return statuses.at(-1) ?? fallback;
+}
+
+function formatCount(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function spanSummary(span: TraceSpanOut): Record<string, unknown> {
+  return {
+    id: span.id,
+    type: span.span_type,
+    name: span.name,
+    status: spanStatus(span),
+    started_at: span.started_at,
+    ended_at: span.ended_at,
+    duration: durationLabel(span.started_at, span.ended_at),
+    detail: shortText(span.output, span.name),
+  };
+}
+
+function buildSemanticNode(args: {
+  runId: string;
+  groupId: SemanticGroupId;
+  spans: TraceSpanOut[];
+  subtasks?: SubtaskOut[];
+  liveEvents?: TaskEvent[];
+}): NodeDraft {
+  const group = SEMANTIC_GROUPS[args.groupId];
+  const spans = sortedSpans(args.spans);
+  const subtasks = args.subtasks ?? [];
+  const liveEvents = args.liveEvents ?? [];
+  const statuses = [
+    ...spans.map(spanStatus),
+    ...subtasks.map((subtask) => subtaskStatus(subtask.status, subtask.attempt_count)),
+    ...liveEvents.map(() => "running" as ExecutionStatus),
+  ];
+  const startedAt =
+    spans[0]?.started_at ??
+    subtasks[0]?.created_at ??
+    liveEvents[0]?.ts;
+  const completedAt = spans.length > 0 && spans.every((span) => span.ended_at) ? spans.at(-1)?.ended_at ?? undefined : undefined;
+  const toolNames = Array.from(
+    new Set([
+      ...spans.filter((span) => span.span_type === "tool_call").map((span) => span.name),
+      ...subtasks.map((subtask) => subtask.assigned_tool).filter((tool): tool is string => Boolean(tool)),
+    ])
+  );
+  const subtaskIds = Array.from(
+    new Set([
+      ...spans.map((span) => span.subtask_id).filter((id): id is string => Boolean(id)),
+      ...subtasks.map((subtask) => subtask.id),
+      ...liveEvents.map((event) => event.subtask_id).filter((id): id is string => Boolean(id)),
+    ])
+  );
+  const workItems = Math.max(spans.length + subtasks.length + liveEvents.length, 1);
+  const output = latestDefined(spans, (span) => span.output) ?? latestDefined(subtasks, (subtask) => subtask.output);
+  const input = latestDefined(spans, (span) => span.input) ?? latestDefined(subtasks, (subtask) => subtask.description);
+
+  return makeNode({
+    id: group.id,
+    runId: args.runId,
+    type: group.type,
+    actor: group.actor,
+    label: group.label,
+    subtitle: `${formatCount(workItems, "event")} - ${group.subtitle}`,
+    status: aggregateStatuses(statuses, "waiting"),
+    startedAt,
+    completedAt: completedAt ?? undefined,
+    traceSpanIds: spans.map((span) => span.id),
+    subtaskId: subtaskIds.length === 1 ? subtaskIds[0] : undefined,
+    toolName: toolNames.length === 1 ? toolNames[0] : undefined,
+    metadata: {
+      input,
+      output,
+      duration: startedAt && completedAt ? durationLabel(startedAt, completedAt) : undefined,
+      spanCount: spans.length,
+      subtaskCount: subtasks.length,
+      liveEventCount: liveEvents.length,
+      toolNames,
+      subtaskIds,
+      spans: spans.map(spanSummary),
+      subtasks,
+      liveEvents,
+    },
+  });
+}
+
+function withPositions(nodes: NodeDraft[]): ExecutionNode[] {
+  const rowByColumn: Partial<Record<ExecutionNodeType, number>> = {};
+  return nodes.map((node) => {
+    const row = rowByColumn[node.type] ?? 0;
+    rowByColumn[node.type] = row + 1;
+    return {
+      ...node,
+      position: {
+        x: COLUMN_X[node.type],
+        y: 70 + row * 132,
+      },
+    };
+  });
 }
 
 function nodeIdForEscalation(escalation: EscalationOut): string {
@@ -253,6 +491,9 @@ function buildNodes(task: TaskDetailOut, spans: TraceSpanOut[], escalations: Esc
   const nodes: NodeDraft[] = [];
   const runId = task.id;
   const orderedSpans = sortedSpans(spans);
+  const spansByGroup = new Map<SemanticGroupId, TraceSpanOut[]>();
+  const subtasksByGroup = new Map<SemanticGroupId, SubtaskOut[]>();
+  const liveEventsByGroup = new Map<SemanticGroupId, TaskEvent[]>();
 
   addNode(
     nodes,
@@ -271,51 +512,38 @@ function buildNodes(task: TaskDetailOut, spans: TraceSpanOut[], escalations: Esc
   );
 
   for (const span of orderedSpans) {
-    const type = typeForSpan(span);
-    const toolName = span.span_type === "tool_call" ? span.name : undefined;
-    addNode(
-      nodes,
-      makeNode({
-        id: nodeIdForSpan(span),
-        runId,
-        type,
-        actor: actorForSpan(span),
-        label: labelForSpan(span),
-        subtitle: toolName ?? span.span_type,
-        status: spanStatus(span),
-        startedAt: span.started_at,
-        completedAt: span.ended_at ?? undefined,
-        traceSpanIds: [span.id],
-        subtaskId: span.subtask_id,
-        toolName,
-        metadata: {
-          input: span.input,
-          output: span.output,
-          spanType: span.span_type,
-          name: span.name,
-          duration: durationLabel(span.started_at, span.ended_at),
-        },
-      })
-    );
+    const groupId = spanGroupId(span);
+    spansByGroup.set(groupId, [...(spansByGroup.get(groupId) ?? []), span]);
   }
 
   for (const subtask of task.subtasks) {
     const hasSpan = orderedSpans.some((span) => span.subtask_id === subtask.id);
     if (hasSpan) continue;
+    const groupId: SemanticGroupId = subtask.assigned_tool ? "tool-work" : "model-work";
+    subtasksByGroup.set(groupId, [...(subtasksByGroup.get(groupId) ?? []), subtask]);
+  }
+
+  for (const event of events) {
+    if (event.kind !== "span_start" || !event.span_id || orderedSpans.some((span) => span.id === event.span_id)) {
+      continue;
+    }
+    const groupId = liveGroupId(event);
+    liveEventsByGroup.set(groupId, [...(liveEventsByGroup.get(groupId) ?? []), event]);
+  }
+
+  for (const groupId of SEMANTIC_GROUP_ORDER) {
+    const groupSpans = spansByGroup.get(groupId) ?? [];
+    const groupSubtasks = subtasksByGroup.get(groupId) ?? [];
+    const groupLiveEvents = liveEventsByGroup.get(groupId) ?? [];
+    if (groupSpans.length === 0 && groupSubtasks.length === 0 && groupLiveEvents.length === 0) continue;
     addNode(
       nodes,
-      makeNode({
-        id: `subtask-${subtask.id}`,
+      buildSemanticNode({
         runId,
-        type: subtask.assigned_tool ? "tool" : "llm",
-        actor: subtask.assigned_tool ? "tool" : "llm",
-        label: subtask.description,
-        subtitle: subtask.assigned_tool ?? "model output",
-        status: subtaskStatus(subtask.status, subtask.attempt_count),
-        startedAt: subtask.created_at,
-        subtaskId: subtask.id,
-        toolName: subtask.assigned_tool ?? undefined,
-        metadata: { subtask },
+        groupId,
+        spans: groupSpans,
+        subtasks: groupSubtasks,
+        liveEvents: groupLiveEvents,
       })
     );
   }
@@ -361,29 +589,6 @@ function buildNodes(task: TaskDetailOut, spans: TraceSpanOut[], escalations: Esc
     );
   }
 
-  for (const event of events) {
-    if (event.kind !== "span_start" || !event.span_id || nodes.some((node) => node.traceSpanIds.includes(event.span_id!))) {
-      continue;
-    }
-    const type = event.span_type === "tool_call" ? "tool" : event.span_type === "memory" ? "memory" : "llm";
-    addNode(
-      nodes,
-      makeNode({
-        id: `live-${event.span_id}`,
-        runId,
-        type,
-        actor: type === "tool" ? "tool" : type === "memory" ? "memory" : "llm",
-        label: event.name ?? event.span_type ?? "Running",
-        subtitle: "live event",
-        status: "running",
-        startedAt: event.ts,
-        traceSpanIds: [event.span_id],
-        subtaskId: event.subtask_id,
-        metadata: { event },
-      })
-    );
-  }
-
   const terminal = task.status === "completed" || task.status === "failed" || task.status === "cancelled";
   if (terminal) {
     addNode(
@@ -409,7 +614,11 @@ function buildNodes(task: TaskDetailOut, spans: TraceSpanOut[], escalations: Esc
 function findNodeForEscalation(nodes: NodeDraft[], escalation: EscalationOut): string | undefined {
   if (escalation.subtask_id) {
     const related = nodes
-      .filter((node) => node.subtaskId === escalation.subtask_id && node.type !== "approval" && node.type !== "policy")
+      .filter((node) => {
+        if (node.type === "approval" || node.type === "policy") return false;
+        const subtaskIds = Array.isArray(node.metadata.subtaskIds) ? node.metadata.subtaskIds : [];
+        return node.subtaskId === escalation.subtask_id || subtaskIds.includes(escalation.subtask_id);
+      })
       .at(-1);
     if (related) return related.id;
   }
@@ -423,11 +632,12 @@ function buildEdges(nodes: NodeDraft[], escalations: EscalationOut[]): Execution
   for (let i = 0; i < nodes.length - 1; i++) {
     const source = nodes[i].id;
     const target = nodes[i + 1].id;
+    const relation = nodes[i].type === "policy" && nodes[i + 1].type === "approval" ? "requires_approval" : "sequence";
     edges.push({
       id: `${source}->${target}`,
       source,
       target,
-      relation: "sequence" as const,
+      relation,
       status: nodes[i + 1].status,
     });
   }
@@ -496,15 +706,16 @@ function buildEvents(
 
   for (const span of sortedSpans(spans)) {
     const nodeId = nodeIdForSpan(span);
+    const eventStatus = statusForRunEvent("NODE_COMPLETED", span);
     events.push({
       id: `span-${span.id}`,
-      kind: span.status === "ok" ? "NODE_COMPLETED" : "NODE_FAILED",
+      kind: eventStatus === "running" ? "NODE_STARTED" : span.status === "ok" ? "NODE_COMPLETED" : "NODE_FAILED",
       runId: task.id,
       nodeId,
       timestamp: span.ended_at ?? span.started_at,
       label: labelForSpan(span),
       actor: actorForSpan(span),
-      status: statusForRunEvent("NODE_COMPLETED", span),
+      status: eventStatus,
       detail: shortText(span.output, span.name),
       span,
     });
@@ -541,6 +752,20 @@ function buildEvents(
   }
 
   for (const event of liveEvents) {
+    if (event.kind === "span_start" && event.span_id && !spans.some((span) => span.id === event.span_id)) {
+      const nodeId = liveGroupId(event);
+      events.push({
+        id: `live-span-${event.span_id}`,
+        kind: "NODE_STARTED",
+        runId: task.id,
+        nodeId,
+        timestamp: event.ts,
+        label: event.name ?? event.span_type ?? "Running",
+        actor: SEMANTIC_GROUPS[nodeId].actor,
+        status: "running",
+        detail: "Live event received; durable trace detail will fill in after refetch.",
+      });
+    }
     if (event.kind === "snapshot") {
       events.push({
         id: `snapshot-${event.ts}`,
@@ -584,7 +809,7 @@ function buildEvents(
   return events.filter((event) => !event.nodeId || nodes.some((node) => node.id === event.nodeId) || event.nodeId === "goal");
 }
 
-function buildCards(task: TaskDetailOut, spans: TraceSpanOut[], escalations: EscalationOut[], artifacts: TaskArtifact[]): RuntimeCard[] {
+function buildCards(task: TaskDetailOut, escalations: EscalationOut[]): RuntimeCard[] {
   const cards: RuntimeCard[] = [
     {
       id: "user-request",
@@ -608,55 +833,6 @@ function buildCards(task: TaskDetailOut, spans: TraceSpanOut[], escalations: Esc
     });
   }
 
-  const sketch = sortedSpans(spans).find((span) => span.span_type === "sketch");
-  if (sketch) {
-    cards.push({
-      id: `card-${sketch.id}`,
-      kind: "plan",
-      timestamp: sketch.started_at,
-      title: "Plan",
-      body: shortText(sketch.output, "Plan generated."),
-      nodeId: nodeIdForSpan(sketch),
-      status: spanStatus(sketch),
-    });
-  }
-
-  for (const span of sortedSpans(spans)) {
-    if (span.span_type === "tool_call" && (span.status === "error" || span.ended_at)) {
-      cards.push({
-        id: `tool-${span.id}`,
-        kind: span.status === "error" ? "error" : "tool",
-        timestamp: span.ended_at ?? span.started_at,
-        title: span.status === "error" ? "Tool failed" : "Tool result",
-        body: `${span.name}: ${shortText(span.output, "Tool completed.")}`,
-        nodeId: nodeIdForSpan(span),
-        status: spanStatus(span),
-      });
-    }
-    if (span.span_type === "review") {
-      cards.push({
-        id: `review-${span.id}`,
-        kind: "verification",
-        timestamp: span.ended_at ?? span.started_at,
-        title: "Verification",
-        body: shortText(span.output, "Review completed."),
-        nodeId: nodeIdForSpan(span),
-        status: spanStatus(span),
-      });
-    }
-    if (span.span_type === "memory") {
-      cards.push({
-        id: `memory-${span.id}`,
-        kind: "memory",
-        timestamp: span.ended_at ?? span.started_at,
-        title: "Memory activity",
-        body: shortText(span.output, "Memory updated or retrieved."),
-        nodeId: nodeIdForSpan(span),
-        status: spanStatus(span),
-      });
-    }
-  }
-
   for (const escalation of sortedEscalations(escalations)) {
     cards.push({
       id: `approval-${escalation.id}`,
@@ -667,17 +843,6 @@ function buildCards(task: TaskDetailOut, spans: TraceSpanOut[], escalations: Esc
       nodeId: nodeIdForEscalation(escalation),
       status: escalationStatus(escalation),
       escalation,
-    });
-  }
-
-  for (const artifact of artifacts) {
-    cards.push({
-      id: `artifact-${artifact.path}`,
-      kind: "artifact",
-      timestamp: artifact.modified_at,
-      title: "Artifact created",
-      body: artifact.path,
-      status: "succeeded",
     });
   }
 
@@ -788,7 +953,7 @@ export function buildRunModel(args: {
     nodes,
     edges,
     events: buildEvents(args.task, nodes, spans, escalations, artifacts, liveEvents),
-    cards: buildCards(args.task, spans, escalations, artifacts),
+    cards: buildCards(args.task, escalations),
     context: buildContextMetrics(args.task, spans),
     currentNodeId,
     pendingApproval,
