@@ -16,6 +16,8 @@ export function classifyEscalation(reason: string, subtaskId: string | null): Es
   if (reason.startsWith("Low sketch confidence")) return { tag: "low_confidence", level: "plan" };
   if (reason.startsWith("Reviewer verdict")) return { tag: "reviewer_flag", level: "subtask" };
   if (reason.startsWith("Exceeded max_task_steps")) return { tag: "step_budget", level: "plan" };
+  if (reason.startsWith("Reached the cost ceiling")) return { tag: "cost_budget", level: "plan" };
+  if (reason.startsWith("Stopped making progress")) return { tag: "stuck_loop", level: "plan" };
   if (reason.startsWith("Agent chose to finish")) return { tag: "premature_finish", level: "plan" };
   return { tag: subtaskId ? "subtask_flag" : "plan_flag", level: subtaskId ? "subtask" : "plan" };
 }

@@ -20,7 +20,7 @@ export function TaskRow({ task }: { task: TaskOut }) {
     task.status === "completed"
       ? "synthesized"
       : current
-        ? `#${current.position} ${current.assigned_tool ?? "reasoning"}`
+        ? `#${current.position} ${current.assigned_tool ?? "model output"}`
         : "—";
 
   return (

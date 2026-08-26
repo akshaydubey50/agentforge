@@ -1,7 +1,9 @@
 import type { FeedItem } from "@/lib/traceFeed";
 import { spanDurationLabel } from "@/lib/traceFeed";
 import { ROLE_META } from "@/lib/agentRoles";
+import { humanizeValue } from "@/lib/formatValue";
 import { Markdown } from "@/components/ui/Markdown";
+import { Collapsible } from "@/components/ui/Collapsible";
 import { cn } from "@/lib/utils";
 
 function Avatar({ role }: { role: keyof typeof ROLE_META }) {
@@ -15,10 +17,11 @@ function Avatar({ role }: { role: keyof typeof ROLE_META }) {
 
 function Header({ role, label, spanType, time }: { role: keyof typeof ROLE_META; label: string; spanType: string; time: string }) {
   const meta = ROLE_META[role];
+  const displaySpanType = spanType === "reasoning" ? "model_output" : spanType;
   return (
     <div className="mb-1.5 flex items-baseline gap-2">
       <span className={cn("text-[12.5px] font-semibold", meta.colorClass)}>{label}</span>
-      <span className="mono rounded border border-border px-1.5 py-px text-[10px] text-text-faint">{spanType}</span>
+      <span className="mono rounded border border-border px-1.5 py-px text-[10px] text-text-faint">{displaySpanType}</span>
       <span className="mono text-[10.5px] text-text-faint">{time}</span>
     </div>
   );
@@ -53,36 +56,44 @@ function ToolCallBody({ item }: { item: FeedItem }) {
   const inputEntries = Object.entries(span.input ?? {});
 
   return (
-    <div className="mt-2 overflow-hidden rounded-[9px] border border-border bg-canvas">
-      <div className="flex items-center justify-between border-b border-border bg-white/[0.02] px-3.5 py-2">
-        <span className="mono text-[12px] font-medium text-role-reviewer">⚡ {span.name}</span>
-        <span
-          className={cn(
-            "rounded-full px-2 py-0.5 text-[10px]",
-            status === "ok" && "bg-status-completed/15 text-status-completed",
-            status === "running" && "bg-status-running/15 text-status-running",
-            status === "err" && "bg-status-failed/15 text-status-failed"
-          )}
-        >
-          {status === "ok" && `ok · ${spanDurationLabel(span)}`}
-          {status === "running" && "running"}
-          {status === "err" && `error · ${spanDurationLabel(span)}`}
+    <Collapsible
+      className="mt-2 overflow-hidden rounded-[9px] border border-border bg-canvas px-3.5 py-2"
+      label={
+        <span className="flex flex-1 items-center justify-between">
+          <span className="mono text-[12px] font-medium text-role-reviewer">{span.name}</span>
+          <span
+            className={cn(
+              "rounded-full px-2 py-0.5 text-[10px]",
+              status === "ok" && "bg-status-completed/15 text-status-completed",
+              status === "running" && "bg-status-running/15 text-status-running",
+              status === "err" && "bg-status-failed/15 text-status-failed"
+            )}
+          >
+            {status === "ok" && `ok - ${spanDurationLabel(span)}`}
+            {status === "running" && "running"}
+            {status === "err" && `error - ${spanDurationLabel(span)}`}
+          </span>
         </span>
-      </div>
-      <div className="mono space-y-1 px-3.5 py-2.5 text-[11.5px] leading-relaxed text-text-muted">
+      }
+    >
+      <div className="mono space-y-1.5 border-t border-border pt-2 text-[11.5px] leading-relaxed text-text-muted">
         {inputEntries.map(([k, v]) => (
           <KV key={k} label={k}>
-            {typeof v === "string" ? v : JSON.stringify(v)}
+            <span className="whitespace-pre-wrap">{humanizeValue(v)}</span>
           </KV>
         ))}
         {output?.success && (
           <KV label="output">
-            <span className="text-status-completed">{JSON.stringify(output.output)}</span>
+            <span className="whitespace-pre-wrap text-status-completed">{humanizeValue(output.output)}</span>
           </KV>
         )}
-        {output?.success === false && <KV label="error"><span className="text-status-failed">{output.error}</span></KV>}
+        {output?.success === false && (
+          <KV label="error">
+            <span className="text-status-failed">{output.error}</span>
+          </KV>
+        )}
       </div>
-    </div>
+    </Collapsible>
   );
 }
 
@@ -96,18 +107,22 @@ export function FeedMessage({ item }: { item: FeedItem }) {
         <div className="min-w-0 flex-1">
           <Header role="supervisor" label="Supervisor" spanType="sketch" time={spanDurationLabel(span)} />
           <Bubble>
-            {out.reasoning}
+            {out.reasoning && (
+              <Collapsible label="Planning notes" className="mb-2">
+                <div className="text-[12.5px] leading-relaxed text-text-muted">{out.reasoning}</div>
+              </Collapsible>
+            )}
             {out.outline && out.outline.length > 0 && (
               <ul className="mt-2 space-y-1 pl-0.5 text-[12.5px] text-text-muted">
                 {out.outline.map((step, i) => (
                   <li key={i} className="flex gap-2">
-                    <span className="mono text-role-supervisor">·</span>
+                    <span className="mono text-role-supervisor">-</span>
                     {step}
                   </li>
                 ))}
               </ul>
             )}
-            <div className="mt-2 text-[11px] text-text-faint">non-binding outline · confidence {out.confidence}/5</div>
+            <div className="mt-2 text-[11px] text-text-faint">non-binding outline - confidence {out.confidence}/5</div>
           </Bubble>
         </div>
       </div>
@@ -124,13 +139,11 @@ export function FeedMessage({ item }: { item: FeedItem }) {
           <Header role="supervisor" label="Supervisor" spanType="agent_step" time={spanDurationLabel(span)} />
           <Bubble dim className="text-[12.5px]">
             {out.next_action === "finish" ? (
-              <>Decided the request is complete — moving to synthesis.</>
+              <>Decided the request is complete - moving to synthesis.</>
             ) : (
               <>
                 Next step: <span className="text-text">{out.subtask_description}</span>
-                {out.tool_name && out.tool_name !== "none" && (
-                  <span className="mono text-text-faint"> → {out.tool_name}</span>
-                )}
+                {out.tool_name && out.tool_name !== "none" && <span className="mono text-text-faint"> - {out.tool_name}</span>}
               </>
             )}
           </Bubble>
@@ -141,18 +154,20 @@ export function FeedMessage({ item }: { item: FeedItem }) {
 
   if (item.kind === "tool_call" || item.kind === "reasoning") {
     const span = item.span!;
-    const label = item.subtask ? `Specialist · subtask #${item.subtask.position}` : "Specialist";
+    const label = item.subtask ? `Specialist - subtask #${item.subtask.position}` : "Specialist";
     return (
       <div className="flex gap-3">
         <Avatar role="specialist" />
         <div className="min-w-0 flex-1">
           <Header role="specialist" label={label} spanType={span.span_type} time={spanDurationLabel(span)} />
-          {item.rationale && <Bubble dim>{item.rationale}</Bubble>}
-          {item.kind === "tool_call" ? (
-            <ToolCallBody item={item} />
-          ) : (
-            <Bubble dim={!item.rationale}>{(span.output as { text?: string })?.text}</Bubble>
+          {item.rationale && (
+            <Collapsible label="Safe rationale" className="mb-1.5">
+              <div className="rounded-[3px_12px_12px_12px] border border-border bg-surface px-4 py-2.5 text-[13px] leading-relaxed text-text-muted">
+                {item.rationale}
+              </div>
+            </Collapsible>
           )}
+          {item.kind === "tool_call" ? <ToolCallBody item={item} /> : <Bubble dim={!item.rationale}>{(span.output as { text?: string })?.text}</Bubble>}
         </div>
       </div>
     );
@@ -167,18 +182,22 @@ export function FeedMessage({ item }: { item: FeedItem }) {
         : out.verdict === "reject"
           ? "bg-status-revision/15 text-status-revision"
           : "bg-role-human/15 text-role-human";
-    const label = item.subtask ? `Reviewer · subtask #${item.subtask.position}` : "Reviewer";
+    const label = item.subtask ? `Reviewer - subtask #${item.subtask.position}` : "Reviewer";
     return (
       <div className="flex gap-3">
         <Avatar role="reviewer" />
         <div className="min-w-0 flex-1">
           <Header role="reviewer" label={label} spanType="review" time={spanDurationLabel(span)} />
-          <Bubble dim>
-            {out.feedback}{" "}
-            <span className={cn("ml-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold", verdictClass)}>
-              {out.verdict === "pass" ? "✓ pass" : out.verdict === "reject" ? "↻ reject" : "⏸ escalate"} · {out.score}/5
-            </span>
-          </Bubble>
+          <Collapsible
+            className="rounded-[3px_12px_12px_12px] border border-border bg-surface px-4 py-2.5"
+            label={
+              <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold", verdictClass)}>
+                {out.verdict === "pass" ? "pass" : out.verdict === "reject" ? "reject" : "escalate"} - {out.score}/5
+              </span>
+            }
+          >
+            <div className="border-t border-border pt-1.5 text-[13px] leading-relaxed text-text-muted">{out.feedback}</div>
+          </Collapsible>
         </div>
       </div>
     );
@@ -195,6 +214,20 @@ export function FeedMessage({ item }: { item: FeedItem }) {
           <Bubble>
             <Markdown className="text-[13.5px]">{out.final_answer ?? ""}</Markdown>
           </Bubble>
+        </div>
+      </div>
+    );
+  }
+
+  if (item.kind === "user_message") {
+    const message = item.message!;
+    const time = new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return (
+      <div className="flex gap-3">
+        <Avatar role="human" />
+        <div className="min-w-0 flex-1">
+          <Header role="human" label="You" spanType="follow_up" time={time} />
+          <Bubble>{message.content}</Bubble>
         </div>
       </div>
     );

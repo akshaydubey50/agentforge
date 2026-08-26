@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { cn } from "@/lib/utils";
 
-const KINDS = ["all", "episodic", "fact", "preference"];
+const KINDS = ["all", "semantic", "episodic", "pinned_decision", "preference", "artifact_reference"];
 
 export default function MemoryPage() {
   const [kind, setKind] = useState("all");
@@ -25,7 +25,7 @@ export default function MemoryPage() {
       <div className="mx-auto max-w-[1000px]">
         <h1 className="mb-1.5 text-[17px] font-semibold text-text">Long-term memory</h1>
         <p className="mb-5.5 text-[12.5px] text-text-faint">
-          Episodic summaries, facts, and preferences in ChromaDB. Retrieved during planning by blend of similarity (0.7) + importance (0.3).
+          Read-only durable memory inspection. Conversation summaries, retrieved memory, and current context are separate surfaces; this page shows persisted memory entries exposed by the backend.
         </p>
 
         <div className="mb-4 flex flex-wrap gap-1.5">

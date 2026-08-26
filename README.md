@@ -1,16 +1,88 @@
 # AgentForge
 
-A multi-agent system — Supervisor plans, Specialists execute with tools, a Reviewer validates —
-with persistent memory, human-in-the-loop escalation, and full execution tracing. Built to
-demonstrate what makes an agent system production infrastructure rather than a single-agent
-chat-loop demo: it can be paused, handed to a human, resumed by a different process entirely, and
-every decision it made is inspectable afterward.
+AgentForge is a production-oriented AI Agent Execution Studio. It makes agent
+behavior visible: the user can give a goal, watch live execution, inspect graph
+nodes, review context and memory, approve external effects, and revisit durable
+execution history after the run completes.
+
+The current product UI is the Next.js Execution Studio in `web/`:
+
+- Mission Control to start or resume work.
+- Workspace with Chat + Live Execution Graph + Inspector + Timeline for one
+  active run.
+- Runs and Run Detail for execution history.
+- Approvals with exact-effect authorization.
+- Knowledge and Memory inspection.
+- Tool, MCP, Integration, Policy, Eval, Observability, Security, and Settings
+  surfaces that expose current backend capability honestly.
+
+```mermaid
+flowchart LR
+  User[User] --> Studio[Execution Studio]
+  Studio --> API[FastAPI agentsys]
+  Studio --> RAG[RAG API]
+  API --> Runtime[Agent runtime]
+  Runtime --> Context[Context engine]
+  Runtime --> Memory[Durable memory]
+  Runtime --> Policy[Policy and approvals]
+  Runtime --> Tools[Native tools and MCP]
+  Runtime --> Ledger[Execution ledger]
+  Runtime --> Verify[Verification]
+  Runtime --> Guardrails[Guardrails]
+  Runtime --> Obs[Observability and evals]
+  Memory --> Chroma[Chroma]
+  RAG --> Knowledge[Knowledge indexes]
+  API --> Postgres[(Postgres)]
+  API --> Redis[(Redis)]
+```
+
+## Portfolio Quick Read
+
+What this demonstrates:
+
+- A continuous agent loop, not a static workflow graph.
+- Durable run state in Postgres; SSE is live narration, not source of truth.
+- Human approval for external or risky effects.
+- Policy-enforced tool execution.
+- Gmail draft creation, not Gmail send.
+- Long-term memory with Chroma plus Postgres metadata.
+- RAG document ingestion, retrieval playground, source scores, and verification.
+- MCP tool discovery with trust gaps surfaced honestly.
+- Context budgeting and rolling-summary support where backend metadata exists.
+- Agent-specific observability, deterministic safety evals, and safe security
+  metadata.
+
+Release/deployment documentation:
+
+- Local run instructions are below.
+- Free portfolio deployment plan: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+- Product UX architecture: [docs/PHASE9A_PRODUCT_UX_ARCHITECTURE.md](docs/PHASE9A_PRODUCT_UX_ARCHITECTURE.md).
+
+Known portfolio limitations:
+
+- Cloud deployment requires a separate API service, worker service, Postgres,
+  Redis, and vector persistence.
+- Free hosts generally do not expose Docker sockets, so `code_execution` should
+  be disabled with `ENABLE_CODE_EXECUTION=false`.
+- RAG and memory persistence require Chroma with persistent disk or a future
+  vector-store migration.
+- DeepEval quality scores are not shown unless eval results are actually run
+  and exposed.
+- Security screens use safe metadata only; raw secrets and attack payloads are
+  intentionally not rendered.
+
+A multi-agent system — a continuous agent loop understands the request, takes one step at a time,
+and decides what's next in light of what it just learned; Specialists execute with tools; a
+Reviewer validates each step — with persistent memory, human-in-the-loop escalation, and full
+execution tracing. Built to demonstrate what makes an agent system production infrastructure
+rather than a single-agent chat-loop demo: it can be paused, handed to a human, resumed by a
+different process entirely, and every decision it made is inspectable afterward.
 
 ## Two packages in this repo
 
 | Package | What it is | Docs |
 |---|---|---|
-| **`src/agentsys/`** | The agent platform described below: planning, parallel subtask execution, sub-agent delegation, tool use, human escalation, tracing, and an MCP plugin backbone for connecting third-party tools. | this file |
+| **`src/agentsys/`** | The agent platform described below: a continuous reasoning loop, sub-agent delegation, tool use, human escalation, tracing, and an MCP plugin backbone for connecting third-party tools. | this file |
 | **`src/rag/`** | A hybrid-search RAG pipeline (dense + BM25 → RRF → LLM rerank → grounded generation → per-claim citation verification), with a 50-case golden-set eval across three chunking strategies. | [docs/RAG_PIPELINE.md](docs/RAG_PIPELINE.md) |
 
 They were separate projects and were merged into one repository, with both git
@@ -18,9 +90,17 @@ histories preserved. Neither imports the other — see
 [docs/MERGE.md](docs/MERGE.md) for what had to be reconciled, the known
 Chroma-mode inconsistency, and how to run both stacks.
 
+If you're evaluating system direction, also see
+[docs/GOAL_EXECUTION_SYSTEM.md](docs/GOAL_EXECUTION_SYSTEM.md) for AgentForge's
+north-star definition as a goal-execution agent (not just a chat loop).
+
 ```bash
-docker compose up -d --build   # both stacks: agentsys on 8100/8601, rag on 8000/8501
+docker compose up -d --build
 ```
+
+Docker now manages the full local stack: Execution Studio on `3000`, agentsys API on
+`8100`, RAG API on `8000`, Streamlit dashboards on `8601`/`8501`, plus Postgres,
+Redis, Chroma, and the Celery worker.
 
 ## Proof it actually works
 
@@ -42,12 +122,12 @@ worker + FastAPI), not a mocked demo:
 > summary report has been saved to the file..."
 
 The math checks out ((10.45M − 9.6M) / 9.6M = 8.854...%), the report file is real and correct,
-and the plan/execute/review/synthesize sequence is fully visible in the trace explorer.
+and the sketch/decide/execute/review/synthesize sequence is fully visible in the trace explorer.
 
-**45 tests, 43 passing, 2 cleanly skipped** (DuckDuckGo rate-limiting — an external-network
-condition the tool already handles gracefully, not a code bug). Real Postgres, real Redis, real
-Chroma, real OpenAI calls, real Docker-sandboxed code execution — nothing mocked. See
-[Tests](#tests).
+**61 agentsys tests** (72 across both packages in this repo), all passing on a clean run —
+occasionally 1-2 skip cleanly on DuckDuckGo rate-limiting, an external-network condition the tool
+already handles gracefully, not a code bug. Real Postgres, real Redis, real Chroma, real OpenAI
+calls, real Docker-sandboxed code execution — nothing mocked. See [Tests](#tests).
 
 ## Architecture
 
@@ -56,42 +136,52 @@ Request
   │
   ▼
 ┌─────────────────────┐   reads long-term memory for similar past tasks
-│  Supervisor: plan    │──────────────────────────────────────────────►  Chroma
-│  (one-shot decompose)│
+│  Supervisor: sketch  │──────────────────────────────────────────────►  Chroma
+│  (non-binding outline)│
 └─────────┬────────────┘
-          │ writes Task + Subtask rows (Postgres = source of truth)
+          │ low confidence → escalate; otherwise loop starts (no Subtask rows yet)
           ▼
-┌─────────────────────┐
-│  select_subtask      │◄────────────────────────────┐
-│  (dependency-ready?) │                              │
-└───┬─────────┬────────┘                              │
-    │         │ none ready / all done                 │ pass → next subtask
-    ▼         ▼                                        │
- execute   synthesize                                  │
-    │         │                                   ┌────┴─────┐
-    ▼         ▼                                   │  review   │
-┌─────────────────────┐   tool call, logged   ────►│(Reviewer) │
-│ Specialist: execute  │──────────────────────┘    └────┬──────┘
-│ (pick tool, run it)  │                                │ reject (retries left)
-└──────────┬───────────┘                                │
-           │                                             ▼
-           └─────────────────────────────────────►  execute (retry, with
-                                                      reviewer feedback this time)
-                                                             │
-                                                             │ reject (exhausted) /
-                                                             │ escalate / plan-level
-                                                             │ low confidence / stuck
-                                                             ▼
-                                                      ┌──────────────┐
-                                                      │  Escalation   │──► human via
-                                                      │  (pause task) │    dashboard/API
-                                                      └──────┬────────┘
-                                                             │ approve / reject / take over
-                                                             ▼
-                                                   run_agent_task.delay() again —
-                                                   a FRESH graph invocation that reads
-                                                   current Postgres state and resumes
+┌──────────────────────────┐◄──────────────────────────────────────┐
+│  agent_step               │                                       │
+│  decide next step, given  │                                       │
+│  request + sketch (advisory)                                      │
+│  + everything done so far │                                       │
+└───┬──────────────┬────────┘                                       │
+    │ act           │ finish (≥1 step done)                          │
+    ▼               ▼                                                │
+ create Subtask   synthesize                                         │
+ on the fly           │                                        ┌─────┴────┐
+    ▼                 ▼                                        │  review   │
+┌─────────────────────┐   tool call, logged   ─────────────────►│(Reviewer) │
+│ Specialist: execute  │──────────────────────                 └────┬──────┘
+│ (tool chosen by the  │                                            │ reject (retries left)
+│  agent_step decision)│                                            │
+└──────────┬───────────┘                                            │
+           │                                                        ▼
+           └─────────────────────────────────────────────────► execute (retry, with
+                                                                  reviewer feedback this time)
+                                                                        │
+                                                                        │ reject (exhausted) /
+                                                                        │ step budget exhausted /
+                                                                        │ finish before any step /
+                                                                        │ low sketch confidence
+                                                                        ▼
+                                                                 ┌──────────────┐
+                                                                 │  Escalation   │──► human via
+                                                                 │  (pause task) │    dashboard/API
+                                                                 └──────┬────────┘
+                                                                        │ approve / reject / take over
+                                                                        ▼
+                                                              run_agent_task.delay() again —
+                                                              a FRESH graph invocation that reads
+                                                              current Postgres state and resumes
 ```
+
+Execution is deliberately sequential, not parallel: each `agent_step` decision is made in light of
+everything the loop has learned so far, so there's no fixed dependency graph left to fan work out
+against (see [Known limitations](#known-limitations-honest-not-hidden)). `delegate_subagent`
+remains available as an opt-in way to get a bounded, context-isolated multi-step investigation
+inside a single step, without polluting the main loop's context with its intermediate tool calls.
 
 Every node writes a `TraceSpan` row (input, output, status, timing) — that's what powers the
 trace explorer and the analytics tab, and it's also the audit trail for "why did the agent do
@@ -100,8 +190,10 @@ that."
 ### Why Postgres is the source of truth, not LangGraph's checkpointer
 
 LangGraph ships a built-in checkpointer for exactly this pause/resume pattern. I didn't use it.
-The `AgentState` TypedDict carries almost nothing (`task_id`, plus a couple of in-memory routing
-scratch fields) — every node reads what it needs from Postgres and writes back to Postgres. This
+The `AgentState` TypedDict carries almost nothing (`task_id`, plus an in-memory `route` scratch
+field) — every node reads what it needs from Postgres and writes back to Postgres, including
+`agent_step_node`'s own step counter, which is just `len(Subtask rows for this task)` rather than
+anything carried in graph state. This
 means "resume after a human approves" is just *calling `run_task(task_id)` again* — a completely
 fresh graph invocation, often from a different Celery worker process than the one that paused. I
 chose this over the built-in checkpointer because I wanted the resume path to be the exact same
@@ -112,9 +204,9 @@ across the boundary and asserts the final state is correct.
 
 ### Short-term memory (Redis) vs. `AgentState` — why both exist
 
-`AgentState`'s `route` and `current_subtask_id` fields are pure in-memory control flow — they
-never need to outlive a single `graph.invoke()` call, so LangGraph threading them between nodes
-in-process is sufficient; Redis would be redundant overhead. Redis-backed short-term memory
+`AgentState`'s `route` field is pure in-memory control flow — it never needs to outlive a single
+`graph.invoke()` call, so LangGraph threading it between nodes in-process is sufficient; Redis
+would be redundant overhead. Redis-backed short-term memory
 (`memory/short_term.py`) serves a different, genuine purpose instead: a scratchpad specialists
 write informal notes to *across subtasks within the same task* (e.g. "web_search on X found Y"),
 included in later subtasks' prompts, and explicitly cleared on task completion. Two different
@@ -139,16 +231,19 @@ running a multi-agent system surfaces that a spec doesn't.
    system failure — it's now caught and converted into a failed `ToolResult`, so the reviewer
    sees it as a normal rejectable output and the retry loop handles it like any other bad attempt.
 
-3. **Synthesis fabricated a data point that was never retrieved.** The planner produced a
-   single Q1-only subtask for a request that needed both quarters (its own plan reasoning
-   literally said *"I can create a second subtask later"* — which this architecture doesn't
-   support; planning is one-shot). Synthesis then filled the gap by inventing a plausible Q2
-   figure, formatted to look like it was quoting a real subtask result. It happened to land on
+3. **Synthesis fabricated a data point that was never retrieved.** Under the original one-shot
+   planning architecture, the planner produced a single Q1-only subtask for a request that needed
+   both quarters (its own plan reasoning literally said *"I can create a second subtask later"* —
+   which that architecture didn't support). Synthesis then filled the gap by inventing a plausible
+   Q2 figure, formatted to look like it was quoting a real subtask result. It happened to land on
    the correct seeded value, which made it *more* concerning, not less — a confidently fabricated
-   number is worse than an obviously wrong one. Fixed at both ends: `PLAN_PROMPT` now states
-   explicitly that this is a one-shot plan with no deferred subtasks, and `SYNTHESIS_PROMPT`
-   explicitly forbids inventing any data point not present in actual subtask outputs, instructing
-   it to state what's missing instead. Locked in by
+   number is worse than an obviously wrong one. Fixed at both ends: the planning prompt stated
+   explicitly that deferring work to an imagined future subtask wasn't allowed, and
+   `SYNTHESIS_PROMPT` explicitly forbids inventing any data point not present in actual subtask
+   outputs, instructing it to state what's missing instead. After the later move to a continuous
+   reasoning loop (see Architecture), the completeness guardrail moved into `AGENT_STEP_PROMPT`
+   ("don't finish having quietly skipped part of what was asked"), while `SYNTHESIS_PROMPT`'s
+   no-fabrication instruction is unchanged. Locked in by
    `test_synthesis_does_not_fabricate_data_beyond_what_subtasks_actually_retrieved`, which
    verifies every dollar figure in a final answer traces back to a real tool call result.
 
@@ -186,14 +281,60 @@ holds retrieval and generation to elsewhere.
   match. `prune_low_value_memories` caps growth by dropping the least important, least recently
   accessed entries once the store passes a size threshold.
 
+## Policy: the LLM proposes, deterministic code disposes
+
+Whether a tool call is *allowed* is never the model's decision. Every proposed call passes two
+deterministic gates before anything runs, and neither one is reachable by anything the model
+writes:
+
+```
+LLM proposes a tool call
+        ↓
+typed validation      tools/base.py -- validated_kwargs, against the tool's pydantic args model
+        ↓
+policy.decide(...)    policy.py -- pure function of (tool, validated args)
+        ↓
+ALLOW / REQUIRE_APPROVAL / DENY
+        ↓
+existing execution  /  existing escalation  /  refused with a reason
+```
+
+Each tool declares an `action_type` (`READ` / `LOCAL_WRITE` / `EXTERNAL_WRITE` / `DESTRUCTIVE`)
+and a `risk` (`LOW` / `MEDIUM` / `HIGH` / `CRITICAL`); `policy.py` holds the whole ruleset as one
+function. Four properties that are easy to claim and easy to get wrong:
+
+- **Decisions are per-call, not per-tool.** `file_io` reading its workspace is an allowed
+  `READ`/`LOW`; the same tool with `action="write"` is a gated `LOCAL_WRITE`/`MEDIUM`. This
+  replaced a boolean on a Python class that only two of fifteen tools set.
+- **It fails closed, in three places.** An exception anywhere in the rule body returns `DENY`
+  rather than propagating (a policy engine you can open by breaking it is not one). A tool that
+  declares no classification inherits `EXTERNAL_WRITE`/`HIGH` and is gated — "the author forgot"
+  and "this is safe" must not look alike. A third-party MCP server's tools are gated unless an
+  operator declares that server read-only.
+- **Both execution seams are gated.** The main loop *and* `delegate_subagent`'s inner loop. The
+  sub-agent seam previously had no approval check at all, so a sub-agent proposing
+  `code_execution` just ran it — approval was bypassable by delegating. A sub-agent can't pause
+  for a human, so it refuses gated actions and reports that they need their own approved step.
+- **An approval binds to the exact call it approved.** The escalation stores the tool name, the
+  validated arguments, the decision and a fingerprint; at resume all three are re-checked, so
+  approving `send_email(to=A)` cannot resume as `send_email(to=B)`, and an approval older than
+  `approval_expiry_seconds` is refused rather than executed against a world that has moved on.
+
+Not implemented, and not faked: step-up/MFA. `UserSession.mfa_satisfied_at` exists in the schema
+but nothing writes it and there is no second factor in the auth flow, so a "require recent MFA"
+rule would check a column that is always `NULL`. Tracked as debt in
+[docs/ARCHITECTURE_AUDIT.md](docs/ARCHITECTURE_AUDIT.md), not shipped as a control.
+
 ## Human-in-the-loop
 
-Escalation triggers: low plan confidence, exhausted retries, a reviewer explicitly flagging
-`escalate`, or an unresolvable subtask dependency. Three resolution levels via
+Escalation triggers: a policy decision of `REQUIRE_APPROVAL` on a proposed tool call (see above),
+low sketch confidence, exhausted subtask retries, a reviewer explicitly
+flagging `escalate`, the step budget (`max_task_steps`) being exhausted, or the agent declaring
+"finish" before completing any step. Three resolution levels via
 `POST /v1/escalations/{id}/decide`:
 
-- **approve** — accept the subtask's output as-is (or resume an as-planned low-confidence plan)
-- **reject** — mark the subtask failed (or the whole task, for a plan-level escalation)
+- **approve** — accept the subtask's output as-is (or resume a task-level escalation as-is)
+- **reject** — mark the subtask failed (or the whole task, for a task-level escalation)
 - **take_over** — human supplies the correct output directly, subtask marked done with it
 
 All three were exercised against the real running stack, not just unit-tested — see the escalated
@@ -208,8 +349,11 @@ cp .env.example .env   # fill in OPENAI_API_KEY
 docker compose up -d --build
 ```
 
-Services: `postgres` (5432), `redis` (6379), `chroma` (8001), `api` (8100), `dashboard` (8601),
-`worker` (Celery, no exposed port). The `worker` container needs the Docker socket mounted
+Services: `web` (3000), `postgres` (5432), `redis` (6379), `chroma` (8001), `api` (8100),
+`rag-api` (8000), `dashboard` (8601), `rag-dashboard` (8501), and `worker` (Celery, no
+exposed port). The `web` service runs Next.js from `web/` with Docker-owned `node_modules`
+and `.next` volumes, so host-side `.next` cache corruption does not affect the browser UI.
+The `worker` container needs the Docker socket mounted
 (`/var/run/docker.sock`) to run the `code_execution` tool's sandboxed containers — a known,
 documented pattern (Docker-in-Docker via socket sharing) with its own security tradeoff: a
 process that can launch sibling containers has a wider blast radius than one that can't. Fine for
@@ -249,23 +393,28 @@ streamlit run src/agentsys/dashboard.py
 pytest tests/ -v
 ```
 
-- `test_graph_routing.py` (5, no LLM calls) — deterministic control-flow logic: dependency-ready
-  selection, synthesize-when-done, escalate-when-stuck.
-- `test_graph_integration.py` (8, real LLM + tools) — full task lifecycle, dependency ordering
-  on a real LLM-generated plan, reject-and-revise actually revising, the fabrication regression
-  test, human-in-the-loop resume (both `take_over` and plan-level `reject`), memory-informed
-  planning retrieval.
-- `test_tool_*.py` (30) — one file per tool, each hitting real Postgres / real Docker / real
-  filesystem / real (or gracefully-failing) network.
+- `test_graph_routing.py` (4, no LLM calls) — deterministic control-flow logic: sketch vs. resume
+  routing, sketch fallback, step-budget escalation.
+- `test_graph_integration.py` (12, real LLM + tools) — full task lifecycle, incremental step
+  creation on a real agent loop, reject-and-revise actually revising, the fabrication regression
+  test, human-in-the-loop resume (both `take_over` and task-level `reject`), memory-informed
+  retrieval, sketch creates no committed work, the loop stops on a genuine "finish" decision, the
+  step budget escalates cleanly.
+- `test_tool_*.py` (43) — one file per tool (including `delegate_subagent`, the bounded isolated
+  sub-loop), each hitting real Postgres / real Docker / real filesystem / real MCP servers / real
+  (or gracefully-failing) network.
 - `test_memory.py` (2) — short-term roundtrip+clear, long-term similarity+importance ranking.
 
 ## Known limitations (honest, not hidden)
 
-- **Cycle prevention is by construction, not detection.** `plan_node` only accepts
-  `depends_on_positions` strictly earlier than a subtask's own position — this rules out cycles
-  and self-reference by making them inexpressible, rather than detecting and rejecting them after
-  the fact. Simpler, but means a truly adversarial or buggy plan structure that this constraint
-  doesn't happen to cover isn't defended against.
+- **No parallel execution.** The continuous reasoning loop is deliberately sequential — each step
+  is decided in light of everything learned from every prior step, so there's no fixed dependency
+  graph to fan independent work out against (an earlier version of this architecture used a fixed
+  upfront plan specifically to enable that; see Architecture above for why it was replaced). A
+  request with genuinely independent sub-parts runs them one after another rather than
+  concurrently. `delegate_subagent` remains available for bounded isolated exploration inside a
+  single step; true parallel fan-out (a decide-call naming multiple independent next steps at
+  once) is a real, well-scoped extension, not built here.
 - **"Replay" is a trace step-through, not re-execution.** The trace explorer lets you inspect
   every past decision in order; it doesn't yet let you modify an input and re-run from that point
   for comparison, which the fuller blueprint envisions. A natural extension, not built here.

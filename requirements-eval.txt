@@ -1,0 +1,3 @@
+# Optional evaluation tooling. Do not install for normal AgentForge runtime.
+# Bootstrap Phase 7C pin; update deliberately after rerunning the quality suite.
+deepeval==4.1.5

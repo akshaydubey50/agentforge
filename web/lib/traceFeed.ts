@@ -1,4 +1,4 @@
-import type { EscalationOut, SubtaskOut, TraceSpanOut } from "./api";
+import type { EscalationOut, SubtaskOut, TaskMessageOut, TraceSpanOut } from "./api";
 
 // Turns the flat, chronological TraceSpan list (GET /v1/tasks/{id}/trace)
 // into feed messages. One span = one message, except: tool_selection spans
@@ -7,9 +7,19 @@ import type { EscalationOut, SubtaskOut, TraceSpanOut } from "./api";
 // shows a short dim sentence above each tool card), and raw "escalation"
 // spans are dropped in favor of the richer Escalation rows from
 // GET /v1/escalations (which carry status/decision, needed for the
-// approve/take_over/reject gate).
+// approve/take_over/reject gate). TaskMessage rows (user follow-ups sent
+// after the task first completed, see POST /v1/tasks/{id}/messages) are
+// merged in by timestamp alongside everything else.
 
-export type FeedItemKind = "sketch" | "agent_step" | "tool_call" | "reasoning" | "review" | "escalation" | "synthesize";
+export type FeedItemKind =
+  | "sketch"
+  | "agent_step"
+  | "tool_call"
+  | "reasoning"
+  | "review"
+  | "escalation"
+  | "synthesize"
+  | "user_message";
 
 export interface FeedItem {
   key: string;
@@ -17,11 +27,17 @@ export interface FeedItem {
   kind: FeedItemKind;
   span?: TraceSpanOut;
   escalation?: EscalationOut;
+  message?: TaskMessageOut;
   subtask?: SubtaskOut;
   rationale?: string;
 }
 
-export function buildFeed(spans: TraceSpanOut[], subtasks: SubtaskOut[], escalations: EscalationOut[]): FeedItem[] {
+export function buildFeed(
+  spans: TraceSpanOut[],
+  subtasks: SubtaskOut[],
+  escalations: EscalationOut[],
+  messages: TaskMessageOut[] = []
+): FeedItem[] {
   const bySubtaskId = new Map(subtasks.map((s) => [s.id, s]));
   const pendingRationale = new Map<string, string>();
   const items: FeedItem[] = [];
@@ -51,6 +67,10 @@ export function buildFeed(spans: TraceSpanOut[], subtasks: SubtaskOut[], escalat
   for (const esc of escalations) {
     const subtask = esc.subtask_id ? bySubtaskId.get(esc.subtask_id) : undefined;
     items.push({ key: esc.id, timestamp: esc.created_at, kind: "escalation", escalation: esc, subtask });
+  }
+
+  for (const msg of messages) {
+    items.push({ key: msg.id, timestamp: msg.created_at, kind: "user_message", message: msg });
   }
 
   items.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());

@@ -3,19 +3,63 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
+from agentsys.execution import ExecutionSafety
+from agentsys.policy import ActionType, Risk
+from agentsys.sanitize import wrap_untrusted
 from agentsys.tools.base import Tool, ToolResult
+
+
+class FileIOArgs(BaseModel):
+    """task_id is absent on purpose: it selects WHICH task's sandbox this call
+    is confined to, so it is injected from the running task (graph/nodes.py's
+    _injected_kwargs) and is not something the model may name. It used to be a
+    setdefault, which meant a proposal supplying task_id won."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["read", "write", "list"]
+    path: str = Field(description="Relative path within the task workspace -- no leading slash, no '..'.")
+    content: str | None = Field(default=None, description="Required for action='write', ignored otherwise.")
 
 
 class FileIOTool(Tool):
     name = "file_io"
+    args_model = FileIOArgs
+    action_type = ActionType.READ
+    risk = Risk.LOW
+    """The BASELINE is the read: action="read"/"list" touch nothing. A call
+    with action="write" is raised to LOCAL_WRITE/MEDIUM by policy._effective
+    and gated -- this is the one registered tool whose decision genuinely
+    depends on its arguments, and it needed that before policy existed (it
+    shipped a needs_approval override for exactly this, now deleted).
+
+    Sandbox escapes are NOT policy's call: _resolve_within_sandbox below
+    refuses any path outside the task directory, and a second copy of that
+    check in policy would be the weaker one."""
+    execution_safety = ExecutionSafety.IDEMPOTENT
+    """Idempotent in all three actions, and genuinely so rather than
+    conveniently: _write below is mkdir(exist_ok) + write_text, which
+    TRUNCATES, so the same path and the same content produce the same file
+    whether it runs once or five times. read/list are trivially idempotent.
+
+    A write is still DEDUPED by execute_tool -- being safe to repeat and
+    being worth repeating are different things, and the ledger is what
+    makes the result stable across an approval resume or a crash."""
     description = (
         "Reads, writes, or lists files inside this task's sandboxed workspace directory. "
         "Arguments: action (str, required, one of 'read'/'write'/'list'), "
-        "path (str, required, relative path within the task workspace), "
-        "content (str, required only for action='write'). "
-        "Do not pass task_id — it's filled in automatically."
+        "path (str, required, relative path within the task workspace -- no leading "
+        "slash and no '..'), content (str, required only for action='write'). "
+        "Do not pass task_id — it's filled in automatically. Examples: write a file "
+        "with {\"action\": \"write\", \"path\": \"report.txt\", \"content\": \"...\"}; "
+        "read it back with {\"action\": \"read\", \"path\": \"report.txt\"} (returns "
+        "{content: \"...\"}); see what's already there with "
+        "{\"action\": \"list\", \"path\": \".\"} (returns {files: [...]})."
     )
 
     def run(self, action: str, task_id: str, path: str, content: str | None = None) -> ToolResult:
@@ -50,7 +94,13 @@ class FileIOTool(Tool):
     def _read(resolved: Path) -> ToolResult:
         if not resolved.is_file():
             return ToolResult(success=False, error=f"file not found: {resolved}")
-        return ToolResult(success=True, output={"content": resolved.read_text(encoding="utf-8")})
+        # A file in the workspace could be a user-supplied attachment or the
+        # output of an earlier web_search/gmail/drive call written back to
+        # disk -- neither is the agent's own trusted instruction, so it's
+        # framed the same as any other fetched content (see
+        # sanitize.wrap_untrusted).
+        content = wrap_untrusted(resolved.read_text(encoding="utf-8"), "file_io")
+        return ToolResult(success=True, output={"content": content})
 
     @staticmethod
     def _list(resolved: Path) -> ToolResult:

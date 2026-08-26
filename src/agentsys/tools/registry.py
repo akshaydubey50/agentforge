@@ -50,12 +50,53 @@ def _build_registry() -> ToolRegistry:
     except ImportError:
         logger.warning("delegate_subagent tool not available")
 
-    try:
-        from agentsys.tools.knowledge_search import KnowledgeSearchTool
+    if settings.service_token:
+        try:
+            from agentsys.tools.knowledge_search import KnowledgeSearchTool
 
-        registry.register(KnowledgeSearchTool())
+            registry.register(KnowledgeSearchTool())
+        except ImportError:
+            logger.warning("knowledge_search tool not available")
+    else:
+        logger.info("knowledge_search tool disabled (SERVICE_TOKEN unset)")
+
+    try:
+        from agentsys.tools.tweet_workshop import TweetWorkshopTool
+
+        registry.register(TweetWorkshopTool())
     except ImportError:
-        logger.warning("knowledge_search tool not available")
+        logger.warning("tweet_workshop tool not available")
+
+    # Google tools register only when OAuth is configured -- otherwise they'd
+    # show up in every tool list and the specialist would try to use them,
+    # only to hit a "not configured" error. Registering conditionally keeps
+    # the advertised tool set honest, same reasoning as enable_code_execution.
+    from agentsys.integrations.google_oauth import is_configured as google_configured
+
+    if google_configured():
+        try:
+            from agentsys.tools.google_drive import GoogleDriveReadTool, GoogleDriveTool
+            from agentsys.tools.gmail import GmailCreateDraftTool, GmailReadTool, GmailSearchTool
+
+            registry.register(GoogleDriveTool())
+            registry.register(GoogleDriveReadTool())
+            registry.register(GmailSearchTool())
+            registry.register(GmailReadTool())
+            registry.register(GmailCreateDraftTool())
+
+            # Photos is behind its own flag on top of OAuth being configured:
+            # it needs an extra scope and a Cloud Console API enablement, so
+            # advertising it before those exist would put a tool in every
+            # prompt that can only fail. Same honesty rule as the rest of
+            # this file.
+            if settings.enable_google_photos:
+                from agentsys.tools.google_photos import GooglePhotosPickTool
+
+                registry.register(GooglePhotosPickTool())
+        except ImportError:
+            logger.warning("google tools not available")
+    else:
+        logger.info("google tools disabled (GOOGLE_CLIENT_ID/SECRET unset)")
 
     _register_mcp_tools(registry)
 

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgentForge Phase 9A Prototype</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand">
+          <div class="brand-mark">AF</div>
+          <div>
+            <div class="brand-name">AgentForge</div>
+            <div class="brand-subtitle">Execution Studio</div>
+          </div>
+        </div>
+        <nav id="nav" class="nav"></nav>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <div id="screen-eyebrow" class="eyebrow">Work</div>
+            <h1 id="screen-title">Mission Control</h1>
+          </div>
+          <div class="topbar-actions">
+            <div id="run-chip" class="run-chip">Run #AF-2841 idle</div>
+            <button id="theme-toggle" class="icon-button" type="button" aria-label="Toggle theme">Mode</button>
+          </div>
+        </header>
+
+        <section id="screen-root" class="screen-root" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

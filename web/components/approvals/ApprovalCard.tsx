@@ -51,7 +51,7 @@ export function ApprovalCard({
           </Link>
           <div className="mono mt-0.5 text-[11px] text-text-faint">
             task_{escalation.task_id.slice(0, 8)}
-            {subtask ? ` · subtask #${subtask.position} · ${subtask.assigned_tool ?? "reasoning"}` : " · plan-level"}
+            {subtask ? ` - subtask #${subtask.position} - ${subtask.assigned_tool ?? "model output"}` : " - plan-level"}
           </div>
         </div>
         <div className="mono flex-none text-[11.5px] text-text-muted">{ageLabel(escalation.created_at)}</div>
@@ -86,6 +86,26 @@ export function ApprovalCard({
               </div>
             </div>
           </div>
+        )}
+
+        {/* Some escalations are not "may I?" but "please go and do this
+            first" -- a picker to open, a consent screen to complete. Without
+            the link surfaced here the decision is impossible to make, since
+            approving before acting just fails the step again. */}
+        {typeof escalation.context?.picker_uri === "string" && (
+          <a
+            href={escalation.context.picker_uri as string}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-role-human/40 bg-role-human/10 px-3.5 py-3 transition-colors hover:border-role-human"
+          >
+            <span className="text-[12.5px] text-role-human">
+              Open Google Photos and select the items, then approve below.
+            </span>
+            <span className="flex-none text-[12.5px] font-medium text-role-human underline underline-offset-2">
+              Open picker →
+            </span>
+          </a>
         )}
 
         {!takingOver ? (

@@ -43,8 +43,11 @@ from __future__ import annotations
 
 import docker
 import docker.errors
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentsys.config import settings
+from agentsys.execution import ExecutionSafety
+from agentsys.policy import ActionType, Risk
 from agentsys.tools.base import Tool, ToolResult
 
 MEMORY_LIMIT = "128m"
@@ -52,15 +55,50 @@ PIDS_LIMIT = 64
 KILL_GRACE_S = 5
 
 
+class CodeExecutionArgs(BaseModel):
+    """timeout_s is bounded here rather than in run(): it is a container wait,
+    so an unbounded value from the model would hold a prefork worker child for
+    as long as it liked. 300s is well past any legitimate sandbox script and
+    still short of the worker's own wall clock."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(description="A Python script. Runs as a script, not a REPL -- print() what you want to see.")
+    timeout_s: int = Field(default=10, ge=1, le=300)
+
+
 class CodeExecutionTool(Tool):
     name = "code_execution"
+    args_model = CodeExecutionArgs
+    action_type = ActionType.LOCAL_WRITE
+    risk = Risk.HIGH
+    """LOCAL_WRITE because the effects are confined to an ephemeral,
+    network-isolated container -- nothing outside this system changes. HIGH
+    because the code is arbitrary and the sandbox is honest about being a
+    guard against accidents rather than a boundary against a determined
+    attacker (see the description). HIGH => REQUIRE_APPROVAL, which preserves
+    exactly the gating the deleted `requires_approval = True` provided."""
+    execution_safety = ExecutionSafety.NON_RETRYABLE_SIDE_EFFECT
+    """Never repeated automatically after an ambiguous outcome.
+
+    Worth being precise about WHY, because the obvious reason is wrong: the
+    container is detached, network-disabled and has NO volume mount, so this
+    tool cannot touch the task workspace and cannot reach anything external
+    -- its durable effect is nil and re-running it would in fact be
+    harmless. The classification is about the approval, not the filesystem:
+    arbitrary code a human approved once must not be silently replayed by a
+    crash recovery nobody watched."""
     description = (
         "Runs untrusted Python code in an ephemeral, network-isolated Docker container "
         "(no network, memory/process caps, hard timeout). A real sandbox against "
         "accidents and casual abuse, not a hardened boundary against a determined "
-        "attacker -- container escapes remain a known risk class. "
+        "attacker -- container escapes remain a known risk class. No network access "
+        "means no pip install and nothing can call an external API from inside this "
+        "code -- only the Python standard library is available. "
         "Arguments: code (str, required, a Python script), "
         "timeout_s (int, optional, default 10). "
+        "Example: code=\"print(round(9600000 * 1.0885, 2))\". Returns "
+        "{stdout, stderr, exit_code}. "
         "IMPORTANT: this runs as a script, not a REPL — a bare expression like "
         "`result` produces no visible output. You MUST call print(result) to see "
         "any value."

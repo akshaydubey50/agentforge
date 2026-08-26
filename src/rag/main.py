@@ -1,10 +1,11 @@
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from rag.auth import require_service_or_session, require_session
 from rag.config import settings
 from rag.generation.pipeline import answer_query
 from rag.ingest.chunking import ChunkingStrategy
@@ -12,6 +13,7 @@ from rag.ingest.loaders import SUPPORTED_SUFFIXES, load_corpus, load_document
 from rag.ingest.pipeline import run_ingest
 from rag.llm import complete
 from rag.retrieval.retriever import RetrievalConfig
+from rag.security_headers import SecurityHeadersMiddleware
 from rag.schemas import (
     AskRequest,
     AskResponse,
@@ -22,18 +24,25 @@ from rag.schemas import (
     IngestResultOut,
     SourceOut,
     UnsupportedClaimOut,
+    UploadDocumentResponse,
 )
 
 app = FastAPI(title="RAG Production Pipeline", version="0.1.0")
 
-# Not auth: matching agentsys/main.py's CORS setup -- see that file's comment
-# for the reasoning. Same open-until-auth-exists caveat applies.
+# allow_credentials=True so the session cookie (set by agentsys's Google
+# sign-in, see rag/auth.py) rides along on the dashboard's fetches to this
+# service too -- same reasoning as agentsys/main.py's CORS setup.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allowed_origins_list,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Outermost, so it also covers the preflight replies CORSMiddleware answers
+# by itself -- see the matching note in agentsys/main.py.
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 class PingRequest(BaseModel):
@@ -56,12 +65,12 @@ def ping(body: PingRequest) -> PingResponse:
 
 
 @app.get("/v1/strategies")
-def list_strategies() -> dict[str, list[str]]:
+def list_strategies(_user_id: str = Depends(require_session)) -> dict[str, list[str]]:
     return {"strategies": [s.value for s in ChunkingStrategy]}
 
 
 @app.get("/v1/documents", response_model=list[DocumentOut])
-def list_documents() -> list[DocumentOut]:
+def list_documents(_user_id: str = Depends(require_session)) -> list[DocumentOut]:
     documents = load_corpus(settings.raw_data_dir)
     return [
         DocumentOut(filename=d.metadata.get("filename", ""), format=d.format, title=d.title)
@@ -75,11 +84,16 @@ _RAW_DOCUMENT_MEDIA_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".htm": "text/html; charset=utf-8",
     ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
 }
 
 
 @app.get("/v1/documents/{filename}/raw")
-def get_document_raw(filename: str) -> FileResponse:
+def get_document_raw(filename: str, _user_id: str = Depends(require_session)) -> FileResponse:
     """Serves a corpus document's actual bytes so the UI can link straight to
     it -- same traversal guard as file_io's tool (agentsys side): resolve and
     check is_relative_to() against the corpus root before ever touching the
@@ -92,18 +106,38 @@ def get_document_raw(filename: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="document not found")
 
     media_type = _RAW_DOCUMENT_MEDIA_TYPES.get(target.suffix.lower(), "application/octet-stream")
-    return FileResponse(target, media_type=media_type, filename=target.name, content_disposition_type="inline")
+    return FileResponse(
+        target,
+        media_type=media_type,
+        filename=target.name,
+        content_disposition_type="inline",
+        # This route serves BYTES A USER UPLOADED, inline, on this API's own
+        # origin -- which is the one place the app-wide CSP is not strict
+        # enough. An uploaded .html or .svg rendered here would run script
+        # with this origin's cookies in scope. `sandbox` drops the response
+        # into an opaque origin with scripts disabled, and default-src 'none'
+        # stops it fetching anything; together they make a hostile upload
+        # inert while still letting a PDF or image display.
+        #
+        # Set on the response rather than as a middleware special case
+        # because SecurityHeadersMiddleware uses setdefault -- a route that
+        # states its own policy keeps it, which is exactly this situation.
+        headers={
+            "Content-Security-Policy": "default-src 'none'; sandbox; frame-ancestors 'none'",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
-@app.post("/v1/documents/upload", response_model=DocumentOut)
-async def upload_document(file: UploadFile = File(...)) -> DocumentOut:
+@app.post("/v1/documents/upload", response_model=UploadDocumentResponse)
+async def upload_document(file: UploadFile = File(...), _user_id: str = Depends(require_session)) -> UploadDocumentResponse:
     """Saves an uploaded file into the same raw-corpus directory the old
     Streamlit dashboard (simple_upload.py) writes into directly -- that
     dashboard runs server-side so it can touch the filesystem straight from
     the browser's uploaded bytes, but a real browser client can't, so this
-    is the REST equivalent of that same write. Doesn't index anything by
-    itself; call /v1/ingest afterwards (same as the old dashboard's
-    two-step Upload then Reindex flow).
+    is the REST equivalent of that same write. Upload also rebuilds the
+    production semantic index, so the normal UX is one step: upload, then ask.
+    /v1/ingest remains available for manual rebuilds and strategy comparisons.
     """
     filename = Path(file.filename or "").name  # strip any path components -- traversal guard
     suffix = Path(filename).suffix.lower()
@@ -118,31 +152,63 @@ async def upload_document(file: UploadFile = File(...)) -> DocumentOut:
     dest.write_bytes(await file.read())
 
     doc = load_document(dest)
-    return DocumentOut(filename=doc.metadata.get("filename", filename), format=doc.format, title=doc.title)
+    try:
+        stats = run_ingest(ChunkingStrategy.SEMANTIC)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"document uploaded but automatic indexing failed: {type(exc).__name__}",
+        ) from exc
+
+    return UploadDocumentResponse(
+        document=DocumentOut(
+            filename=doc.metadata.get("filename", filename),
+            format=doc.format,
+            title=doc.title,
+        ),
+        index_result=_ingest_result_out(stats),
+    )
 
 
 @app.post("/v1/ingest", response_model=IngestResponse)
-def ingest(body: IngestRequest) -> IngestResponse:
+def ingest(body: IngestRequest, _user_id: str = Depends(require_session)) -> IngestResponse:
     strategies = (
         list(ChunkingStrategy) if body.strategy == "all" else [_parse_strategy(body.strategy)]
     )
     results = []
     for strategy in strategies:
         stats = run_ingest(strategy)
-        results.append(
-            IngestResultOut(
-                strategy=stats["strategy"],
-                documents=stats["documents"],
-                input_chunks=stats["input_chunks"],
-                indexed_chunks=stats["indexed_chunks"],
-                duplicates_dropped=stats["duplicates_dropped"],
-            )
-        )
+        results.append(_ingest_result_out(stats))
     return IngestResponse(results=results)
 
 
+def _ingest_result_out(stats: dict) -> IngestResultOut:
+    return IngestResultOut(
+        strategy=stats["strategy"],
+        documents=stats["documents"],
+        input_chunks=stats["input_chunks"],
+        indexed_chunks=stats["indexed_chunks"],
+        duplicates_dropped=stats["duplicates_dropped"],
+    )
+
+
 @app.post("/v1/ask", response_model=AskResponse)
-def ask(body: AskRequest) -> AskResponse:
+def ask(body: AskRequest, _caller: str = Depends(require_service_or_session)) -> AskResponse:
+    """Two legitimate callers, so require_service_or_session rather than
+    require_session: agentsys's knowledge_search tool calls this
+    server-to-server from the WORKER process (bearer token, no cookie), and
+    a signed-in browser could reasonably call it too.
+
+    This endpoint previously had no authentication at all while rag-api
+    published a host port -- anyone who could reach it could query the whole
+    corpus and spend LLM budget. See docs/ARCHITECTURE_AUDIT.md §7.3.
+
+    TENANCY DEBT, unchanged by this fix and deliberately so: rag has no user
+    model, so the corpus is shared across all users and this endpoint cannot
+    scope retrieval to the caller. `_caller` is therefore proof that SOMEONE
+    is authorised, not a filter on WHAT they may retrieve. Closing that
+    needs per-document ownership through ingest, index and retrieval --
+    a redesign, not a Phase-0 change. See §7.2."""
     strategy = _parse_strategy(body.strategy)
     config = RetrievalConfig(
         strategy=strategy,

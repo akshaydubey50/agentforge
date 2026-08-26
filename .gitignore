@@ -19,3 +19,20 @@ data/workspace/
 # from data/raw via scripts/run_ingest.py
 data/chroma/
 data/processed/*.jsonl
+
+# web: Next.js/TypeScript incremental build cache and Playwright run output,
+# both regenerated on every build/test run
+web/tsconfig.tsbuildinfo
+web/test-results/
+web/playwright-report/
+
+# agentsys: eval harness run output (scripts/run_agent_eval.py); the golden
+# task set alongside it IS committed -- it's the input, this is the result
+data/eval/agent_results/
+# Gate output: eval_report.json is the latest verdict and eval_runs.jsonl the
+# append-only history. Both are RUN OUTPUT, not source -- committing them
+# means every gate run shows up as a diff, and two people running the gate
+# conflict on a file neither edited. The battery cases themselves
+# (agent_battery.jsonl) are source and stay tracked.
+data/eval/eval_report.json
+data/eval/eval_runs.jsonl

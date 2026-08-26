@@ -1,3 +1,4 @@
+import { humanizeValue } from "@/lib/formatValue";
 import type { GraphNodeData } from "@/lib/agentGraph";
 import type { TaskDetailOut } from "@/lib/api";
 import { ROLE_META } from "@/lib/agentRoles";
@@ -85,7 +86,7 @@ export function GraphInspector({ node, task }: { node: GraphNodeData | null; tas
                 {out.outline && out.outline.length > 0 && (
                   <ul className="mt-2 space-y-1 text-[11.5px] text-text-muted">
                     {out.outline.map((step, i) => (
-                      <li key={i}>· {step}</li>
+                      <li key={i}>- {step}</li>
                     ))}
                   </ul>
                 )}
@@ -103,21 +104,31 @@ export function GraphInspector({ node, task }: { node: GraphNodeData | null; tas
         </Section>
       )}
 
-      {node.kind === "synthesize" && (
-        <Section label="Final answer">
-          <div className="line-clamp-6 text-[12px] leading-relaxed text-text-muted">
-            {task.final_output ?? "Not reached yet."}
-          </div>
+      {node.kind === "synthesize" &&
+        (() => {
+          const turnAnswer = (node.spans[0]?.output as { final_answer?: string } | undefined)?.final_answer;
+          const answer = turnAnswer ?? (node.spans.length === 0 && node.tone === "pending" ? null : task.final_output);
+          return (
+            <Section label="Final answer">
+              <div className="line-clamp-6 text-[12px] leading-relaxed text-text-muted">{answer ?? "Not reached yet."}</div>
+            </Section>
+          );
+        })()}
+
+      {node.kind === "message" && node.message && (
+        <Section label="Follow-up message">
+          <div className="text-[12px] leading-relaxed text-text-muted">{node.message.content}</div>
         </Section>
       )}
 
       {(node.kind === "execute" || node.kind === "sketch") &&
         node.spans.map((span) => (
-          <Section key={span.id} label={span.span_type === "tool_call" ? `Live activity · ${span.name}` : "Live activity"}>
+          <Section key={span.id} label={span.span_type === "tool_call" ? `Live activity - ${span.name}` : "Model output"}>
             <div className="text-[12px] leading-relaxed text-text-muted">
               {span.span_type === "tool_call" && (
                 <>
-                  <b className="text-text">{span.name}</b> · input: {JSON.stringify(span.input)}
+                  <b className="text-text">{span.name}</b>
+                  <span className="mt-0.5 block whitespace-pre-wrap">{humanizeValue(span.input)}</span>
                 </>
               )}
               {span.span_type === "reasoning" && <>{(span.output as { text?: string })?.text}</>}

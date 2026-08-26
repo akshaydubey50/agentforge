@@ -1,0 +1,3 @@
+# Dashboard-only dependencies go here.
+# The current dashboard target inherits the runtime environment, and
+# requirements.txt already includes Streamlit.

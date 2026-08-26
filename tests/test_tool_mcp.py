@@ -6,9 +6,14 @@ reached. Mocking the client would prove only that the mock works; the entire
 claim being tested is that the protocol boundary functions.
 """
 
+import asyncio
 import concurrent.futures
+from types import SimpleNamespace
+
+import pytest
 
 from agentsys.config import settings
+from agentsys.tools import mcp_tool
 from agentsys.tools.mcp_tool import MCPTool, discover_mcp_tools
 from agentsys.tools.registry import _build_registry
 
@@ -32,6 +37,42 @@ def test_discovery_finds_the_servers_advertised_tools():
         # discovered tool is only usable if its schema made it into the prose.
         assert "Arguments:" in tool.description or "no arguments" in tool.description
         assert "company_internal" in tool.description
+
+
+def test_discovery_times_out_if_the_server_never_lists_tools(monkeypatch):
+    """A server that handshakes but stalls on list_tools must degrade like
+    any other unavailable MCP server instead of hanging registry build."""
+
+    class FakeStdio:
+        async def __aenter__(self):
+            return object(), object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeSession:
+        def __init__(self, read, write):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def initialize(self):
+            return None
+
+        async def list_tools(self):
+            await asyncio.sleep(1)
+            return SimpleNamespace(tools=[])
+
+    monkeypatch.setattr(mcp_tool, "DISCOVERY_TIMEOUT_S", 0.01)
+    monkeypatch.setattr(mcp_tool, "stdio_client", lambda params: FakeStdio())
+    monkeypatch.setattr(mcp_tool, "ClientSession", FakeSession)
+
+    with pytest.raises(RuntimeError, match="MCP discovery for server 'stalled' timed out"):
+        discover_mcp_tools({"name": "stalled", "command": "unused"})
 
 
 def test_calling_a_remote_tool_returns_real_computed_results():

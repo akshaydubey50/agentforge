@@ -21,10 +21,11 @@ Connection lifecycle -- a real, deliberate tradeoff:
     session (subprocess spawn + MCP handshake on every call, tens to hundreds
     of ms), and it is chosen anyway because it is thread-safe by construction:
     there is no shared mutable connection state at all. That matters directly
-    here -- select_subtask_node dispatches a wave of subtasks as parallel
-    LangGraph Send branches, executed on a thread pool, so two threads can call
-    into the same MCPTool instance simultaneously. A pooled/persistent session
-    would need a per-thread or locked connection manager, and an MCP
+    here -- multiple Celery workers (or, if this codebase ever reintroduces
+    controlled parallel step execution -- see graph/nodes.py's agent_step_node
+    docstring) can call into the same MCPTool instance concurrently. A
+    pooled/persistent session would need a per-thread or locked connection
+    manager, and an MCP
     ClientSession additionally cannot be reused across separate asyncio.run()
     calls (each opens a fresh event loop; the session's streams are bound to
     the loop that created them).
@@ -48,14 +49,32 @@ import logging
 import os
 from typing import Any
 
+import jsonschema
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from agentsys.tools.base import Tool, ToolResult
+from agentsys.execution import ExecutionSafety
+from agentsys.guardrails import (
+    GuardrailDecision,
+    check_mcp_description,
+    is_credential_field_name,
+    mcp_fingerprint,
+)
+from agentsys.policy import ActionType, Risk
+from agentsys.sanitize import wrap_untrusted_text_fields
+from agentsys.tools.base import Tool, ToolResult, ToolValidationError
 
 logger = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT_S = 30.0
+CALL_TIMEOUT_S = 120.0
+DISCOVERY_TIMEOUT_S = 30.0
+"""Bound on one remote tool CALL, which had none: initialize() was wrapped
+in wait_for and call_tool was not, so a server that accepted the connection
+and then never answered held the worker until Celery's own wall clock -- the
+exact hang every first-party tool already bounds with an httpx timeout.
+Generous, because a third party's tool may legitimately be slow; the point is
+that it ends."""
 
 
 def _server_params(server_config: dict) -> StdioServerParameters:
@@ -72,15 +91,35 @@ def _server_params(server_config: dict) -> StdioServerParameters:
     )
 
 
+def _example_value(spec: dict) -> Any:
+    """Best-effort placeholder for one argument in an auto-generated example
+    call -- a real value if the schema names one (default/examples/enum),
+    otherwise a type-appropriate stand-in so the example JSON at least has
+    the right shape for the model to pattern-match against."""
+    if spec.get("default") is not None:
+        return spec["default"]
+    if spec.get("examples"):
+        return spec["examples"][0]
+    if spec.get("enum"):
+        return spec["enum"][0]
+    return {"string": "...", "number": 0, "integer": 0, "boolean": True, "array": [], "object": {}}.get(
+        spec.get("type"), "..."
+    )
+
+
 def _describe_schema(input_schema: dict | None) -> str:
     """Renders a JSON Schema into the plain 'Arguments: name (type, required)'
-    prose the other tool descriptions use.
+    prose the other tool descriptions use, plus an auto-generated example
+    call built from the same schema.
 
     This is not cosmetic. The specialist LLM constructs tool arguments from the
     description text alone, and two of this project's real logged bugs came from
     a tool description that failed to state how to call it. An MCP server's
     schema is machine-readable but the model reads descriptions, so it gets
-    translated rather than dumped as raw JSON Schema.
+    translated rather than dumped as raw JSON Schema -- and every first-party
+    tool's description now includes a concrete example call for the same
+    reason, so this generates one automatically rather than leaving
+    third-party MCP tools as the one category of tool without one.
     """
     if not input_schema:
         return "Takes no arguments."
@@ -89,6 +128,7 @@ def _describe_schema(input_schema: dict | None) -> str:
         return "Takes no arguments."
     required = set(input_schema.get("required") or [])
     parts = []
+    example: dict[str, Any] = {}
     for arg_name, spec in props.items():
         arg_type = spec.get("type", "any")
         req = "required" if arg_name in required else "optional"
@@ -97,7 +137,9 @@ def _describe_schema(input_schema: dict | None) -> str:
         desc = spec.get("description")
         desc_txt = f" -- {desc}" if desc else ""
         parts.append(f"{arg_name} ({arg_type}, {req}{default_txt}){desc_txt}")
-    return "Arguments: " + "; ".join(parts) + "."
+        example[arg_name] = _example_value(spec)
+    example_txt = f" Example call: {json.dumps(example)}." if example else ""
+    return "Arguments: " + "; ".join(parts) + "." + example_txt
 
 
 def _result_to_output(result: Any) -> dict:
@@ -131,6 +173,36 @@ def _error_text(result: Any) -> str:
     return "\n".join(texts) if texts else "tool reported an error with no message"
 
 
+def _declared(value: Any, enum_type: type, fallback: Any) -> Any:
+    """One server-config classification value, or the fail-closed fallback."""
+    if value is None:
+        return fallback
+    try:
+        return enum_type(str(value).lower())
+    except ValueError:
+        logger.warning(
+            "MCP server declared an unrecognised %s=%r; falling back to %r",
+            enum_type.__name__, value, fallback,
+        )
+        return fallback
+
+
+def _reject_model_controlled_credentials(tool_name: str, value: Any, *, path: str = "") -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            if is_credential_field_name(str(key)) and child not in (None, "", [], {}):
+                raise ToolValidationError(
+                    tool_name,
+                    f"credential-like MCP argument '{child_path}' must come from server configuration, not model input",
+                    child_path,
+                )
+            _reject_model_controlled_credentials(tool_name, child, path=child_path)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _reject_model_controlled_credentials(tool_name, child, path=f"{path}[{index}]")
+
+
 class MCPTool(Tool):
     """One AgentForge tool bound to one tool on one external MCP server."""
 
@@ -138,6 +210,87 @@ class MCPTool(Tool):
         self.server_name = server_name
         self.server_config = server_config
         self.remote_tool_name = remote_tool.name
+        self.input_schema = getattr(remote_tool, "input_schema", None) or {}
+        raw_description = remote_tool.description or ""
+        self.schema_fingerprint = mcp_fingerprint(
+            server_name=server_name,
+            tool_name=remote_tool.name,
+            description=raw_description,
+            input_schema=self.input_schema,
+            action_type=server_config.get("action_type"),
+            risk=server_config.get("risk"),
+            execution_safety=server_config.get("execution_safety"),
+        )
+        expected_fingerprint = (server_config.get("tool_fingerprints") or {}).get(remote_tool.name)
+        self.mcp_trust_status = "reviewed" if expected_fingerprint == self.schema_fingerprint else (
+            "fingerprint_mismatch" if expected_fingerprint else "unreviewed"
+        )
+        description_guard = check_mcp_description(
+            raw_description,
+            server_name=server_name,
+            tool_name=remote_tool.name,
+        )
+        self.mcp_description_guard = description_guard.to_trace()
+        force_fail_closed = (
+            description_guard.decision is GuardrailDecision.BLOCK
+            or self.mcp_trust_status == "fingerprint_mismatch"
+        )
+        # POLICY CLASSIFICATION FOR CODE THIS REPO HAS NEVER SEEN.
+        #
+        # An MCP tool's effects belong to a third party. The schema says what
+        # arguments it takes and the description says what it claims to do;
+        # neither is a statement about whether calling it deletes a record.
+        # So the default is Tool's fail-closed pair (EXTERNAL_WRITE / HIGH),
+        # which policy gates behind human approval -- the same posture
+        # validate_args takes on a server that advertises no schema.
+        #
+        # An operator who knows a server can declare it, per server, in the
+        # mcp_servers config entry that already exists:
+        #
+        #     {"name": "company_internal", ..., "action_type": "read", "risk": "low"}
+        #
+        # Declared once for the whole server rather than per tool: a server is
+        # the unit an operator actually knows something about, and a per-tool
+        # table would be a policy database for tools that are discovered at
+        # startup and may not exist tomorrow. A server mixing reads and deletes
+        # should declare nothing and let every one of its tools be gated.
+        #
+        # Anything unparseable in that declaration falls back to the
+        # fail-closed default rather than raising: a typo in config must not
+        # stop the app from starting, and must not open the gate either.
+        self.action_type = (
+            Tool.action_type
+            if force_fail_closed
+            else _declared(server_config.get("action_type"), ActionType, Tool.action_type)
+        )
+        self.risk = (
+            Tool.risk
+            if force_fail_closed
+            else _declared(server_config.get("risk"), Risk, Tool.risk)
+        )
+        # Retry/effect semantics, declared the same way and defaulting the
+        # same way (Phase 3, see execution.py). An operator who knows a
+        # server's tools are safe to repeat says so:
+        #
+        #     {"name": "company_internal", ..., "execution_safety": "idempotent"}
+        #
+        # Undeclared means NON_RETRYABLE_SIDE_EFFECT: a tool this repo has
+        # never seen is never auto-retried and is never repeated after an
+        # ambiguous outcome. "The operator did not say" and "repeating this is
+        # harmless" must not look the same, for the same reason they must not
+        # for action_type/risk above.
+        self.execution_safety = (
+            Tool.execution_safety
+            if force_fail_closed
+            else _declared(server_config.get("execution_safety"), ExecutionSafety, Tool.execution_safety)
+        )
+        # The argument contract, straight from the server. An MCP tool already
+        # ships machine-readable JSON Schema, so there is nothing to translate:
+        # wrapping every discovered tool in a hand-written pydantic model would
+        # mean writing code for tools this repo has never seen, which is the
+        # opposite of what discovery is for. args_model stays None and
+        # validate_args below checks against this instead -- same invariant
+        # (nothing reaches run() unvalidated), different source of truth.
         # Namespaced so two servers exposing a "search" tool can coexist, and so
         # provenance is obvious in the trace explorer and analytics tables.
         self.name = f"mcp_{server_name}_{remote_tool.name}"
@@ -151,12 +304,47 @@ class MCPTool(Tool):
         # web_search/db_query instead, because the list it was reading was
         # malformed. Third-party servers will all have multi-line docstrings,
         # so normalizing here is a correctness requirement, not tidiness.
-        base_desc = " ".join((remote_tool.description or "").split())
+        base_desc = " ".join(raw_description.split())
+        if description_guard.decision is GuardrailDecision.BLOCK:
+            base_desc = (
+                "MCP tool description blocked by AgentForge guardrail; "
+                "treat this third-party capability as unreviewed."
+            )
         base_desc = base_desc or f"{remote_tool.name} (via MCP)"
         self.description = (
-            f"{base_desc} {_describe_schema(getattr(remote_tool, 'input_schema', None))} "
-            f"[provided by the '{server_name}' MCP server]"
+            f"{base_desc} {_describe_schema(self.input_schema)} "
+            f"[provided by the '{server_name}' MCP server; fingerprint={self.schema_fingerprint[:12]}; "
+            f"trust={self.mcp_trust_status}]"
         )
+
+    def args_schema(self) -> dict | None:
+        return self.input_schema or None
+
+    def validate_args(self, proposed: dict) -> dict:
+        """Validated against the server's own advertised schema.
+
+        Two honest limits, stated rather than papered over. A server that
+        advertises no schema (or an empty one) gets no local check -- there is
+        nothing to check against, and inventing constraints for a third party's
+        tool would reject calls the server would have accepted. And a schema
+        that doesn't set additionalProperties:false permits extra arguments,
+        because that is what the server said it permits; the fail-closed choice
+        belongs to whoever wrote the tool. In both cases the server validates
+        again on its side, so this is the first of two checks, not the only one.
+        """
+        if not self.input_schema:
+            return dict(proposed)
+        try:
+            jsonschema.validate(proposed, self.input_schema)
+        except jsonschema.ValidationError as exc:
+            field = ".".join(str(part) for part in exc.absolute_path) or None
+            raise ToolValidationError(self.name, exc.message, field) from exc
+        except jsonschema.SchemaError as exc:
+            # A malformed schema is the server's bug, but it must not be a
+            # licence to call the tool unvalidated.
+            raise ToolValidationError(self.name, f"server advertised an invalid schema: {exc.message}") from exc
+        _reject_model_controlled_credentials(self.name, proposed)
+        return dict(proposed)
 
     def run(self, **kwargs) -> ToolResult:
         try:
@@ -179,6 +367,14 @@ class MCPTool(Tool):
             # call the reviewer can reject and retry, never as a crashed graph
             # run -- same reasoning as the TypeError guard in _execute_subtask.
             logger.warning("MCP call %s failed: %s", self.name, exc)
+            if isinstance(exc, asyncio.TimeoutError):
+                # Named, not folded into the generic message: a bare
+                # TimeoutError stringifies to "" and execution.classify_failure
+                # would read the result as UNKNOWN rather than a timeout.
+                return ToolResult(
+                    success=False,
+                    error=f"MCP call {self.name} timed out after {CALL_TIMEOUT_S:.0f}s",
+                )
             return ToolResult(success=False, error=f"MCP call failed: {exc}")
 
     async def _call(self, arguments: dict) -> ToolResult:
@@ -186,11 +382,13 @@ class MCPTool(Tool):
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await asyncio.wait_for(session.initialize(), timeout=CONNECT_TIMEOUT_S)
-                result = await session.call_tool(self.remote_tool_name, arguments)
+                result = await asyncio.wait_for(
+                    session.call_tool(self.remote_tool_name, arguments), timeout=CALL_TIMEOUT_S
+                )
 
         if getattr(result, "is_error", False):
             return ToolResult(success=False, error=_error_text(result))
-        return ToolResult(success=True, output=_result_to_output(result))
+        return ToolResult(success=True, output=wrap_untrusted_text_fields(_result_to_output(result), "mcp"))
 
 
 async def _list_remote_tools(server_config: dict) -> list[Any]:
@@ -198,7 +396,7 @@ async def _list_remote_tools(server_config: dict) -> list[Any]:
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await asyncio.wait_for(session.initialize(), timeout=CONNECT_TIMEOUT_S)
-            listed = await session.list_tools()
+            listed = await asyncio.wait_for(session.list_tools(), timeout=DISCOVERY_TIMEOUT_S)
             return list(listed.tools)
 
 
@@ -207,5 +405,10 @@ def discover_mcp_tools(server_config: dict) -> list[MCPTool]:
     advertises. Raises on connection failure; the registry decides whether an
     unreachable server is fatal (it isn't -- see registry._build_registry)."""
     server_name = server_config["name"]
-    remote_tools = asyncio.run(_list_remote_tools(server_config))
+    try:
+        remote_tools = asyncio.run(_list_remote_tools(server_config))
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError(
+            f"MCP discovery for server '{server_name}' timed out after {DISCOVERY_TIMEOUT_S:g}s"
+        ) from exc
     return [MCPTool(server_name, server_config, t) for t in remote_tools]

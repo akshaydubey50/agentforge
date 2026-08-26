@@ -59,5 +59,10 @@ class IngestResultOut(BaseModel):
     duplicates_dropped: int
 
 
+class UploadDocumentResponse(BaseModel):
+    document: DocumentOut
+    index_result: IngestResultOut
+
+
 class IngestResponse(BaseModel):
     results: list[IngestResultOut]

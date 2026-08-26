@@ -10,6 +10,7 @@ export const TASK_STATUS_META: Record<TaskStatus, { label: string; dot: string; 
   awaiting_approval: { label: "awaiting_approval", dot: "bg-status-awaiting", text: "text-status-awaiting" },
   completed: { label: "completed", dot: "bg-status-completed", text: "text-status-completed" },
   failed: { label: "failed", dot: "bg-status-failed", text: "text-status-failed" },
+  cancelled: { label: "cancelled", dot: "bg-status-pending", text: "text-status-pending" },
 };
 
 export const SUBTASK_STATUS_META: Record<SubtaskStatus, { label: string; dot: string; text: string; border: string }> = {
@@ -25,4 +26,12 @@ export const SUBTASK_STATUS_META: Record<SubtaskStatus, { label: string; dot: st
 
 export function isActiveTaskStatus(status: TaskStatus) {
   return status === "pending" || status === "running";
+}
+
+// Matches the backend's _MESSAGEABLE_STATUSES (src/agentsys/main.py):
+// a follow-up only makes sense once the agent has actually stopped and
+// produced something to react to. awaiting_approval has its own resolution
+// path (the escalation gate) instead.
+export function canContinueConversation(status: TaskStatus) {
+  return status === "completed" || status === "failed";
 }

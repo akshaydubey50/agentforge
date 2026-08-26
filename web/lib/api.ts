@@ -9,7 +9,8 @@ export type TaskStatus =
   | "running"
   | "awaiting_approval"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export type SubtaskStatus =
   | "pending"
@@ -30,6 +31,7 @@ export interface SubtaskOut {
   status: SubtaskStatus;
   output: string | null;
   attempt_count: number;
+  created_at: string;
 }
 
 export interface TaskOut {
@@ -41,15 +43,32 @@ export interface TaskOut {
   updated_at: string;
 }
 
+export interface TaskMessageOut {
+  id: string;
+  role: string;
+  content: string;
+  created_at: string;
+}
+
 export interface TaskDetailOut extends TaskOut {
   subtasks: SubtaskOut[];
+  messages: TaskMessageOut[];
+  rolling_summary?: Record<string, unknown> | null;
+  rolling_summary_version?: number;
+  rolling_summary_updated_at?: string | null;
+  rolling_summary_until?: string | null;
 }
 
 export interface EscalationOut {
   id: string;
   task_id: string;
   subtask_id: string | null;
+  /** plan | review | budget | tool_approval | photo_pick | human_action */
+  kind: string;
   reason: string;
+  /** What the person needs to see to act — a proposed tool call, or a link
+   *  they have to open before approving. */
+  context: Record<string, unknown>;
   status: "pending" | "approved" | "rejected" | "took_over";
   decision_note: string | null;
   decided_by: string | null;
@@ -81,6 +100,21 @@ export interface ToolInfo {
   description: string;
 }
 
+export interface UserOut {
+  id: string;
+  email: string;
+  name: string | null;
+  picture_url: string | null;
+}
+
+export interface GoogleConnectionOut {
+  connected: boolean;
+  configured: boolean;
+  google_email: string | null;
+  scopes: string[];
+  connected_at: string | null;
+}
+
 export interface MemoryEntryOut {
   id: string;
   task_id: string | null;
@@ -102,13 +136,141 @@ export interface AnalyticsOut {
   total_tool_calls: number;
   total_cost_usd: number;
   cost_by_purpose: Record<string, number>;
+  cost_by_model: Record<
+    string,
+    { calls: number; usd: number; tokens_in: number; tokens_out: number; estimated: boolean }
+  >;
+  cost_is_estimated: boolean;
+}
+
+// --- System view (mirrors src/agentsys/system_api.py) -----------------------
+// The node/edge lists come from the COMPILED LangGraph, not a hand-kept list,
+// so anything drawn from them stays true as the graph changes. See that
+// module's docstring for the honesty rule this depends on.
+
+export type AgentRoleName = "supervisor" | "specialist" | "reviewer" | "human";
+
+export interface TopologyNode {
+  id: string;
+  label: string;
+  role: AgentRoleName;
+  kind: string;
+  summary: string;
+  href: string | null;
+  /** Which TraceSpan.span_type this node writes, for looking up live
+   *  activity in SystemSummary.activity_24h. Null for the terminals. */
+  span_type: string | null;
+  terminal: boolean;
+}
+
+export interface TopologyEdge {
+  source: string;
+  target: string;
+  /** A router decision (route_entry / route_after) rather than an
+   *  unconditional hand-off -- drawn dashed. */
+  conditional: boolean;
+}
+
+export interface SubsystemFact {
+  label: string;
+  value: string;
+  note?: string;
+}
+
+export interface Subsystem {
+  id: string;
+  label: string;
+  summary: string;
+  /** Null for subsystems with no page to send you to — deployment config
+   *  read from .env at startup, which the System page already shows in full. */
+  href: string | null;
+  facts: SubsystemFact[];
+}
+
+export interface SystemTool {
+  name: string;
+  summary: string;
+  requires_approval: boolean;
+  /** The MCP server this tool came from, or null for a first-party tool. */
+  server: string | null;
+}
+
+export interface SystemTopology {
+  graph: { nodes: TopologyNode[]; edges: TopologyEdge[] };
+  tools: SystemTool[];
+  subsystems: Subsystem[];
+}
+
+export interface SystemSummary {
+  tasks: {
+    by_status: Record<string, number>;
+    total: number;
+    active: number;
+    awaiting_approval: number;
+  };
+  approvals_pending: number;
+  memory_entries: number;
+  tools_registered: number;
+  steps_run: number;
+  tool_calls: { total: number; failed: number };
+  spend: {
+    usd: number;
+    llm_calls: number;
+    tokens_in: number;
+    tokens_out: number;
+    /** True when any call fell back to a family rate, or predates
+     *  cached_tokens being recorded, so the figure may read slightly high.
+     *  Shown as "est" rather than presenting a guess as exact. */
+    estimated: boolean;
+  };
+  trace_spans_24h: number;
+  /** Keyed by TraceSpan.span_type -- join to a node via its `span_type`. */
+  activity_24h: Record<string, { runs: number; errors: number }>;
+}
+
+// --- Task artifacts (mirrors src/agentsys/artifacts_api.py) ----------------
+
+export interface TaskArtifact {
+  path: string;
+  bytes: number;
+  modified_at: string;
+  /** "deliverable" = the agent chose to write it via file_io; "spillover" =
+   *  the harness parked an oversized tool result under _artifacts/. */
+  kind: "deliverable" | "spillover";
+}
+
+export interface TaskArtifactList {
+  task_id: string;
+  files: TaskArtifact[];
+  total_bytes: number;
+}
+
+export interface TaskArtifactContent {
+  path: string;
+  bytes: number;
+  binary: boolean;
+  content: string | null;
+  truncated: boolean;
+}
+
+// A 401 here means the session cookie is missing/expired -- every caller
+// bounces to /login instead of each page having to check response.status
+// itself. window.location (not next/navigation's router) because api.ts is
+// a plain module, not a component -- it has no router instance to call.
+function redirectToLogin() {
+  if (typeof window !== "undefined") window.location.href = "/login";
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
+  if (res.status === 401) {
+    redirectToLogin();
+    throw new Error("not authenticated");
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`${init?.method || "GET"} ${path} failed: ${res.status} ${body}`);
@@ -129,7 +291,15 @@ export const api = {
     const form = new FormData();
     form.append("request_text", requestText);
     for (const file of files) form.append("files", file);
-    const res = await fetch(`${API_BASE_URL}/v1/tasks/upload`, { method: "POST", body: form });
+    const res = await fetch(`${API_BASE_URL}/v1/tasks/upload`, {
+      method: "POST",
+      body: form,
+      credentials: "include",
+    });
+    if (res.status === 401) {
+      redirectToLogin();
+      throw new Error("not authenticated");
+    }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error(`POST /v1/tasks/upload failed: ${res.status} ${body}`);
@@ -142,7 +312,20 @@ export const api = {
 
   getTask: (taskId: string) => request<TaskDetailOut>(`/v1/tasks/${taskId}`),
 
+  sendTaskMessage: (taskId: string, content: string) =>
+    request<TaskOut>(`/v1/tasks/${taskId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
+
   getTrace: (taskId: string) => request<TraceSpanOut[]>(`/v1/tasks/${taskId}/trace`),
+
+  listArtifacts: (taskId: string) => request<TaskArtifactList>(`/v1/tasks/${taskId}/artifacts`),
+
+  readArtifact: (taskId: string, path: string) =>
+    request<TaskArtifactContent>(
+      `/v1/tasks/${taskId}/artifacts/content?path=${encodeURIComponent(path)}`
+    ),
 
   listEscalations: (status: "pending" | "all" = "pending", limit = 25, offset = 0, taskId?: string) =>
     request<Page<EscalationOut>>(
@@ -169,11 +352,37 @@ export const api = {
 
   listTools: () => request<{ tools: ToolInfo[] }>("/v1/tools").then((r) => r.tools),
 
+  // Describes code and config, not this user's data, so it's safe to cache
+  // hard -- the System page revalidates only /summary on a timer.
+  getSystemTopology: () => request<SystemTopology>("/v1/system/topology"),
+
+  getSystemSummary: () => request<SystemSummary>("/v1/system/summary"),
+
   getAnalytics: () => request<AnalyticsOut>("/v1/analytics"),
 
   listMemory: (kind = "all", limit = 25, offset = 0) =>
     request<Page<MemoryEntryOut>>(`/v1/memory?kind=${kind}&limit=${limit}&offset=${offset}`),
+
+  getGoogleStatus: () => request<GoogleConnectionOut>("/v1/integrations/google/status"),
+
+  disconnectGoogle: () =>
+    request<GoogleConnectionOut>("/v1/integrations/google/disconnect", { method: "POST" }),
+
+  getMe: () => request<UserOut>("/v1/auth/me"),
+
+  logout: () => request<{ ok: boolean }>("/v1/auth/logout", { method: "POST" }),
 };
+
+// Sign-in AND (re)connecting Drive/Gmail are the same OAuth grant (see
+// google_oauth.py's login_or_connect) -- this one URL serves both the
+// /login page's "Sign in with Google" button and the Integrations page's
+// "Reconnect" affordance (which passes next="/integrations" to land back
+// there instead of the dashboard root). Must be a full-page browser
+// navigation, NOT an api-client fetch -- Google's consent screen can't
+// render inside XHR/CORS. The frontend points window.location / an
+// <a href> at this.
+export const googleLoginUrl = (next = "/") =>
+  `${API_BASE_URL}/v1/auth/google/login?next=${encodeURIComponent(next)}`;
 
 export const isActiveStatus = (status: TaskStatus) =>
   status === "pending" || status === "running";

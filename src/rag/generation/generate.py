@@ -5,6 +5,7 @@ from rag.generation.prompts import GENERATION_PROMPT
 from rag.generation.types import GeneratedAnswer, Source
 from rag.llm import complete
 from rag.retrieval.types import RetrievedChunk
+from agentsys.sanitize import wrap_untrusted
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
 
@@ -13,7 +14,7 @@ def format_sources(sources: list[Source]) -> str:
     lines = []
     for source in sources:
         filename = source.chunk.metadata.get("filename", "unknown")
-        lines.append(f"[{source.index}] ({filename}) {source.chunk.text}")
+        lines.append(f"[{source.index}] ({filename}) {wrap_untrusted(source.chunk.text, 'rag')}")
     return "\n\n".join(lines)
 
 

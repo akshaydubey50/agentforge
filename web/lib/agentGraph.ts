@@ -1,7 +1,7 @@
-import type { EscalationOut, SubtaskOut, TaskDetailOut, TraceSpanOut } from "./api";
+import type { EscalationOut, SubtaskOut, TaskDetailOut, TaskMessageOut, TraceSpanOut } from "./api";
 import type { AgentRole } from "./agentRoles";
 
-export type GraphNodeKind = "sketch" | "execute" | "review" | "escalation" | "synthesize";
+export type GraphNodeKind = "sketch" | "execute" | "review" | "escalation" | "synthesize" | "message";
 export type StatusTone = "done" | "active" | "esc" | "pending" | "failed";
 
 export interface GraphNodeData {
@@ -21,6 +21,7 @@ export interface GraphNodeData {
   subtask?: SubtaskOut;
   spans: TraceSpanOut[];
   escalation?: EscalationOut;
+  message?: TaskMessageOut;
 }
 
 export interface GraphEdgeData {
@@ -50,14 +51,25 @@ function subtaskTone(s: SubtaskOut): StatusTone {
   }
 }
 
+function durationLabel(span: TraceSpanOut): string {
+  if (!span.ended_at) return "running";
+  const ms = new Date(span.ended_at).getTime() - new Date(span.started_at).getTime();
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
 export function buildGraph(
   task: TaskDetailOut,
   spans: TraceSpanOut[],
-  escalations: EscalationOut[]
+  escalations: EscalationOut[],
+  messages: TaskMessageOut[] = []
 ): { nodes: GraphNodeData[]; edges: GraphEdgeData[] } {
   const nodes: GraphNodeData[] = [];
   const edges: GraphEdgeData[] = [];
   const subtasks = [...task.subtasks].sort((a, b) => a.position - b.position);
+  const orderedMessages = [...messages].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+
   const spansBySubtask = new Map<string, TraceSpanOut[]>();
   for (const s of spans) {
     if (!s.subtask_id) continue;
@@ -66,6 +78,44 @@ export function buildGraph(
     spansBySubtask.set(s.subtask_id, list);
   }
 
+  // Turn boundaries: turn 0 starts when the task was created, turn N starts
+  // at the Nth follow-up message -- mirrors the backend's _turn_start
+  // (graph/nodes.py), so a subtask created after message[i] but before
+  // message[i+1] belongs to turn i+1. This is what lets a continued
+  // conversation render as its own message -> subtasks -> synthesize
+  // segment instead of silently merging into turn 0 or replacing it.
+  const turnStarts = [
+    new Date(task.created_at).getTime(),
+    ...orderedMessages.map((m) => new Date(m.created_at).getTime()),
+  ];
+  function turnIndexFor(iso: string): number {
+    const t = new Date(iso).getTime();
+    let idx = 0;
+    for (let i = 0; i < turnStarts.length; i++) if (t >= turnStarts[i]) idx = i;
+    return idx;
+  }
+
+  const subtasksByTurn = new Map<number, SubtaskOut[]>();
+  for (const s of subtasks) {
+    const t = turnIndexFor(s.created_at);
+    const list = subtasksByTurn.get(t) ?? [];
+    list.push(s);
+    subtasksByTurn.set(t, list);
+  }
+
+  const synthesizeSpans = [...spans]
+    .filter((s) => s.span_type === "synthesize")
+    .sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
+  const synthByTurn = new Map<number, TraceSpanOut>();
+  for (const s of synthesizeSpans) synthByTurn.set(turnIndexFor(s.started_at), s);
+
+  const planEscalationsByTurn = new Map<number, EscalationOut>();
+  for (const e of escalations) {
+    if (e.subtask_id) continue;
+    planEscalationsByTurn.set(turnIndexFor(e.created_at), e);
+  }
+
+  // Turn 0's sketch node -- sketch only ever runs once, for the original request.
   const sketchSpan = spans.find((s) => s.span_type === "sketch");
   const sketchOut = sketchSpan?.output as { outline?: string[]; confidence?: number } | undefined;
   nodes.push({
@@ -83,147 +133,186 @@ export function buildGraph(
   });
 
   let prevRightId = "sketch";
-  let lastRow = 0;
+  let row = 0;
+  const totalTurns = turnStarts.length;
 
-  subtasks.forEach((s, i) => {
-    const y = ROW0 + i * ROW_H;
-    const mySpans = spansBySubtask.get(s.id) ?? [];
-    const toolCall = [...mySpans].reverse().find((sp) => sp.span_type === "tool_call");
-    const reasoning = [...mySpans].reverse().find((sp) => sp.span_type === "reasoning");
-    const review = [...mySpans].reverse().find((sp) => sp.span_type === "review");
-    const tone = subtaskTone(s);
-
-    const execId = `exec-${s.id}`;
-    nodes.push({
-      id: execId,
-      kind: "execute",
-      lane: `subtask #${s.position}`,
-      title: s.description.length > 42 ? s.description.slice(0, 42) + "…" : s.description,
-      subtitle: s.assigned_tool ?? "reasoning",
-      role: "specialist",
-      statusLabel:
-        tone === "done"
-          ? `✓ done${toolCall ? ` · ${durationLabel(toolCall)}` : ""}`
-          : tone === "active"
-            ? "● running"
-            : tone === "esc"
-              ? "⏸ escalated"
-              : tone === "failed"
-                ? "✕ failed"
-                : "pending",
-      tone,
-      x: COL.specialist,
-      y,
-      subtask: s,
-      spans: [toolCall, reasoning].filter((x): x is TraceSpanOut => !!x),
-    });
-    edges.push({ id: `${prevRightId}-${execId}`, from: prevRightId, to: execId, tone: tone === "pending" ? "pending" : "done" });
-
-    if (review) {
-      const reviewOut = review.output as { score?: number; verdict?: string };
-      const reviewId = `review-${s.id}`;
-      const reviewTone: StatusTone = reviewOut.verdict === "pass" ? "done" : reviewOut.verdict === "reject" ? "active" : "esc";
+  for (let turn = 0; turn < totalTurns; turn++) {
+    if (turn > 0) {
+      // The follow-up that started this turn -- rendered in the Supervisor
+      // column since it's what the agent_step loop reacts to next.
+      const message = orderedMessages[turn - 1];
+      const msgId = `message-${message.id}`;
+      const y = ROW0 + row * ROW_H;
       nodes.push({
-        id: reviewId,
-        kind: "review",
-        lane: `review #${s.position}`,
-        title: "Reviewer",
-        subtitle: undefined,
-        role: "reviewer",
-        statusLabel: reviewOut.verdict === "pass" ? `✓ pass · ${reviewOut.score}/5` : `${reviewOut.verdict} · ${reviewOut.score}/5`,
-        tone: reviewTone,
-        x: COL.reviewer,
+        id: msgId,
+        kind: "message",
+        lane: "human · follow-up",
+        title: "You",
+        subtitle: message.content.length > 48 ? message.content.slice(0, 48) + "…" : message.content,
+        role: "human",
+        statusLabel: "sent",
+        tone: "done",
+        x: COL.supervisor,
         y,
-        subtask: s,
-        spans: [review],
-      });
-      edges.push({ id: `${execId}-${reviewId}`, from: execId, to: reviewId, tone: "done" });
-      prevRightId = reviewId;
-    } else if (tone === "active" || tone === "pending") {
-      const reviewId = `review-${s.id}`;
-      nodes.push({
-        id: reviewId,
-        kind: "review",
-        lane: `review #${s.position}`,
-        title: "Reviewer",
-        role: "reviewer",
-        statusLabel: "queued",
-        tone: "pending",
-        x: COL.reviewer,
-        y,
-        subtask: s,
+        message,
         spans: [],
       });
-      prevRightId = execId;
-    } else {
-      prevRightId = execId;
+      edges.push({ id: `${prevRightId}-${msgId}`, from: prevRightId, to: msgId, tone: "done" });
+      prevRightId = msgId;
+      row += 1;
     }
 
-    const subtaskEscalation = escalations.find((e) => e.subtask_id === s.id);
-    if (subtaskEscalation) {
-      const escId = `esc-${subtaskEscalation.id}`;
+    const turnSubtasks = (subtasksByTurn.get(turn) ?? []).sort((a, b) => a.position - b.position);
+
+    for (const s of turnSubtasks) {
+      const y = ROW0 + row * ROW_H;
+      const mySpans = spansBySubtask.get(s.id) ?? [];
+      const toolCall = [...mySpans].reverse().find((sp) => sp.span_type === "tool_call");
+      const reasoning = [...mySpans].reverse().find((sp) => sp.span_type === "reasoning");
+      const review = [...mySpans].reverse().find((sp) => sp.span_type === "review");
+      const tone = subtaskTone(s);
+
+      const execId = `exec-${s.id}`;
+      nodes.push({
+        id: execId,
+        kind: "execute",
+        lane: `subtask #${s.position}`,
+        title: s.description.length > 42 ? s.description.slice(0, 42) + "…" : s.description,
+        subtitle: s.assigned_tool ?? "model output",
+        role: "specialist",
+        statusLabel:
+          tone === "done"
+            ? `✓ done${toolCall ? ` · ${durationLabel(toolCall)}` : ""}`
+            : tone === "active"
+              ? "● running"
+              : tone === "esc"
+                ? "⏸ escalated"
+                : tone === "failed"
+                  ? "✕ failed"
+                  : "pending",
+        tone,
+        x: COL.specialist,
+        y,
+        subtask: s,
+        spans: [toolCall, reasoning].filter((x): x is TraceSpanOut => !!x),
+      });
+      edges.push({ id: `${prevRightId}-${execId}`, from: prevRightId, to: execId, tone: tone === "pending" ? "pending" : "done" });
+
+      if (review) {
+        const reviewOut = review.output as { score?: number; verdict?: string };
+        const reviewId = `review-${s.id}`;
+        const reviewTone: StatusTone = reviewOut.verdict === "pass" ? "done" : reviewOut.verdict === "reject" ? "active" : "esc";
+        nodes.push({
+          id: reviewId,
+          kind: "review",
+          lane: `review #${s.position}`,
+          title: "Reviewer",
+          role: "reviewer",
+          statusLabel: reviewOut.verdict === "pass" ? `✓ pass · ${reviewOut.score}/5` : `${reviewOut.verdict} · ${reviewOut.score}/5`,
+          tone: reviewTone,
+          x: COL.reviewer,
+          y,
+          subtask: s,
+          spans: [review],
+        });
+        edges.push({ id: `${execId}-${reviewId}`, from: execId, to: reviewId, tone: "done" });
+        prevRightId = reviewId;
+      } else if (tone === "active" || tone === "pending") {
+        const reviewId = `review-${s.id}`;
+        nodes.push({
+          id: reviewId,
+          kind: "review",
+          lane: `review #${s.position}`,
+          title: "Reviewer",
+          role: "reviewer",
+          statusLabel: "queued",
+          tone: "pending",
+          x: COL.reviewer,
+          y,
+          subtask: s,
+          spans: [],
+        });
+        prevRightId = execId;
+      } else {
+        prevRightId = execId;
+      }
+
+      const subtaskEscalation = escalations.find((e) => e.subtask_id === s.id);
+      if (subtaskEscalation) {
+        const escId = `esc-${subtaskEscalation.id}`;
+        nodes.push({
+          id: escId,
+          kind: "escalation",
+          lane: "human-in-the-loop",
+          title: "Approval gate",
+          role: "human",
+          statusLabel: subtaskEscalation.status === "pending" ? "awaiting decision" : subtaskEscalation.status,
+          tone: subtaskEscalation.status === "pending" ? "esc" : "done",
+          x: COL.human,
+          y,
+          escalation: subtaskEscalation,
+          spans: [],
+        });
+        edges.push({ id: `${prevRightId}-${escId}`, from: prevRightId, to: escId, tone: "esc" });
+      }
+
+      row += 1;
+    }
+
+    const turnPlanEscalation = planEscalationsByTurn.get(turn);
+    if (turnPlanEscalation) {
+      const y = ROW0 + row * ROW_H;
+      const escId = `esc-${turnPlanEscalation.id}`;
       nodes.push({
         id: escId,
         kind: "escalation",
-        lane: "human-in-the-loop",
+        lane: "human-in-the-loop · plan level",
         title: "Approval gate",
         role: "human",
-        statusLabel: subtaskEscalation.status === "pending" ? "awaiting decision" : subtaskEscalation.status,
-        tone: subtaskEscalation.status === "pending" ? "esc" : "done",
+        statusLabel: turnPlanEscalation.status === "pending" ? "awaiting decision" : turnPlanEscalation.status,
+        tone: turnPlanEscalation.status === "pending" ? "esc" : "done",
         x: COL.human,
         y,
-        escalation: subtaskEscalation,
+        escalation: turnPlanEscalation,
         spans: [],
       });
-      edges.push({ id: `${prevRightId}-${escId}`, from: prevRightId, to: escId, tone: "esc" });
+      edges.push({ id: `${prevRightId}-${escId}`, from: prevRightId, to: escId, tone: "esc", dashed: turnSubtasks.length === 0 });
+      prevRightId = escId;
+      row += 1;
     }
 
-    lastRow = i;
-  });
-
-  const planEscalation = escalations.find((e) => !e.subtask_id);
-  const synthesizeSpan = spans.find((s) => s.span_type === "synthesize");
-  const synthRow = subtasks.length > 0 ? lastRow + 1 : 0;
-  const synthY = ROW0 + synthRow * ROW_H;
-
-  if (planEscalation) {
-    const escId = `esc-${planEscalation.id}`;
-    nodes.push({
-      id: escId,
-      kind: "escalation",
-      lane: "human-in-the-loop · plan level",
-      title: "Approval gate",
-      role: "human",
-      statusLabel: planEscalation.status === "pending" ? "awaiting decision" : planEscalation.status,
-      tone: planEscalation.status === "pending" ? "esc" : "done",
-      x: COL.human,
-      y: synthY,
-      escalation: planEscalation,
-      spans: [],
-    });
-    edges.push({ id: `${prevRightId}-${escId}`, from: prevRightId, to: escId, tone: "esc", dashed: !subtasks.length });
-    prevRightId = escId;
+    const turnSynth = synthByTurn.get(turn);
+    const isLastTurn = turn === totalTurns - 1;
+    // Only render a synthesize node for this turn if it actually produced
+    // one, or this is the current (last) turn -- a turn that instead ended
+    // in a plan-level escalation or failure shouldn't get a fake
+    // "not reached" node sitting between two completed turns.
+    if (turnSynth || isLastTurn) {
+      const y = ROW0 + row * ROW_H;
+      const synthId = totalTurns > 1 ? `synthesize-turn-${turn}` : "synthesize";
+      nodes.push({
+        id: synthId,
+        kind: "synthesize",
+        lane: totalTurns > 1 ? `synthesize · turn ${turn + 1}` : "synthesize",
+        title: "Final answer",
+        role: "supervisor",
+        statusLabel: turnSynth ? "✓ synthesized" : "not reached",
+        tone: turnSynth ? "done" : "pending",
+        x: COL.synthesize,
+        y,
+        spans: turnSynth ? [turnSynth] : [],
+      });
+      edges.push({
+        id: `${prevRightId}-${synthId}`,
+        from: prevRightId,
+        to: synthId,
+        tone: turnSynth ? "done" : "pending",
+        dashed: !turnSynth,
+      });
+      prevRightId = synthId;
+      row += 1;
+    }
   }
 
-  nodes.push({
-    id: "synthesize",
-    kind: "synthesize",
-    lane: "synthesize",
-    title: "Final answer",
-    role: "supervisor",
-    statusLabel: synthesizeSpan ? "✓ synthesized" : task.status === "failed" ? "not reached" : "not reached",
-    tone: synthesizeSpan ? "done" : "pending",
-    x: COL.synthesize,
-    y: synthY,
-    spans: synthesizeSpan ? [synthesizeSpan] : [],
-  });
-  edges.push({ id: `${prevRightId}-synthesize`, from: prevRightId, to: "synthesize", tone: synthesizeSpan ? "done" : "pending", dashed: !synthesizeSpan });
-
   return { nodes, edges };
-}
-
-function durationLabel(span: TraceSpanOut): string {
-  if (!span.ended_at) return "running";
-  const ms = new Date(span.ended_at).getTime() - new Date(span.started_at).getTime();
-  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }

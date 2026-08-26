@@ -25,6 +25,31 @@ services:
       timeout: 3s
       retries: 10
 
+  web:
+    image: node:20-alpine
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      NEXT_PUBLIC_API_BASE_URL: "${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8100}"
+      NEXT_PUBLIC_RAG_API_BASE_URL: "${NEXT_PUBLIC_RAG_API_BASE_URL:-http://localhost:8000}"
+    volumes:
+      - ./web:/app
+      - web_node_modules:/app/node_modules
+      - web_next:/app/.next
+    depends_on:
+      - api
+      - rag-api
+    command:
+      [
+        "sh",
+        "-c",
+        "npm ci && (rm -rf .next/* .next/.[!.]* .next/..?* 2>/dev/null || true) && npm run dev -- --hostname 0.0.0.0",
+      ]
+
   chroma:
     image: chromadb/chroma:0.5.11
     ports:
@@ -32,8 +57,35 @@ services:
     volumes:
       - chromadata:/chroma/chroma
 
+  # One-shot: runs `alembic upgrade head` and exits, same
+  # depends_on/service_completed_successfully pattern as rag-seed below.
+  # Migrations must run from exactly ONE place, not from both api and
+  # worker's own startup commands -- two containers racing to
+  # `CREATE TABLE alembic_version` against a fresh database is a genuine
+  # UniqueViolation, not a benign idempotent no-op (found the hard way: api
+  # and worker starting together against a brand-new DB, worker's migration
+  # won the race and api's crashed on the duplicate). api's own Dockerfile
+  # CMD still runs `alembic upgrade head` too, but only for Railway's
+  # single-service deploy, which has no separate migrate service to depend
+  # on -- here, by the time api starts, this has already finished, so that
+  # second run is just a fast idempotent no-op, not a second real migration.
+  migrate:
+    build:
+      context: .
+      target: runtime
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql+psycopg://agent:agent@postgres:5432/agentsys"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+
   api:
-    build: .
+    build:
+      context: .
+      target: runtime
     ports:
       - "8100:8000"
     env_file:
@@ -52,9 +104,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   worker:
-    build: .
+    build:
+      context: .
+      target: runtime
     env_file:
       - .env
     environment:
@@ -64,6 +120,7 @@ services:
       CHROMA_PORT: "8000"
       WORKSPACE_DIR: "/app/data/workspace"
       RAG_API_URL: "http://rag-api:8000"
+      WORKER_CONCURRENCY: "${WORKER_CONCURRENCY:-4}"
     volumes:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
@@ -72,10 +129,23 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: ["celery", "-A", "agentsys.worker.celery_app", "worker", "--loglevel=info", "--pool=solo"]
+      migrate:
+        condition: service_completed_successfully
+    # prefork (not solo/threads/gevent) for two reasons that are really one
+    # decision: an agent task spends most of its wall clock blocked on the
+    # model API, so serial execution (the old --pool=solo) wasted almost
+    # everything -- and Celery's HARD time limit (worker.py's
+    # task_time_limit) can only force-kill a task on prefork, where each
+    # task owns a child process. On any other pool the hard limit is inert
+    # and a hung task runs forever. Concurrency is processes, so raising it
+    # costs real memory (each in-flight task holds its own graph state);
+    # 4 is a conservative default, tune via WORKER_CONCURRENCY.
+    command: ["sh", "-c", "celery -A agentsys.worker.celery_app worker --loglevel=info --pool=prefork --concurrency=${WORKER_CONCURRENCY:-4}"]
 
   dashboard:
-    build: .
+    build:
+      context: .
+      target: dashboard
     ports:
       - "8601:8501"
     env_file:
@@ -98,7 +168,9 @@ services:
   # One-shot: builds the three chunking-strategy indexes from data/raw.
   # rag-api waits for this to finish successfully before starting.
   rag-seed:
-    build: .
+    build:
+      context: .
+      target: runtime
     env_file:
       - .env
     environment:
@@ -108,22 +180,37 @@ services:
     command: ["python", "scripts/run_ingest.py", "--strategy", "all"]
 
   rag-api:
-    build: .
+    build:
+      context: .
+      target: runtime
     ports:
       - "8000:8000"
     env_file:
       - .env
     environment:
+      # rag/auth.py validates the session cookie by reading the SAME Redis
+      # that agentsys's Google sign-in wrote it to, so this must point at the
+      # in-network hostname exactly like api/worker do. Without it the
+      # container inherits .env's local-dev redis://localhost:6379 -- where
+      # "localhost" is the container itself, so every authenticated endpoint
+      # 500s with "Error 111 connecting to localhost:6379" while /health and
+      # /docs stay green, and the dashboard reports rag-api as simply "not
+      # responding". Exactly the mismatch .env.example warns about.
+      REDIS_URL: "redis://redis:6379/0"
       CHROMA_PERSIST_DIR: "/app/data/chroma"
     volumes:
       - ./data:/app/data
     depends_on:
+      redis:
+        condition: service_healthy
       rag-seed:
         condition: service_completed_successfully
     command: ["uvicorn", "rag.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   rag-dashboard:
-    build: .
+    build:
+      context: .
+      target: dashboard
     ports:
       - "8501:8501"
     env_file:
@@ -140,3 +227,5 @@ services:
 volumes:
   pgdata:
   chromadata:
+  web_node_modules:
+  web_next:
