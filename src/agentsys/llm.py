@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+from copy import deepcopy
 from typing import Callable, TypeVar
 
 import litellm
@@ -200,6 +201,44 @@ def complete(
     return scrub_nul(response.choices[0].message.content or ""), response
 
 
+def _close_openai_object_schemas(schema: object) -> None:
+    """OpenAI strict structured outputs require every object schema to be
+    closed. Some LiteLLM/Pydantic combinations close $defs but miss inlined
+    nested object properties, which OpenAI rejects before the model runs."""
+    if isinstance(schema, dict):
+        if schema.get("type") == "object" or "properties" in schema:
+            schema["additionalProperties"] = False
+        for value in schema.values():
+            _close_openai_object_schemas(value)
+    elif isinstance(schema, list):
+        for item in schema:
+            _close_openai_object_schemas(item)
+
+
+def _strict_response_format(response_model: type[BaseModel]) -> dict:
+    response_format = deepcopy(type_to_response_format_param(response_model))
+    json_schema = response_format.get("json_schema")
+    if isinstance(json_schema, dict):
+        json_schema["strict"] = True
+        schema = json_schema.get("schema")
+        if schema is not None:
+            _close_openai_object_schemas(schema)
+    return response_format
+
+
+def _is_response_format_schema_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return (
+        "response_format" in text
+        and "schema" in text
+        and (
+            "additionalproperties" in text
+            or "additional properties" in text
+            or "invalid schema" in text
+        )
+    )
+
+
 def structured_complete(
     prompt: str, response_model: type[BaseModel], *, model: str | None = None
 ) -> tuple[BaseModel, object]:
@@ -213,7 +252,7 @@ def structured_complete(
     That validation deliberately sits OUTSIDE the retry series: a schema
     violation is the model's output being wrong, not the transport failing,
     and callers already handle it (see `_classify_turn`'s fail-open)."""
-    response_format = type_to_response_format_param(response_model)
+    response_format = _strict_response_format(response_model)
 
     def _call(m: str):
         return litellm.completion(
@@ -224,8 +263,34 @@ def structured_complete(
             timeout=settings.llm_timeout_seconds,
         )
 
-    response = _resilient(_call, model or settings.llm_model)
+    try:
+        response = _resilient(_call, model or settings.llm_model)
+    except LLMPermanentError as exc:
+        if not _is_response_format_schema_error(exc):
+            raise
+
+        # Last-resort compatibility path for provider/LiteLLM schema quirks.
+        # The response is still locally validated against response_model below.
+        def _json_call(m: str):
+            return litellm.completion(
+                model=m,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Return only valid JSON matching the requested schema.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                api_key=_api_key_for(m),
+                timeout=settings.llm_timeout_seconds,
+            )
+
+        logger.warning("strict response_format rejected for %s; retrying with JSON mode", response_model.__name__)
+        response = _resilient(_json_call, model or settings.llm_model)
+
     parsed = response_model.model_validate_json(scrub_nul(response.choices[0].message.content))
+    parsed = response_model.model_validate(scrub_nul(parsed.model_dump()))
     return parsed, response
 
 

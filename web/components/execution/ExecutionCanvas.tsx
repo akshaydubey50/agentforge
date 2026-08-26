@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { ExecutionNodeView, type ExecutionFlowNode, type ExecutionNodeData } from "./ExecutionNodeView";
 
 const nodeTypes = { executionNode: ExecutionNodeView };
-const FIT_VIEW_OPTIONS = { padding: 0.22, minZoom: 0.5, maxZoom: 1.05 };
+const FIT_VIEW_OPTIONS = { padding: 0.2, minZoom: 0.18, maxZoom: 1.05 };
 const DENSE_GRAPH_NODE_LIMIT = 24;
 const DENSE_GRAPH_EDGE_LIMIT = 36;
 
@@ -175,7 +175,7 @@ export function ExecutionCanvas({
         elementsSelectable
         fitView
         fitViewOptions={FIT_VIEW_OPTIONS}
-        minZoom={0.45}
+        minZoom={0.18}
         maxZoom={1.45}
         zoomOnScroll
         zoomOnPinch

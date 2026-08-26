@@ -469,14 +469,15 @@ function buildSemanticNode(args: {
 }
 
 function withPositions(nodes: NodeDraft[]): ExecutionNode[] {
-  const rowByColumn: Partial<Record<ExecutionNodeType, number>> = {};
+  const rowByColumn = new Map<number, number>();
   return nodes.map((node) => {
-    const row = rowByColumn[node.type] ?? 0;
-    rowByColumn[node.type] = row + 1;
+    const x = COLUMN_X[node.type];
+    const row = rowByColumn.get(x) ?? 0;
+    rowByColumn.set(x, row + 1);
     return {
       ...node,
       position: {
-        x: COLUMN_X[node.type],
+        x,
         y: 70 + row * 132,
       },
     };

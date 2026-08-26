@@ -67,7 +67,7 @@ export function NodeInspector({
   return (
     <aside
       className={cn(
-        "flex min-h-0 flex-col border-l border-border bg-rail transition-[width]",
+        "flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-rail transition-[width]",
         open ? "w-full min-w-0" : "w-0 overflow-hidden border-l-0"
       )}
     >
@@ -87,7 +87,7 @@ export function NodeInspector({
         </button>
       </div>
 
-      <div className="rail-scrollbar min-h-0 flex-1 overflow-y-auto">
+      <div className="rail-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4">
         {!node && (
           <div className="px-4 py-6 text-[12.5px] leading-relaxed text-text-muted">
             Select a graph node or timeline event to inspect exposed inputs, outputs, policy decisions, context metrics, and verification metadata.
