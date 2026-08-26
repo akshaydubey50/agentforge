@@ -110,6 +110,18 @@ def test_successful_empty_result_with_required_count_routes_replan():
     assert result.needs_replan is True
 
 
+def test_gmail_search_messages_count_as_results():
+    result = verify_step(
+        "task-1",
+        _subtask("result_count > 0"),
+        _call("gmail_search", {"query": "from:recruiter@example.com"}, {"messages": [{"id": "msg-1"}]}),
+        tool_success=True,
+    )
+
+    assert result.route is VerificationRoute.PASS
+    assert result.verified is True
+
+
 def test_empty_result_without_count_uses_reviewer_fallback():
     result = verify_step(
         "task-1",
@@ -167,6 +179,30 @@ def test_goal_verification_fails_when_requested_file_is_missing(tmp_path, monkey
 
     assert result.route is VerificationRoute.REPLAN
     assert result.needs_replan is True
+
+
+def test_goal_verification_passes_completed_gmail_draft_despite_superseded_failure():
+    failed_search = Subtask(
+        task_id="task-1",
+        position=0,
+        description="broad search",
+        assigned_tool="gmail_search",
+        status=SubtaskStatus.FAILED,
+        output='{"messages": [{"id": "msg-1"}]}',
+    )
+    draft = Subtask(
+        task_id="task-1",
+        position=1,
+        description="create draft",
+        assigned_tool="gmail_create_draft",
+        status=SubtaskStatus.DONE,
+        output='{"draft_id": "draft-1", "to": "recruiter@example.com"}',
+    )
+
+    result = verify_goal("task-1", "Prepare a reply draft email", [failed_search, draft])
+
+    assert result.route is VerificationRoute.PASS
+    assert result.verified is True
 
 
 def test_semantic_goal_uses_reviewer_fallback():

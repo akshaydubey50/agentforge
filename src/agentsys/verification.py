@@ -41,7 +41,10 @@ class VerificationResult(BaseModel):
     method: str = "deterministic"
 
 
-_RESULT_COUNT = re.compile(r"(?:result|results|row|rows|file|files|source|sources)_?count\s*>=\s*(\d+)", re.I)
+_RESULT_COUNT = re.compile(
+    r"(?:result|results|row|rows|file|files|source|sources)_?count\s*(>=|>|==|=)\s*(\d+)",
+    re.I,
+)
 _AT_LEAST = re.compile(r"at\s+least\s+(\d+)\s+(?:result|results|row|rows|file|files|source|sources)", re.I)
 _EXIT_CODE = re.compile(r"exit_?code\s*(?:==|=)\s*(-?\d+)", re.I)
 _FILE_EXISTS = re.compile(r"file_exists\s*:\s*(.+)", re.I)
@@ -74,7 +77,7 @@ def _workspace_path(task_id: str, rel_path: str) -> Path | None:
 
 
 def _countable(output: dict) -> int | None:
-    for key in ("results", "rows", "files", "sources", "items"):
+    for key in ("results", "rows", "files", "sources", "items", "messages"):
         value = output.get(key)
         if isinstance(value, list):
             return len(value)
@@ -98,7 +101,11 @@ def _normalised_email(value: str) -> str:
 
 def _required_count(criteria: str) -> int | None:
     if match := _RESULT_COUNT.search(criteria):
-        return int(match.group(1))
+        operator = match.group(1)
+        count = int(match.group(2))
+        if operator == ">":
+            return count + 1
+        return count
     if match := _AT_LEAST.search(criteria):
         return int(match.group(1))
     if "nonempty" in criteria.lower():
@@ -420,15 +427,6 @@ _REQUESTED_FILE = re.compile(r"\b([\w.-]+\.(?:txt|md|json|csv|py|html|pdf))\b", 
 
 
 def verify_goal(task_id: str, request_text: str, subtasks: list[Subtask]) -> VerificationResult:
-    blocking = [s for s in subtasks if s.status in {SubtaskStatus.FAILED, SubtaskStatus.ESCALATED}]
-    if blocking:
-        return VerificationResult(
-            verified=False,
-            reason=f"{len(blocking)} subtask(s) are failed or escalated",
-            needs_replan=True,
-            route=VerificationRoute.REPLAN,
-        )
-
     done = [s for s in subtasks if s.status == SubtaskStatus.DONE]
     if not done:
         return VerificationResult(
@@ -462,6 +460,15 @@ def verify_goal(task_id: str, request_text: str, subtasks: list[Subtask]) -> Ver
                     reason="verified Gmail draft creation subtask completed",
                     route=VerificationRoute.PASS,
                 )
+
+    blocking = [s for s in subtasks if s.status in {SubtaskStatus.FAILED, SubtaskStatus.ESCALATED}]
+    if blocking:
+        return VerificationResult(
+            verified=False,
+            reason=f"{len(blocking)} subtask(s) are failed or escalated",
+            needs_replan=True,
+            route=VerificationRoute.REPLAN,
+        )
 
     return VerificationResult(
         verified=False,
