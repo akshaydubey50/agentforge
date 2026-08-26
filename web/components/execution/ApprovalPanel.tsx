@@ -35,6 +35,35 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+function escalationCopy(kind: string) {
+  if (kind === "tool_approval") {
+    return {
+      title: "Approval required",
+      approve: "Approve",
+      reject: "Reject",
+    };
+  }
+  if (kind === "budget") {
+    return {
+      title: "Agent needs direction",
+      approve: "Continue",
+      reject: "Stop run",
+    };
+  }
+  if (kind === "verification") {
+    return {
+      title: "Verification review",
+      approve: "Accept",
+      reject: "Reject",
+    };
+  }
+  return {
+    title: "Human review required",
+    approve: "Approve",
+    reject: "Reject",
+  };
+}
+
 export function ApprovalPanel({
   escalation,
   deciding,
@@ -48,15 +77,16 @@ export function ApprovalPanel({
 }) {
   const context = escalation.context ?? {};
   const policy = pick(context, ["policy", "policy_decision"]);
-  const args = pick(context, ["validated_args", "arguments", "args", "tool_args"]);
+  const args = pick(context, ["kwargs", "validated_args", "arguments", "args", "tool_args"]);
   const toolName = text(pick(context, ["tool_name", "tool", "name"]), escalation.kind);
-  const fingerprint = pick(context, ["approval_fingerprint", "fingerprint", "effect_fingerprint"]);
+  const fingerprint = pick(context, ["args_fingerprint", "approval_fingerprint", "fingerprint", "effect_fingerprint"]);
   const expiresAt = pick(context, ["expires_at", "approval_expires_at", "expiry"]);
   const argsChanged = Boolean(pick(context, ["args_changed", "fingerprint_mismatch", "new_approval_required"]));
   const risk = pick(context, ["risk", "risk_level", "action_type"]);
   const bodyPreview = pick(context, ["body_preview", "preview", "body"]);
   const recipient = pick(context, ["to", "recipient", "email"]) ?? fieldFromArgs(args, ["to", "recipient", "email"]);
   const subject = pick(context, ["subject"]) ?? fieldFromArgs(args, ["subject"]);
+  const copy = escalationCopy(escalation.kind);
 
   return (
     <section
@@ -71,7 +101,7 @@ export function ApprovalPanel({
           <UserCheck className="h-4 w-4" />
         </div>
         <div className="min-w-0">
-          <div className="text-[13.5px] font-semibold text-text">Approval required</div>
+          <div className="text-[13.5px] font-semibold text-text">{copy.title}</div>
           <div className="mt-0.5 text-[12px] text-text-muted">{escalation.reason}</div>
         </div>
       </div>
@@ -112,7 +142,7 @@ export function ApprovalPanel({
             className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[7px] bg-status-completed px-3 py-2 text-[12px] font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
           >
             <ShieldCheck className="h-3.5 w-3.5" />
-            Approve
+            {copy.approve}
           </button>
           <button
             type="button"
@@ -121,7 +151,7 @@ export function ApprovalPanel({
             className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[7px] border border-status-failed/55 px-3 py-2 text-[12px] font-semibold text-status-failed transition hover:bg-status-failed/8 disabled:cursor-not-allowed disabled:opacity-45"
           >
             <XCircle className="h-3.5 w-3.5" />
-            Reject
+            {copy.reject}
           </button>
         </div>
       ) : (

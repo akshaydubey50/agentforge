@@ -426,6 +426,47 @@ def verify_step(task_id: str, subtask: Subtask, call: ToolCall | None, *, tool_s
 _REQUESTED_FILE = re.compile(r"\b([\w.-]+\.(?:txt|md|json|csv|py|html|pdf))\b", re.I)
 
 
+def _completed_gmail_draft_result(request_text: str, done: list[Subtask]) -> VerificationResult | None:
+    lower = (request_text or "").lower()
+    if "draft" not in lower or ("mail" not in lower and "email" not in lower):
+        return None
+    for subtask in done:
+        if subtask.assigned_tool == "gmail_create_draft" and "draft_id" in (subtask.output or ""):
+            return VerificationResult(
+                verified=True,
+                reason="verified Gmail draft creation subtask completed",
+                route=VerificationRoute.PASS,
+            )
+    return None
+
+
+def _file_mention_is_gmail_fallback(request_text: str, match: re.Match[str]) -> bool:
+    """True when a file path is an alternative only if Gmail cannot be used.
+
+    Goal verification is deterministic and intentionally simple, but a plain
+    file-name regex cannot distinguish "also save a copy to report.md" from
+    "if Gmail is unavailable, save report.md instead." Keep this narrow so a
+    successful draft does not mask an explicitly requested file artifact.
+    """
+
+    prefix = (request_text or "")[max(0, match.start() - 240):match.start()].lower()
+    mentions_gmail = "gmail" in prefix or "mail" in prefix or "email" in prefix
+    fallback_language = (
+        "if" in prefix
+        and (
+            "not configured" in prefix
+            or "unavailable" in prefix
+            or "not available" in prefix
+            or "fails" in prefix
+            or "fail" in prefix
+            or "cannot" in prefix
+            or "can't" in prefix
+            or "instead" in prefix
+        )
+    )
+    return mentions_gmail and fallback_language
+
+
 def verify_goal(task_id: str, request_text: str, subtasks: list[Subtask]) -> VerificationResult:
     done = [s for s in subtasks if s.status == SubtaskStatus.DONE]
     if not done:
@@ -436,7 +477,10 @@ def verify_goal(task_id: str, request_text: str, subtasks: list[Subtask]) -> Ver
             route=VerificationRoute.REPLAN,
         )
 
+    draft_result = _completed_gmail_draft_result(request_text, done)
     if match := _REQUESTED_FILE.search(request_text or ""):
+        if draft_result is not None and _file_mention_is_gmail_fallback(request_text, match):
+            return draft_result
         rel_path = match.group(1)
         path = _workspace_path(task_id, rel_path)
         if path is None or not path.is_file():
@@ -452,14 +496,8 @@ def verify_goal(task_id: str, request_text: str, subtasks: list[Subtask]) -> Ver
             route=VerificationRoute.PASS,
         )
 
-    if "draft" in (request_text or "").lower() and "mail" in (request_text or "").lower():
-        for subtask in done:
-            if subtask.assigned_tool == "gmail_create_draft" and "draft_id" in (subtask.output or ""):
-                return VerificationResult(
-                    verified=True,
-                    reason="verified Gmail draft creation subtask completed",
-                    route=VerificationRoute.PASS,
-                )
+    if draft_result is not None:
+        return draft_result
 
     blocking = [s for s in subtasks if s.status in {SubtaskStatus.FAILED, SubtaskStatus.ESCALATED}]
     if blocking:

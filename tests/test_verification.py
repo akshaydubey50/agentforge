@@ -205,6 +205,44 @@ def test_goal_verification_passes_completed_gmail_draft_despite_superseded_failu
     assert result.verified is True
 
 
+def test_goal_verification_treats_markdown_file_as_gmail_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "workspace_dir", str(tmp_path))
+    draft = Subtask(
+        task_id="task-1",
+        position=0,
+        description="create draft",
+        assigned_tool="gmail_create_draft",
+        status=SubtaskStatus.DONE,
+        output='{"draft_id": "draft-1", "to": "myteam@example.com"}',
+    )
+
+    result = verify_goal(
+        "task-1",
+        "Create a Gmail draft. If Gmail is not configured, save the draft as ai_agent_trend_email.md instead.",
+        [draft],
+    )
+
+    assert result.route is VerificationRoute.PASS
+    assert result.verified is True
+
+
+def test_goal_verification_still_requires_explicit_file_when_not_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "workspace_dir", str(tmp_path))
+    draft = Subtask(
+        task_id="task-1",
+        position=0,
+        description="create draft",
+        assigned_tool="gmail_create_draft",
+        status=SubtaskStatus.DONE,
+        output='{"draft_id": "draft-1", "to": "myteam@example.com"}',
+    )
+
+    result = verify_goal("task-1", "Create a Gmail draft and save ai_agent_trend_email.md.", [draft])
+
+    assert result.route is VerificationRoute.REPLAN
+    assert result.needs_replan is True
+
+
 def test_semantic_goal_uses_reviewer_fallback():
     result = verify_goal(
         "task-1",
