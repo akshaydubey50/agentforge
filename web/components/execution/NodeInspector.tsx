@@ -31,7 +31,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 function SafeBlock({ value, empty = "No exposed payload." }: { value: unknown; empty?: string }) {
   const content = value === undefined || value === null || value === "" ? empty : humanizeValue(value);
   return (
-    <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-[7px] border border-border bg-background p-2.5 font-sans text-[12px] leading-relaxed text-text-muted">
+    <pre className="rail-scrollbar max-h-[220px] overflow-auto whitespace-pre-wrap rounded-[7px] border border-border bg-background p-2.5 font-sans text-[12px] leading-relaxed text-text-muted">
       {content}
     </pre>
   );
@@ -87,7 +87,7 @@ export function NodeInspector({
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="rail-scrollbar min-h-0 flex-1 overflow-y-auto">
         {!node && (
           <div className="px-4 py-6 text-[12.5px] leading-relaxed text-text-muted">
             Select a graph node or timeline event to inspect exposed inputs, outputs, policy decisions, context metrics, and verification metadata.

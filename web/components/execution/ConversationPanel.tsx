@@ -79,7 +79,7 @@ export function ConversationPanel({
         <div className="mt-0.5 text-[11.5px] text-text-faint">Goal, follow-ups, approvals, and final answer.</div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div className="rail-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <div className="space-y-3">
           {cards.map((card) => {
             const meta = CARD_META[card.kind];

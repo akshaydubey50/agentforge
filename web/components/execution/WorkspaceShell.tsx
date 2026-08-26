@@ -2,7 +2,7 @@
 
 import { KeyboardEvent, PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { GitBranch, Maximize2, MessageSquare, PanelRightClose, PanelRightOpen, PlusCircle } from "lucide-react";
+import { Clock3, GitBranch, Maximize2, MessageSquare, PanelRightClose, PanelRightOpen, PlusCircle } from "lucide-react";
 import type { EscalationDecision } from "@/lib/api";
 import type { ExecutionNode, RunModel } from "@/lib/execution/types";
 import { canContinueConversation } from "@/lib/agentStatus";
@@ -94,7 +94,7 @@ export function WorkspaceShell({
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
-  const [timelineOpen, setTimelineOpen] = useState(true);
+  const [timelineOpen, setTimelineOpen] = useState(false);
   const [focus, setFocus] = useState<"balanced" | "graph" | "chat">("balanced");
   const [{ chatWidth, inspectorWidth }, setPaneLayout] = useState(readStoredPaneLayout);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -321,6 +321,18 @@ export function WorkspaceShell({
           </button>
           <button
             type="button"
+            onClick={() => setTimelineOpen((value) => !value)}
+            aria-label={timelineOpen ? "Hide timeline" : "Show timeline"}
+            aria-pressed={timelineOpen}
+            className={cn(
+              "rounded-[7px] border border-border bg-surface-2 p-2 text-text-muted transition hover:text-text",
+              timelineOpen && "border-role-human text-role-human"
+            )}
+          >
+            <Clock3 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
             onClick={() => setInspectorOpen((value) => !value)}
             aria-label={inspectorOpen ? "Collapse inspector" : "Expand inspector"}
             className="rounded-[7px] border border-border bg-surface-2 p-2 text-text-muted transition hover:text-text"
@@ -339,7 +351,7 @@ export function WorkspaceShell({
       <div
         className={cn(
           "grid min-h-0 min-w-0 flex-1 overflow-hidden",
-          timelineOpen ? "grid-rows-[minmax(0,1fr)_148px] xl:grid-rows-[minmax(0,1fr)_174px]" : "grid-rows-[minmax(0,1fr)_38px]"
+          timelineOpen ? "grid-rows-[minmax(0,1fr)_148px] xl:grid-rows-[minmax(0,1fr)_174px]" : "grid-rows-[minmax(0,1fr)]"
         )}
       >
         <div
@@ -387,7 +399,7 @@ export function WorkspaceShell({
             />
           )}
 
-          <main className="flex h-full min-h-0 min-w-0 flex-col max-[1279px]:order-1">
+          <main className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden max-[1279px]:order-1">
             <div className="flex h-[36px] items-center gap-2 border-b border-border bg-rail px-4">
               <GitBranch className="h-3.5 w-3.5 text-text-muted" />
               <span className="text-[12px] font-semibold text-text">Execution Flow</span>
@@ -395,7 +407,7 @@ export function WorkspaceShell({
                 {mode === "live" ? "Grouped phases from live events and durable state" : "Grouped history reconstructed from stored run data"}
               </span>
             </div>
-            <div className="min-h-0 flex-1">
+            <div className="min-h-0 flex-1 overflow-hidden">
               <ExecutionCanvas
                 nodes={model.nodes}
                 edges={model.edges}
@@ -429,16 +441,18 @@ export function WorkspaceShell({
           )}
         </div>
 
-        <RunTimeline
-          events={model.events}
-          runStartedAt={model.task.created_at}
-          selectedEventId={selectedEventId}
-          selectedNodeId={selectedNodeId}
-          collapsed={!timelineOpen}
-          onSelectEvent={setSelectedEventId}
-          onSelectNode={setSelectedNodeId}
-          onToggle={() => setTimelineOpen((value) => !value)}
-        />
+        {timelineOpen && (
+          <RunTimeline
+            events={model.events}
+            runStartedAt={model.task.created_at}
+            selectedEventId={selectedEventId}
+            selectedNodeId={selectedNodeId}
+            collapsed={false}
+            onSelectEvent={setSelectedEventId}
+            onSelectNode={setSelectedNodeId}
+            onToggle={() => setTimelineOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

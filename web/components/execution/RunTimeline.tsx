@@ -52,7 +52,7 @@ export function RunTimeline({
         {collapsed ? <ChevronUp className="h-3.5 w-3.5 text-text-muted" /> : <ChevronDown className="h-3.5 w-3.5 text-text-muted" />}
       </button>
       {!collapsed && (
-      <div className="flex h-[calc(100%-38px)] min-w-0 gap-2 overflow-x-auto px-4 py-3">
+      <div className="rail-scrollbar flex h-[calc(100%-38px)] min-w-0 gap-2 overflow-x-auto px-4 py-3">
         {events.map((event) => {
           const active = event.id === selectedEventId || Boolean(event.nodeId && event.nodeId === selectedNodeId);
           return (
